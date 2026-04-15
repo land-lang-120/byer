@@ -48,19 +48,21 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <!-- App Bundle (built from js/*.js via node build.js) -->
-  <script type="text/babel" data-presets="react" src="bundle.js"></script>
+  <script type="text/babel" data-presets="react" src="bundle.js?v=2"></script>
 
   <!-- Hide loading screen after React mounts -->
   <script>
-    window.addEventListener('load', function() {
-      setTimeout(function() {
-        var loader = document.getElementById('byer-loading');
-        if (loader) {
-          loader.classList.add('fade-out');
-          setTimeout(function() { loader.remove(); }, 400);
-        }
-      }, 2500);
-    });
+    // Poll until React renders content, then fade out loader
+    (function checkReady() {
+      var root = document.getElementById('root');
+      var loader = document.getElementById('byer-loading');
+      if (root && root.innerHTML.length > 10 && loader) {
+        loader.classList.add('fade-out');
+        setTimeout(function() { loader.remove(); }, 400);
+      } else {
+        setTimeout(checkReady, 200);
+      }
+    })();
 
     // Service Worker
     if ('serviceWorker' in navigator) {

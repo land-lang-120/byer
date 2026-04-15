@@ -19,7 +19,7 @@ function DetailScreen({ item, saved, toggleSave, onBack, openGallery, duration, 
 
   return (
     <div style={S.shell}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
       <div style={S.dScroll}>
         {/* Hero */}
         <div style={{position:"relative",height:280}}>

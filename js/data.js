@@ -1,5 +1,17 @@
 /* Byer — Mock Data */
 
+/* ─── PROPERTY TYPE CHIPS ──────────────────────── */
+const PROP_TYPES = [
+  { id:"all",        label:"Tous",       icon:"grid"    },
+  { id:"appartement",label:"Appart.",    icon:"home"    },
+  { id:"villa",      label:"Villa",      icon:"villa"   },
+  { id:"studio",     label:"Studio",     icon:"studio"  },
+  { id:"hotel",      label:"Hôtel",      icon:"hotel"   },
+  { id:"motel",      label:"Motel",      icon:"motel"   },
+  { id:"auberge",    label:"Auberge",    icon:"auberge" },
+  { id:"chambre",    label:"Chambre",    icon:"bed"     },
+];
+
 /* ─── GALLERY ──────────────────────────────────────
    Photo galleries per listing (keyed by item id).
    5 photos each with labels.

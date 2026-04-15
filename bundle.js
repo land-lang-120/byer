@@ -100,6 +100,18 @@ const fmtM = (n) => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
 /* ═══ js/data.js ═══ */
 /* Byer — Mock Data */
 
+/* ─── PROPERTY TYPE CHIPS ──────────────────────── */
+const PROP_TYPES = [
+  { id:"all",        label:"Tous",       icon:"grid"    },
+  { id:"appartement",label:"Appart.",    icon:"home"    },
+  { id:"villa",      label:"Villa",      icon:"villa"   },
+  { id:"studio",     label:"Studio",     icon:"studio"  },
+  { id:"hotel",      label:"Hôtel",      icon:"hotel"   },
+  { id:"motel",      label:"Motel",      icon:"motel"   },
+  { id:"auberge",    label:"Auberge",    icon:"auberge" },
+  { id:"chambre",    label:"Chambre",    icon:"bed"     },
+];
+
 /* ─── GALLERY ──────────────────────────────────────
    Photo galleries per listing (keyed by item id).
    5 photos each with labels.
@@ -892,6 +904,23 @@ const S = {
   blockModal:   {position:"fixed",bottom:0,left:0,right:0,width:"100%",background:C.white,borderRadius:"22px 22px 0 0",padding:"28px 24px 40px",zIndex:301,display:"flex",flexDirection:"column",alignItems:"center",gap:14},
   blockModalIcon:{width:60,height:60,borderRadius:30,background:C.bg,display:"flex",alignItems:"center",justifyContent:"center"},
 };
+
+/* ─── BYER CSS (injected via <style>{BYER_CSS}</style>) ── */
+const BYER_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:'DM Sans',-apple-system,sans-serif;}
+  input,select,button{font-family:'DM Sans',-apple-system,sans-serif;}
+  input[type=date]::-webkit-calendar-picker-indicator{opacity:.4;}
+  ::-webkit-scrollbar{display:none;}
+  .bigcard{animation:cardUp .4s ease both;}
+  @keyframes cardUp{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:translateY(0);}}
+  .galimg{animation:galFade .22s ease;}
+  @keyframes galFade{from{opacity:.5;}to{opacity:1;}}
+  .sheet{animation:sheetUp .32s cubic-bezier(.32,0,.67,0) both;}
+  @keyframes sheetUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
+  .resBtn:hover{opacity:.88;}.resBtn:active{transform:scale(.97);}
+`;
 
 
 /* ═══ js/components.js ═══ */
@@ -2011,7 +2040,7 @@ function DetailScreen({ item, saved, toggleSave, onBack, openGallery, duration, 
 
   return (
     <div style={S.shell}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
       <div style={S.dScroll}>
         {/* Hero */}
         <div style={{position:"relative",height:280}}>
@@ -2229,7 +2258,7 @@ function GalleryScreen({ item, startIdx, onBack, onOpenDetail }) {
 
   return (
     <div style={S.galRoot}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
       <div style={S.galHeader}>
         <button style={S.galBack} onClick={onBack}><Icon name="close" size={20} color={C.dark} stroke={2}/></button>
         <div style={{textAlign:"center"}}>
@@ -2537,7 +2566,7 @@ function ChatScreen({ conv, onBack, onToggleBlock }) {
 
   return (
     <div style={{...S.shell, position:"relative"}}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
 
       {/* Header du chat */}
       <div style={S.chatHeader}>
@@ -2802,7 +2831,7 @@ function OwnerProfileScreen({ ownerName, onBack }) {
 
   if (!owner) return (
     <div style={S.shell}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
       <div style={S.rentHeader}>
         <button style={S.dBack2} onClick={onBack}><Icon name="back" size={20} color={C.dark} stroke={2.5}/></button>
         <p style={{fontSize:17,fontWeight:700,color:C.black}}>Profil propriétaire</p>
@@ -2820,7 +2849,7 @@ function OwnerProfileScreen({ ownerName, onBack }) {
 
   return (
     <div style={S.shell}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
       <div style={{flex:1,overflowY:"auto"}}>
 
         {/* Header avec back */}
@@ -2984,7 +3013,7 @@ function RentScreen({ onBack }) {
 
   return (
     <div style={S.shell}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
 
       {/* Header */}
       <div style={S.rentHeader}>
@@ -3691,7 +3720,7 @@ function Shell({ children, tab, setTab }) {
   ];
   return (
     <div style={S.shell}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
       <div style={S.scroll}>{children}</div>
       <nav style={S.nav}>
         {nav.map(n => {

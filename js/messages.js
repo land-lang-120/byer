@@ -90,7 +90,7 @@ function ChatScreen({ conv, onBack, onToggleBlock }) {
 
   return (
     <div style={{...S.shell, position:"relative"}}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
 
       {/* Header du chat */}
       <div style={S.chatHeader}>

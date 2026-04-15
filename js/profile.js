@@ -80,7 +80,7 @@ function OwnerProfileScreen({ ownerName, onBack }) {
 
   if (!owner) return (
     <div style={S.shell}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
       <div style={S.rentHeader}>
         <button style={S.dBack2} onClick={onBack}><Icon name="back" size={20} color={C.dark} stroke={2.5}/></button>
         <p style={{fontSize:17,fontWeight:700,color:C.black}}>Profil propriétaire</p>
@@ -98,7 +98,7 @@ function OwnerProfileScreen({ ownerName, onBack }) {
 
   return (
     <div style={S.shell}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
       <div style={{flex:1,overflowY:"auto"}}>
 
         {/* Header avec back */}

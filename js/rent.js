@@ -24,7 +24,7 @@ function RentScreen({ onBack }) {
 
   return (
     <div style={S.shell}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
 
       {/* Header */}
       <div style={S.rentHeader}>

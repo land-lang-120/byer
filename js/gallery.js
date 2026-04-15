@@ -8,7 +8,7 @@ function GalleryScreen({ item, startIdx, onBack, onOpenDetail }) {
 
   return (
     <div style={S.galRoot}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
       <div style={S.galHeader}>
         <button style={S.galBack} onClick={onBack}><Icon name="close" size={20} color={C.dark} stroke={2}/></button>
         <div style={{textAlign:"center"}}>

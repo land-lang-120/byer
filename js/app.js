@@ -83,7 +83,7 @@ function Shell({ children, tab, setTab }) {
   ];
   return (
     <div style={S.shell}>
-      <style>{CSS}</style>
+      <style>{BYER_CSS}</style>
       <div style={S.scroll}>{children}</div>
       <nav style={S.nav}>
         {nav.map(n => {

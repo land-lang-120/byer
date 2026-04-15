@@ -285,3 +285,20 @@ const S = {
   blockModal:   {position:"fixed",bottom:0,left:0,right:0,width:"100%",background:C.white,borderRadius:"22px 22px 0 0",padding:"28px 24px 40px",zIndex:301,display:"flex",flexDirection:"column",alignItems:"center",gap:14},
   blockModalIcon:{width:60,height:60,borderRadius:30,background:C.bg,display:"flex",alignItems:"center",justifyContent:"center"},
 };
+
+/* ─── BYER CSS (injected via <style>{BYER_CSS}</style>) ── */
+const BYER_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:'DM Sans',-apple-system,sans-serif;}
+  input,select,button{font-family:'DM Sans',-apple-system,sans-serif;}
+  input[type=date]::-webkit-calendar-picker-indicator{opacity:.4;}
+  ::-webkit-scrollbar{display:none;}
+  .bigcard{animation:cardUp .4s ease both;}
+  @keyframes cardUp{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:translateY(0);}}
+  .galimg{animation:galFade .22s ease;}
+  @keyframes galFade{from{opacity:.5;}to{opacity:1;}}
+  .sheet{animation:sheetUp .32s cubic-bezier(.32,0,.67,0) both;}
+  @keyframes sheetUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
+  .resBtn:hover{opacity:.88;}.resBtn:active{transform:scale(.97);}
+`;
