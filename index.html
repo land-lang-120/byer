@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>Byer — Location immobilière & véhicules</title>
+  <meta name="description" content="Trouvez votre logement ou véhicule au Cameroun. Appartements, villas, studios, SUV — à la nuitée ou au mois."/>
+  <meta name="theme-color" content="#FF5A5F"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'><rect width='30' height='30' rx='9' fill='%23FF5A5F'/><path d='M9 8h6.5a3.5 3.5 0 010 7H9m0 0h7a3.5 3.5 0 010 7H9V8z' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>"/>
+  <link rel="apple-touch-icon" href="icons/icon-192.svg"/>
+
+  <!-- Global CSS -->
+  <link rel="stylesheet" href="css/global.css"/>
+
+  <style>
+    html, body { height: 100%; background: #F7F7F7; }
+    #root { height: 100%; display: flex; }
+  </style>
+</head>
+<body>
+
+  <!-- Loading Screen -->
+  <div id="byer-loading">
+    <div class="loading-logo">
+      <svg width="90" height="90" viewBox="0 0 120 120" fill="none">
+        <rect width="120" height="120" rx="34" fill="#FF5A5F"/>
+        <path d="M36 34h27a14 14 0 010 28H36m0 0h29a14 14 0 010 28H36V34z"
+              stroke="white" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <p style="font-family:'DM Sans',sans-serif;font-size:13px;color:#9B9B9B;font-weight:500;">
+      Chargement en cours...
+    </p>
+    <div class="loading-bar-track">
+      <div class="loading-bar-fill"></div>
+    </div>
+  </div>
+
+  <!-- React root -->
+  <div id="root"></div>
+
+  <!-- React 18 + Babel CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- App Bundle (built from js/*.js via node build.js) -->
+  <script type="text/babel" data-presets="react" src="bundle.js"></script>
+
+  <!-- Hide loading screen after React mounts -->
+  <script>
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        var loader = document.getElementById('byer-loading');
+        if (loader) {
+          loader.classList.add('fade-out');
+          setTimeout(function() { loader.remove(); }, 400);
+        }
+      }, 2500);
+    });
+
+    // Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(function() {});
+    }
+  </script>
+</body>
+</html>

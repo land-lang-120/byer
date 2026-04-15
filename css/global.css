@@ -1,0 +1,119 @@
+/* ═══════════════════════════════════════════════════
+   Byer — Global CSS
+   Font import, reset, animations, scrollbar
+   ═══════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: 'DM Sans', -apple-system, sans-serif;
+}
+
+input,
+select,
+button {
+  font-family: 'DM Sans', -apple-system, sans-serif;
+}
+
+input[type=date]::-webkit-calendar-picker-indicator {
+  opacity: .4;
+}
+
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Animations ── */
+.bigcard {
+  animation: cardUp .4s ease both;
+}
+
+@keyframes cardUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.galimg {
+  animation: galFade .22s ease;
+}
+
+@keyframes galFade {
+  from { opacity: .5; }
+  to   { opacity: 1; }
+}
+
+.sheet {
+  animation: sheetUp .32s cubic-bezier(.32, 0, .67, 0) both;
+}
+
+@keyframes sheetUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+.resBtn:hover {
+  opacity: .88;
+}
+
+.resBtn:active {
+  transform: scale(.97);
+}
+
+/* ── Loading Screen ── */
+#byer-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  gap: 24px;
+  transition: opacity .4s ease;
+}
+
+#byer-loading.fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loading-logo {
+  animation: logoPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes logoPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.06); opacity: .85; }
+}
+
+.loading-bar-track {
+  width: 140px;
+  height: 4px;
+  border-radius: 2px;
+  background: #F0F0F0;
+  overflow: hidden;
+}
+
+.loading-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: #FF5A5F;
+  animation: loadFill 2.2s ease-in-out forwards;
+}
+
+@keyframes loadFill {
+  0%   { width: 0; }
+  30%  { width: 40%; }
+  70%  { width: 75%; }
+  100% { width: 100%; }
+}
