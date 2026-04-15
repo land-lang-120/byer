@@ -17,6 +17,9 @@ function ByerApp() {
   const [ownerProfile, setOwnerProfile] = useState(null);
   const [minRating, setMinRating]     = useState(0);    // filtre note min
   const [filterOpen, setFilterOpen]   = useState(false);
+  const [qrScanOpen, setQrScanOpen]     = useState(false);
+  const [qrResult, setQrResult]         = useState(null);  // scanned code
+  const [qrInfoOpen, setQrInfoOpen]     = useState(false); // info dialog
 
   const toggleSave  = (id, e) => { e?.stopPropagation(); setSaved(p => ({...p,[id]:!p[id]})); };
   const openGallery = (item, idx=0, e) => { e?.stopPropagation(); setGallery({item,idx}); };
@@ -69,7 +72,15 @@ function ByerApp() {
       {tab==="saved"    && <SavedScreen items={[...PROPERTIES,...VEHICLES].filter(i=>saved[i.id])} openDetail={setDetail} toggleSave={toggleSave} saved={saved} openGallery={openGallery} duration={duration}/>}
       {tab==="trips"    && <TripsScreen openDetail={setDetail}/>}
       {tab==="messages" && <MessagesScreen/>}
+      {tab==="messages" && <QRScanButton onClick={() => setQrInfoOpen(true)}/>}
       {tab==="profile"  && <ProfileScreen onOpenRent={() => setRentOpen(true)}/>}
+
+      {/* QR Code info dialog */}
+      {qrInfoOpen && <QRInfoDialog onClose={() => setQrInfoOpen(false)} onScan={() => { setQrInfoOpen(false); setQrScanOpen(true); }}/>}
+      {/* QR Scanner overlay */}
+      {qrScanOpen && <QRScannerOverlay onClose={() => setQrScanOpen(false)} onScan={(code) => { setQrScanOpen(false); setQrResult(code); }}/>}
+      {/* QR Verification result */}
+      {qrResult && <GuestVerificationSheet code={qrResult} onClose={() => setQrResult(null)}/>}
     </Shell>
   );
 }

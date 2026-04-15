@@ -19,6 +19,7 @@ const FILES = [
   'js/profile.js',
   'js/rent.js',
   'js/sheets.js',
+  'js/qrcode.js',
   'js/app.js',
   'js/main.js',
 ];
