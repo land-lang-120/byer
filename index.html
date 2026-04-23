@@ -52,17 +52,26 @@
 
   <!-- Hide loading screen after React mounts -->
   <script>
-    // Poll until React renders content, then fade out loader
-    (function checkReady() {
-      var root = document.getElementById('root');
+    // React signale via window.dispatchEvent(new Event('byer-ready')) dans main.js
+    // une fois le useEffect du Root component fire. Plus propre qu'un poll.
+    function hideLoader() {
       var loader = document.getElementById('byer-loading');
-      if (root && root.innerHTML.length > 10 && loader) {
-        loader.classList.add('fade-out');
-        setTimeout(function() { loader.remove(); }, 400);
-      } else {
-        setTimeout(checkReady, 200);
+      if (!loader) return;
+      loader.classList.add('fade-out');
+      setTimeout(function() { loader.remove(); }, 400);
+    }
+    window.addEventListener('byer-ready', hideLoader, { once: true });
+
+    // Filet de securite : si pour une raison quelconque l'event ne fire pas
+    // (erreur JS, blocage CDN React/Babel...), on fade le loader apres 8s
+    // pour eviter qu'il reste bloque a l'ecran.
+    setTimeout(function() {
+      var loader = document.getElementById('byer-loading');
+      if (loader && !loader.classList.contains('fade-out')) {
+        console.warn('[byer] event byer-ready jamais recu apres 8s — fade par securite');
+        hideLoader();
       }
-    })();
+    }, 8000);
 
     // Service Worker
     if ('serviceWorker' in navigator) {
