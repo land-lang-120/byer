@@ -1,2 +1,18 @@
 node_modules/
 .DS_Store
+
+# Claude / outils locaux
+.claude/
+
+# Builds APK locaux (regenerable via PWABuilder)
+android-project/
+
+# Scripts batch locaux specifiques a la machine
+*.bat
+
+# Migrations combinees intermediaires (les vraies sont dans migrations/)
+supabase/_combined_migrations.sql
+
+# Logs et tmp
+*.log
+.cache/

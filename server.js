@@ -13,7 +13,9 @@ const MIME = {
 };
 
 http.createServer((req, res) => {
-  let filePath = path.join(__dirname, req.url === '/' ? 'index.html' : req.url);
+  // Strip query string before resolving file path
+  const cleanUrl = req.url.split('?')[0];
+  let filePath = path.join(__dirname, cleanUrl === '/' ? 'index.html' : cleanUrl);
   const ext = path.extname(filePath);
   const mime = MIME[ext] || 'application/octet-stream';
 
@@ -26,4 +28,11 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': mime + '; charset=utf-8' });
     res.end(data);
   });
-}).listen(PORT, () => console.log(`Byer dev server on http://localhost:${PORT}`));
+}).listen(PORT, '0.0.0.0', () => {
+  console.log(`Byer dev server on http://localhost:${PORT}`);
+  // Show local IP for mobile testing
+  const nets = require('os').networkInterfaces();
+  Object.values(nets).flat().filter(n => n.family === 'IPv4' && !n.internal).forEach(n => {
+    console.log(`  Mobile: http://${n.address}:${PORT}`);
+  });
+});

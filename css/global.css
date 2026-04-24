@@ -5,6 +5,15 @@
 
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
 
+/* ── Padding-top adaptatif pour les headers ──
+   - Navigateur classique / Android (sans encoche)  : 32px (équilibre confortable)
+   - PWA iOS (encoche)                              : encoche + 32px (clairance correcte)
+   La variable utilise env(safe-area-inset-top) qui
+   ne fonctionne qu'avec viewport-fit=cover. */
+:root {
+  --top-pad: calc(env(safe-area-inset-top, 0px) + 32px);
+}
+
 *,
 *::before,
 *::after {
@@ -116,4 +125,37 @@ input[type=date]::-webkit-calendar-picker-indicator {
   30%  { width: 40%; }
   70%  { width: 75%; }
   100% { width: 100%; }
+}
+
+/* ═══════════════════════════════════════════════════
+   DARK MODE — Inversion globale (approche pragmatique)
+   Le code React utilise des couleurs en inline-style via l'objet C.
+   Pour éviter de réécrire 12k lignes, on inverse l'image rendue
+   et on contre-inverse les images/vidéos pour qu'elles restent
+   normales. Approche utilisée dans de nombreuses extensions de
+   dark mode (Dark Reader, etc.).
+   ═══════════════════════════════════════════════════ */
+html.byer-dark {
+  background: #0a0a0a;
+}
+
+html.byer-dark body {
+  filter: invert(1) hue-rotate(180deg);
+  background: #0a0a0a;
+}
+
+/* Contre-inverse les images, vidéos et iframes pour qu'elles
+   conservent leurs couleurs naturelles. */
+html.byer-dark img,
+html.byer-dark video,
+html.byer-dark iframe,
+html.byer-dark canvas,
+html.byer-dark [data-no-invert],
+html.byer-dark .face-avatar {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* Loader (avant React mount) */
+html.byer-dark #byer-loading {
+  background: #0a0a0a;
 }

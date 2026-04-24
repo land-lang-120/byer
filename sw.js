@@ -1,34 +1,27 @@
 /* ═══════════════════════════════════════════════════
-   Byer — Service Worker
-   Cache-first strategy for offline support
+   Byer — Service Worker v17
+   Network-first pour HTML/JS/CSS (bundle.js, index, css)
+   Cache-first pour les libs et icônes (rarement modifiés)
    ═══════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'byer-v1';
+const CACHE_NAME = 'byer-v19';
 
+// Chemins RELATIFS au scope du SW (compatible GitHub Pages sous-dossier /byer/)
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/css/global.css',
-  '/js/config.js',
-  '/js/data.js',
-  '/js/styles.js',
-  '/js/components.js',
-  '/js/auth.js',
-  '/js/home.js',
-  '/js/detail.js',
-  '/js/gallery.js',
-  '/js/trips.js',
-  '/js/messages.js',
-  '/js/profile.js',
-  '/js/rent.js',
-  '/js/sheets.js',
-  '/js/app.js',
-  '/js/main.js',
-  '/icons/icon-192.svg',
-  '/icons/icon-512.svg',
+  './',
+  './index.html',
+  './manifest.json',
+  './css/global.css',
+  './bundle.js',
+  './lib/react.min.js',
+  './lib/react-dom.min.js',
+  './lib/babel.min.js',
+  './lib/supabase.min.js',
+  './icons/icon-192.svg',
+  './icons/icon-512.svg',
 ];
 
+/* ── INSTALL : pré-cache initial ── */
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
@@ -36,17 +29,54 @@ self.addEventListener('install', (e) => {
   self.skipWaiting();
 });
 
+/* ── ACTIVATE : nettoyage des anciens caches ── */
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
+/* ── FETCH : stratégie hybride ──
+   - HTML / JS / CSS : NETWORK-FIRST (tente le réseau, fallback cache si offline)
+     → garantit que le dernier code est servi quand l'utilisateur est en ligne.
+   - Autres assets    : CACHE-FIRST (rapide, fallback réseau si absent)
+*/
 self.addEventListener('fetch', (e) => {
-  e.respondWith(
-    caches.match(e.request).then((cached) => cached || fetch(e.request))
-  );
+  const req = e.request;
+  if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+  const isAppShell = /\.(html|js|css)$/i.test(url.pathname)
+    || url.pathname === '/'
+    || url.pathname === '/index.html';
+
+  if (isAppShell) {
+    // Network-first
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
+          // Met à jour le cache avec la version fraîche
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(()=>{});
+          return res;
+        })
+        .catch(() => caches.match(req).then((r) => r || caches.match('./index.html')))
+    );
+  } else {
+    // Cache-first pour les libs, icônes, images
+    e.respondWith(
+      caches.match(req).then((cached) => cached || fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(()=>{});
+        return res;
+      }))
+    );
+  }
+});
+
+/* ── MESSAGE : permet de forcer un skipWaiting depuis l'app ── */
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });

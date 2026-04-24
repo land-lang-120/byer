@@ -1,5 +1,81 @@
 /* Byer — Mock Data */
 
+/* ─── LOCAL STORAGE HELPER ──────────────────────── */
+// Wrapper safe : fail-silent si quotaExceeded ou localStorage indisponible (mode privé Safari)
+const byerStorage = {
+  get(key, fallback = null) {
+    try {
+      const raw = localStorage.getItem(`byer.${key}`);
+      return raw === null ? fallback : JSON.parse(raw);
+    } catch (e) {
+      return fallback;
+    }
+  },
+  set(key, value) {
+    try {
+      localStorage.setItem(`byer.${key}`, JSON.stringify(value));
+      return true;
+    } catch (e) {
+      return false; // Quota/disabled
+    }
+  },
+  remove(key) {
+    try { localStorage.removeItem(`byer.${key}`); } catch (e) {}
+  },
+};
+
+/* ─── DURATION HELPERS ─────────────────────────── */
+// Toggle options par segment
+const DURATION_OPTS = {
+  property: [
+    { id:"night", label:"Nuit" },
+    { id:"month", label:"Mois" },
+  ],
+  vehicle: [
+    { id:"day",   label:"Jour"    },
+    { id:"week",  label:"Semaine" },
+    { id:"month", label:"Mois"    },
+  ],
+};
+
+// Calcule prix + unité pour un item selon la durée sélectionnée
+function priceFor(item, dur) {
+  if (item.type === "vehicle") {
+    const day = item.nightPrice; // base journalière (champ commun)
+    if (dur === "week")  return { price: Math.round(day * 6),  unit:"/sem",   label:"semaine" };
+    if (dur === "month") return { price: Math.round(day * 22), unit:"/mois",  label:"mois"    };
+    return { price: day, unit:"/jour", label:"jour" };
+  }
+  // property
+  if (dur === "month" && item.monthPrice) return { price: item.monthPrice, unit:"/mois", label:"mois" };
+  return { price: item.nightPrice, unit:"/nuit", label:"nuit" };
+}
+
+// Coordonnées GPS approximatives des villes (pour mini-carte OSM)
+const CITY_COORDS = {
+  "Douala":    { lat: 4.0511, lon: 9.7679  },
+  "Yaoundé":   { lat: 3.8480, lon: 11.5020 },
+  "Kribi":     { lat: 2.9400, lon: 9.9100  },
+  "Limbé":     { lat: 4.0186, lon: 9.2031  },
+  "Bafoussam": { lat: 5.4781, lon: 10.4181 },
+  "Bamenda":   { lat: 5.9631, lon: 10.1591 },
+  "Garoua":    { lat: 9.3017, lon: 13.3921 },
+  "Maroua":    { lat: 10.595, lon: 14.3247 },
+};
+
+// Convertit une durée entre segments (utilisé au switch property↔vehicle)
+function migrateDuration(prevDur, newSegment) {
+  if (newSegment === "vehicle") {
+    if (prevDur === "night") return "day";
+    if (prevDur === "month") return "month";
+    return "day";
+  }
+  // property
+  if (prevDur === "day" || prevDur === "week") return "night";
+  if (prevDur === "month") return "month";
+  return "night";
+}
+
 /* ─── PROPERTY TYPE CHIPS ──────────────────────── */
 const PROP_TYPES = [
   { id:"all",        label:"Tous",       icon:"grid"    },
@@ -130,11 +206,11 @@ const GALLERY = {
   10: {
     labels:["Face avant","Profil droit","Intérieur","Tableau de bord","Coffre"],
     imgs:[
-      "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800&q=80", // land cruiser face
-      "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?w=800&q=80", // suv profil
-      "https://images.unsplash.com/photo-1542362567-b07e54358753?w=800&q=80",   // intérieur 4x4
-      "https://images.unsplash.com/photo-1617788138017-80ad40651399?w=800&q=80", // tableau de bord
-      "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80",   // coffre grand
+      "https://images.unsplash.com/photo-1594502184342-2e12f877aa17?w=800&q=80", // 4x4 land cruiser face
+      "https://images.unsplash.com/photo-1606664515524-ed2f786a0bd6?w=800&q=80", // suv profil 4x4
+      "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=800&q=80", // intérieur 4x4 cuir
+      "https://images.unsplash.com/photo-1493238792000-8113da705763?w=800&q=80", // tableau de bord moderne
+      "https://images.unsplash.com/photo-1502877338535-766e1452684a?w=800&q=80", // coffre suv ouvert
     ],
   },
 
@@ -196,9 +272,15 @@ const PROPERTIES = [
    3 vehicle listings
 ─────────────────────────────────────────────────── */
 const VEHICLES = [
-  { id:10, type:"vehicle", title:"Toyota Land Cruiser 2022", city:"Douala",    zone:"Akwa",           nightPrice:55000, monthPrice:null, rating:4.95, reviews:61, superhost:true,  seats:7,  fuel:"Essence", trans:"Automatique", amenities:["4×4","GPS","Climatisé","Chauffeur optionnel"] },
-  { id:11, type:"vehicle", title:"Hyundai Tucson 2023",      city:"Yaoundé",   zone:"Centre-ville",   nightPrice:40000, monthPrice:null, rating:4.88, reviews:44, superhost:false, seats:5,  fuel:"Essence", trans:"Automatique", amenities:["GPS","Climatisé","Bluetooth"] },
-  { id:12, type:"vehicle", title:"Mercedes Classe E 2021",   city:"Douala",    zone:"Bonapriso",      nightPrice:85000, monthPrice:null, rating:5.0,  reviews:29, superhost:true,  seats:5,  fuel:"Diesel",  trans:"Automatique", amenities:["Luxe","Chauffeur","Wifi embarqué"] },
+  { id:10, type:"vehicle", title:"Toyota Land Cruiser 2022", city:"Douala",    zone:"Akwa",           nightPrice:55000, monthPrice:1100000, rating:4.95, reviews:61, superhost:true,  seats:7,  fuel:"Essence", trans:"Automatique", consumption:11.5, amenities:["4×4","GPS","Climatisé","Chauffeur optionnel"] },
+  { id:11, type:"vehicle", title:"Hyundai Tucson 2023",      city:"Yaoundé",   zone:"Centre-ville",   nightPrice:40000, monthPrice:800000,  rating:4.88, reviews:44, superhost:false, seats:5,  fuel:"Essence", trans:"Automatique", consumption:8.2,  amenities:["GPS","Climatisé","Bluetooth"] },
+  { id:12, type:"vehicle", title:"Mercedes Classe E 2021",   city:"Douala",    zone:"Bonapriso",      nightPrice:85000, monthPrice:1700000, rating:5.0,  reviews:29, superhost:true,  seats:5,  fuel:"Diesel",  trans:"Automatique", consumption:6.5,  amenities:["Luxe","Chauffeur","Wifi embarqué"] },
+  { id:13, type:"vehicle", title:"Toyota Yaris 2022",        city:"Yaoundé",   zone:"Mvan",           nightPrice:18000, monthPrice:360000,  rating:4.6,  reviews:38, superhost:false, seats:5,  fuel:"Essence", trans:"Manuelle",    consumption:5.4,  amenities:["Climatisé","Bluetooth","USB"] },
+  { id:14, type:"vehicle", title:"Kia Picanto 2023",         city:"Douala",    zone:"Bonamoussadi",   nightPrice:15000, monthPrice:300000,  rating:4.5,  reviews:52, superhost:false, seats:4,  fuel:"Essence", trans:"Manuelle",    consumption:4.9,  amenities:["Climatisé","Économique","Bluetooth"] },
+  { id:15, type:"vehicle", title:"Nissan Patrol 2021",       city:"Kribi",     zone:"Bord de mer",    nightPrice:65000, monthPrice:1300000, rating:4.85, reviews:18, superhost:true,  seats:7,  fuel:"Diesel",  trans:"Automatique", consumption:10.8, amenities:["4×4","GPS","Climatisé","Tout-terrain"] },
+  { id:16, type:"vehicle", title:"Renault Duster 2022",      city:"Bafoussam", zone:"Centre",         nightPrice:28000, monthPrice:560000,  rating:4.7,  reviews:24, superhost:false, seats:5,  fuel:"Diesel",  trans:"Manuelle",    consumption:6.3,  amenities:["SUV compact","GPS","Climatisé"] },
+  { id:17, type:"vehicle", title:"Ford Ranger 2023",         city:"Limbé",     zone:"Down Beach",     nightPrice:50000, monthPrice:1000000, rating:4.9,  reviews:14, superhost:true,  seats:5,  fuel:"Diesel",  trans:"Automatique", consumption:9.1,  amenities:["Pickup","4×4","Climatisé","Caméra recul"] },
+  { id:18, type:"vehicle", title:"BMW Série 3 2022",         city:"Douala",    zone:"Bonanjo",        nightPrice:75000, monthPrice:1500000, rating:4.95, reviews:21, superhost:true,  seats:5,  fuel:"Essence", trans:"Automatique", consumption:7.2,  amenities:["Premium","Cuir","Wifi embarqué","Caméra 360°"] },
 ];
 
 /* ─── RATINGS DÉTAILLÉES ───────────────────────────
@@ -513,4 +595,272 @@ const STATUS_CONFIG = {
   active:   { label:"En cours",   bg:"#F0FDF4", color:"#16A34A", dot:"#16A34A" },
   upcoming: { label:"À venir",    bg:"#EFF6FF", color:"#2563EB", dot:"#2563EB" },
   past:     { label:"Terminé",    bg:C.bg,      color:C.mid,     dot:C.light   },
+};
+
+/* ─── STAR LABELS ─────────────────────────────────── */
+const STAR_LABELS = { 1:"Mauvais", 2:"Moyen", 3:"Bien", 4:"Très bien", 5:"Excellent" };
+
+/* ═══════════════════════════════════════════════════
+   TECHNICIANS — Mock Data
+   ═══════════════════════════════════════════════════ */
+const TECH_CATEGORIES = [
+  { id:"plomberie",    label:"Plomberie",    icon:"🔧", color:"#2563EB" },
+  { id:"electronique", label:"Électronique", icon:"⚡", color:"#F59E0B" },
+  { id:"menuiserie",   label:"Menuiserie",   icon:"🪚", color:"#16A34A" },
+  { id:"mecanique",    label:"Mécanique",    icon:"🔩", color:"#EF4444" },
+  { id:"peinture",     label:"Peinture",     icon:"🎨", color:"#8B5CF6" },
+  { id:"climatisation",label:"Climatisation",icon:"❄️", color:"#0EA5E9" },
+];
+
+const TECHNICIANS = [
+  { id:"T1", name:"Njoh Bernard",    category:"plomberie",    phone:"+237 6 90 12 34 56", rating:4.9, jobs:87,  photo:"https://i.pravatar.cc/100?u=njohb",    city:"Douala",   zone:"Bonamoussadi", available:true,  verified:true,  about:"Plombier professionnel avec 12 ans d'expérience. Interventions rapides et propres." },
+  { id:"T2", name:"Tamba Paul",      category:"electronique", phone:"+237 6 77 88 99 00", rating:4.8, jobs:124, photo:"https://i.pravatar.cc/100?u=tambap",    city:"Douala",   zone:"Akwa",         available:true,  verified:true,  about:"Électricien certifié, installations neuves et dépannage. Disponible 7j/7." },
+  { id:"T3", name:"Fotso Emmanuel",  category:"menuiserie",   phone:"+237 6 55 44 33 22", rating:4.7, jobs:63,  photo:"https://i.pravatar.cc/100?u=fotsoe",   city:"Yaoundé",  zone:"Bastos",       available:false, verified:true,  about:"Menuisier ébéniste, fabrication sur mesure et réparations." },
+  { id:"T4", name:"Mbarga Charles",  category:"mecanique",    phone:"+237 6 99 88 77 66", rating:4.6, jobs:201, photo:"https://i.pravatar.cc/100?u=mbargac",   city:"Douala",   zone:"PK12",         available:true,  verified:true,  about:"Mécanicien auto toutes marques. Diagnostic et réparations rapides." },
+  { id:"T5", name:"Ateba Simon",     category:"peinture",     phone:"+237 6 11 22 33 44", rating:4.9, jobs:45,  photo:"https://i.pravatar.cc/100?u=atebas",   city:"Yaoundé",  zone:"Mvan",         available:true,  verified:false, about:"Peintre décorateur, finitions impeccables. Devis gratuit." },
+  { id:"T6", name:"Ngono Michel",    category:"climatisation",phone:"+237 6 66 55 44 33", rating:4.8, jobs:92,  photo:"https://i.pravatar.cc/100?u=ngonom",   city:"Douala",   zone:"Bonapriso",    available:true,  verified:true,  about:"Spécialiste climatisation et ventilation. Installation et maintenance." },
+];
+
+/* Owner's assigned technicians (by owner id) */
+const OWNER_TECHNICIANS = {
+  "Ekwalla M.": ["T1","T2","T6"],
+  "Fouda R.":   ["T3","T5"],
+};
+
+/* ═══════════════════════════════════════════════════
+   CONCIERGES & AGENTS IMMOBILIERS — Mock Data
+   ═══════════════════════════════════════════════════ */
+const PRO_CATEGORIES = [
+  { id:"conciergerie",   label:"Conciergerie",         icon:"🛎️", color:"#9333EA",
+    desc:"Gestion locative, accueil voyageurs, ménage, check-in/out." },
+  { id:"agent_immo",     label:"Agent immobilier",     icon:"🏘️", color:"#0EA5E9",
+    desc:"Recherche, négociation, visites, mise en location ou vente." },
+  { id:"gestion_loc",    label:"Gestion locative",     icon:"📋", color:"#F59E0B",
+    desc:"Encaissement loyers, suivi techniques, états des lieux." },
+];
+
+const PROFESSIONALS = [
+  // Conciergeries
+  { id:"P1", name:"Mbella Carine",       category:"conciergerie", phone:"+237 6 70 11 22 33", rating:4.9, jobs:142, photo:"https://i.pravatar.cc/100?u=mbellac",   city:"Douala",   zone:"Bonanjo",      available:true,  verified:true,
+    company:"Akwa Concierge", commission:"15% des loyers", languages:["Français","Anglais"],
+    services:["Check-in 24/7","Ménage premium","Linge","Accueil"], experience:"8 ans",
+    about:"Conciergerie haut de gamme spécialisée dans la location courte durée à Douala. Disponibilité 24/7." },
+  { id:"P2", name:"Kana Sandrine",       category:"conciergerie", phone:"+237 6 99 44 55 66", rating:4.8, jobs:88,  photo:"https://i.pravatar.cc/100?u=kanas",     city:"Yaoundé",  zone:"Bastos",       available:true,  verified:true,
+    company:"Bastos Stay", commission:"12% des loyers", languages:["Français","Anglais","Allemand"],
+    services:["Accueil voyageurs","Ménage","Maintenance légère"], experience:"5 ans",
+    about:"Service de conciergerie pour particuliers et professionnels. Réactivité garantie." },
+  { id:"P3", name:"Eyenga Patrick",      category:"conciergerie", phone:"+237 6 55 66 77 88", rating:4.7, jobs:65,  photo:"https://i.pravatar.cc/100?u=eyengap",   city:"Kribi",    zone:"Bord de mer",  available:true,  verified:false,
+    company:"Kribi Beach Concierge", commission:"18% des loyers", languages:["Français","Anglais"],
+    services:["Check-in plage","Excursions","Ménage","Transferts"], experience:"3 ans",
+    about:"Conciergerie balnéaire — idéal pour villas et résidences secondaires en bord de mer." },
+
+  // Agents immobiliers
+  { id:"P4", name:"Tchoumi Gérard",      category:"agent_immo",   phone:"+237 6 22 33 44 55", rating:4.9, jobs:312, photo:"https://i.pravatar.cc/100?u=tchoumig",  city:"Douala",   zone:"Bonapriso",    available:true,  verified:true,
+    company:"Cameroon Premium Realty", commission:"1 mois (location) · 5% (vente)", languages:["Français","Anglais"],
+    services:["Visites","Négociation","Mise en location","Vente"], experience:"15 ans",
+    about:"Agent immobilier confirmé, portefeuille premium sur Douala. Réseau d'investisseurs." },
+  { id:"P5", name:"Nguini Sylvie",       category:"agent_immo",   phone:"+237 6 88 77 66 55", rating:4.85,jobs:178, photo:"https://i.pravatar.cc/100?u=nguinis",   city:"Yaoundé",  zone:"Centre-ville", available:true,  verified:true,
+    company:"Yaoundé Habitat", commission:"1 mois (location)", languages:["Français"],
+    services:["Recherche locataires","Visites","Contrats","États des lieux"], experience:"9 ans",
+    about:"Agence familiale, suivi personnalisé des bailleurs et locataires." },
+  { id:"P6", name:"Talla Bertrand",      category:"agent_immo",   phone:"+237 6 44 55 66 77", rating:4.6, jobs:96,  photo:"https://i.pravatar.cc/100?u=tallab",    city:"Bafoussam",zone:"Centre",       available:false, verified:true,
+    company:"Ouest Immo Conseil", commission:"1.5 mois (location) · 6% (vente)", languages:["Français"],
+    services:["Vente","Location","Estimation","Conseil juridique"], experience:"11 ans",
+    about:"Spécialiste de la région de l'Ouest, expertise en vente et conseil patrimonial." },
+
+  // Gestion locative
+  { id:"P7", name:"Mbarga Lucie",        category:"gestion_loc",  phone:"+237 6 11 22 99 88", rating:4.85,jobs:234, photo:"https://i.pravatar.cc/100?u=mbargal",   city:"Douala",   zone:"Akwa",         available:true,  verified:true,
+    company:"Loyer & Co", commission:"8% des loyers", languages:["Français","Anglais"],
+    services:["Encaissement loyers","Suivi techniques","Reporting mensuel"], experience:"7 ans",
+    about:"Gestion locative complète pour bailleurs absents ou multi-propriétaires." },
+  { id:"P8", name:"Onana Jean-Marc",     category:"gestion_loc",  phone:"+237 6 33 22 11 00", rating:4.7, jobs:156, photo:"https://i.pravatar.cc/100?u=onanajm",   city:"Yaoundé",  zone:"Mvan",         available:true,  verified:true,
+    company:"Yaoundé Gestion+", commission:"7% des loyers", languages:["Français"],
+    services:["Encaissement","Relances","États des lieux","Petites réparations"], experience:"6 ans",
+    about:"Gestion locative dédiée aux particuliers et petites SCI." },
+];
+
+/* Owner's assigned professionals (concierges/agents) — by owner id */
+const OWNER_PROFESSIONALS = {
+  "Ekwalla M.": ["P1","P4","P7"],
+  "Fouda R.":   ["P5"],
+};
+
+/* ═══════════════════════════════════════════════════
+   BUILDING DELEGATIONS (Many-to-Many)
+   Une entité (immeuble/villa/hôtel) peut être gérée par
+   un ou plusieurs agents/concierges, et un pro peut gérer
+   plusieurs entités. Mapping : buildingId → [proId, ...]
+   ═══════════════════════════════════════════════════ */
+const BUILDING_DELEGATIONS_INITIAL = {
+  "B1": ["P4","P7"],   // Résidence Les Palmiers : agent immo + gestion locative
+  "B2": ["P1"],         // Villa Akwa Prestige : conciergerie
+  "B3": ["P3"],         // Hôtel La Falaise : conciergerie de Kribi (à corriger côté UI si non pertinent)
+  "B4": ["P5"],         // Penthouse Bastos : agent immo Yaoundé
+};
+
+/* Helpers : lecture/écriture des délégations en localStorage */
+const delegations = {
+  getAll() {
+    return byerStorage.get("buildingDelegations", BUILDING_DELEGATIONS_INITIAL);
+  },
+  setAll(map) {
+    byerStorage.set("buildingDelegations", map);
+  },
+  /* Pros qui gèrent ce bâtiment */
+  forBuilding(buildingId) {
+    const map = this.getAll();
+    return map[buildingId] || [];
+  },
+  /* Bâtiments gérés par ce pro (toutes propriétés confondues) */
+  forPro(proId) {
+    const map = this.getAll();
+    const ids = [];
+    Object.entries(map).forEach(([bId, proIds]) => {
+      if (proIds.includes(proId)) ids.push(bId);
+    });
+    return ids;
+  },
+  /* Ajouter un pro à un bâtiment */
+  add(buildingId, proId) {
+    const map = this.getAll();
+    const list = map[buildingId] || [];
+    if (!list.includes(proId)) list.push(proId);
+    map[buildingId] = list;
+    this.setAll(map);
+  },
+  /* Retirer un pro d'un bâtiment */
+  remove(buildingId, proId) {
+    const map = this.getAll();
+    const list = map[buildingId] || [];
+    map[buildingId] = list.filter(id => id !== proId);
+    this.setAll(map);
+  },
+};
+
+/* ═══════════════════════════════════════════════════
+   USER-REGISTERED PROFILES
+   Profils ajoutés par l'utilisateur via "Devenir technicien"
+   ou "Devenir concierge/agent". Persistés en localStorage.
+   ═══════════════════════════════════════════════════ */
+const userProfiles = {
+  /* Techniciens créés par l'utilisateur */
+  getTechs() { return byerStorage.get("userTechs", []); },
+  setTechs(arr) { byerStorage.set("userTechs", arr); },
+  addTech(tech) {
+    const arr = this.getTechs();
+    arr.unshift(tech);
+    this.setTechs(arr);
+  },
+  /* Pros (concierges/agents) créés par l'utilisateur */
+  getPros() { return byerStorage.get("userPros", []); },
+  setPros(arr) { byerStorage.set("userPros", arr); },
+  addPro(pro) {
+    const arr = this.getPros();
+    arr.unshift(pro);
+    this.setPros(arr);
+  },
+  /* Vue combinée : base + ajouts utilisateur */
+  allTechs() { return [...this.getTechs(), ...TECHNICIANS]; },
+  allPros()  { return [...this.getPros(),  ...PROFESSIONALS]; },
+};
+
+/* ═══════════════════════════════════════════════════
+   BOOST — Enchères Découverte Mock Data
+   ═══════════════════════════════════════════════════ */
+const BOOST_CONFIG = {
+  minBid:     1000,
+  maxBid:     100000,
+  step:       500,
+  currency:   "FCFA",
+  periodLabel:"par jour",
+};
+
+const BOOST_BIDS = [
+  { id:"BO1", propertyId:1,  ownerName:"Atangana B.",  amount:15000, date:"22 mars 2025", active:true },
+  { id:"BO2", propertyId:3,  ownerName:"Fouda R.",     amount:25000, date:"21 mars 2025", active:true },
+  { id:"BO3", propertyId:7,  ownerName:"Fouda R.",     amount:10000, date:"20 mars 2025", active:true },
+  { id:"BO4", propertyId:2,  ownerName:"Ekwalla M.",   amount:5000,  date:"19 mars 2025", active:false },
+  { id:"BO5", propertyId:13, ownerName:"Ekwalla M.",   amount:8000,  date:"22 mars 2025", active:true },
+];
+
+/* ═══════════════════════════════════════════════════
+   PAYWALL — Location au Mois Mock Data
+   ═══════════════════════════════════════════════════ */
+const PAYWALL_TIERS = [
+  { id:"basic",   label:"Découverte",  price:3000,  visits:10, duration:null,     favorites:0,  favDuration:null,  color:"#F59E0B", desc:"Accédez à 10 visites d'annonces location mensuelle." },
+  { id:"standard",label:"Standard",    price:5000,  visits:20, duration:null,     favorites:0,  favDuration:null,  color:"#2563EB", desc:"20 visites d'annonces pour trouver votre logement idéal." },
+  { id:"premium", label:"Premium",     price:10000, visits:null,duration:"2h",    favorites:10, favDuration:"72h", color:C.coral,   desc:"Accès illimité pendant 2h + 10 favoris consultables 72h." },
+];
+
+/* Track user's paywall state */
+const PAYWALL_STATE = {
+  active:       false,
+  tier:         null,
+  visitsLeft:   0,
+  expiresAt:    null,
+  favorites:    [],
+  favExpiresAt: null,
+};
+
+/* ═══════════════════════════════════════════════════
+   PARRAINAGE & POINTS — Programme de fidélité
+   Rythme : 10 pts par filleul → 100 pts pour 10 amis invités.
+   Pour débloquer un Forfait Premium gratuit (1 000 pts), il faut
+   100 filleuls. Le programme reste exigeant pour rester rentable.
+   ═══════════════════════════════════════════════════ */
+const POINTS_CONFIG = {
+  perReferral:   10,    // pts gagnés par filleul qui s'inscrit avec mon code
+  perBooking:    2,     // pts gagnés à chaque réservation perso
+  ratio:         15,    // valeur indicative : 1 pt ≈ 15 FCFA de réduction
+};
+
+/* Paliers de niveau (basés sur le total cumulé de points) */
+const POINTS_TIERS = {
+  silver: 100,   // Argent à partir de 100 pts (= 10 filleuls)
+  gold:   500,   // Or à partir de 500 pts (= 50 filleuls)
+};
+
+/* Catalogue d'échange : ce que les points permettent de débloquer.
+   Calibré pour qu'un parrainage actif (~30 filleuls = 300 pts) débloque
+   un forfait Découverte gratuit. */
+const POINTS_REWARDS = [
+  { id:"boost_disc1",  type:"boost",   cost:50,   label:"-1 000 F sur Boost",          icon:"🚀", value:1000  },
+  { id:"boost_disc2",  type:"boost",   cost:200,  label:"-5 000 F sur Boost",          icon:"🚀", value:5000  },
+  { id:"forfait_disc", type:"paywall", cost:100,  label:"-50 % sur forfait Découverte",icon:"🎟️", value:1500  },
+  { id:"forfait_decv", type:"paywall", cost:300,  label:"Forfait Découverte gratuit",  icon:"🎁", value:3000  },
+  { id:"forfait_std",  type:"paywall", cost:500,  label:"Forfait Standard gratuit",    icon:"🎁", value:5000  },
+  { id:"forfait_prm",  type:"paywall", cost:1000, label:"Forfait Premium gratuit",     icon:"💎", value:10000 },
+];
+
+/* Helper: gestion des points (lecture/écriture localStorage) */
+const pointsManager = {
+  get()         { return byerStorage.get("rewardsPoints", 25); },
+  set(n)        { byerStorage.set("rewardsPoints", Math.max(0, n|0)); },
+  add(n)        { const cur = this.get(); this.set(cur + (n|0)); return cur + (n|0); },
+  redeem(cost)  {
+    const cur = this.get();
+    if (cur < cost) return false;
+    this.set(cur - cost);
+    return true;
+  },
+  /* Bons générés par échange (= coupons en attente d'application) */
+  getCoupons()  { return byerStorage.get("pointsCoupons", []); },
+  addCoupon(c)  {
+    const arr = this.getCoupons();
+    arr.unshift({ ...c, id: "CP"+Date.now(), createdAt: Date.now() });
+    byerStorage.set("pointsCoupons", arr);
+    return arr;
+  },
+  consumeCoupon(id) {
+    const arr = this.getCoupons().filter(c => c.id !== id);
+    byerStorage.set("pointsCoupons", arr);
+  },
+  /* Compteur filleuls (pour stats de la page parrainage) */
+  getReferrals()  { return byerStorage.get("referralCount", 0); },
+  addReferral()   {
+    const n = this.getReferrals() + 1;
+    byerStorage.set("referralCount", n);
+    this.add(POINTS_CONFIG.perReferral);
+    return n;
+  },
 };

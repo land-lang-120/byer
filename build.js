@@ -7,6 +7,7 @@ const path = require('path');
 
 const FILES = [
   'js/config.js',
+  'js/supabase-client.js',
   'js/data.js',
   'js/styles.js',
   'js/components.js',
@@ -20,6 +21,18 @@ const FILES = [
   'js/rent.js',
   'js/sheets.js',
   'js/qrcode.js',
+  'js/owner-dashboard.js',
+  'js/technicians.js',
+  'js/professionals.js',
+  'js/boost.js',
+  'js/paywall.js',
+  'js/notifications.js',
+  'js/publish.js',
+  'js/settings.js',
+  'js/edit-profile.js',
+  'js/booking.js',
+  'js/history.js',
+  'js/legal.js',
   'js/app.js',
   'js/main.js',
 ];

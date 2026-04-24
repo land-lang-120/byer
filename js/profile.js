@@ -1,37 +1,134 @@
 /* Byer — Profile Screens */
 
 /* ─── PROFILE ───────────────────────────────────── */
-function ProfileScreen({ onOpenRent }) {
+function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs, onOpenPros, onOpenPublish, onOpenSettings, onOpenEditProfile, onOpenReviews, onOpenHistory }) {
   const urgentCount = LOYERS_LOCATAIRE.filter(l => l.statut==="en_attente" && l.rappelActif).length
                     + LOYERS_BAILLEUR.filter(l  => l.statut==="en_attente" && l.joursRestants<=7).length;
 
+  /* Le rôle est désormais lifté dans ByerApp et propagé via props (sync entre toutes les pages). */
+
+  const [inviteOpen, setInviteOpen]       = useState(false);
+  const [rewardsOpen, setRewardsOpen]     = useState(false);
+  const [toast, setToast]                 = useState("");
+
+  // Points dynamiques (persistés via byerStorage)
+  const [rewardsPoints, setRewardsPoints] = useState(() => pointsManager.get());
+  const [referralCount, setReferralCount] = useState(() => pointsManager.getReferrals());
+  const [coupons, setCoupons]             = useState(() => pointsManager.getCoupons());
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 2200);
+  };
+
+  // Programme parrainage : code de référence stable
+  const referralCode = (USER.name || "BYER").replace(/\s+/g, "").toUpperCase().slice(0, 6) + "24";
+  const referralLink = `https://byer.cm/r/${referralCode}`;
+
+  const handleShareInvite = async () => {
+    const shareData = {
+      title: "Rejoins-moi sur Byer",
+      text: `Utilise mon code ${referralCode} : on gagne tous les deux ${POINTS_CONFIG.perReferral} pts à échanger contre des forfaits Byer gratuits.`,
+      url: referralLink,
+    };
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(`${shareData.text}\n${shareData.url}`);
+        showToast("Lien copié dans le presse-papiers");
+      } else {
+        alert(`${shareData.text}\n\n${shareData.url}`);
+      }
+    } catch (e) { /* user cancelled */ }
+  };
+
+  // Échange de points contre une récompense
+  const handleRedeem = (reward) => {
+    if (rewardsPoints < reward.cost) {
+      showToast(`Il vous manque ${reward.cost - rewardsPoints} pts`);
+      return;
+    }
+    pointsManager.redeem(reward.cost);
+    pointsManager.addCoupon({ rewardId: reward.id, label: reward.label, type: reward.type, value: reward.value });
+    setRewardsPoints(pointsManager.get());
+    setCoupons(pointsManager.getCoupons());
+    showToast(`Bon "${reward.label}" généré !`);
+  };
+
+  // Niveau (tier) basé sur les points
+  const rewardsTier   = rewardsPoints >= POINTS_TIERS.gold ? "Or"
+                      : rewardsPoints >= POINTS_TIERS.silver ? "Argent"
+                      : "Bronze";
+  const tierColor     = rewardsTier === "Or" ? "#F59E0B" : rewardsTier === "Argent" ? "#94A3B8" : "#B45309";
+  const tierBg        = rewardsTier === "Or" ? "#FEF3C7" : rewardsTier === "Argent" ? "#F1F5F9" : "#FEF3C7";
+
   const rows=[
-    {icon:"user",    l:"Informations personnelles",  action:null},
-    {icon:"trips",   l:"Historique des réservations",action:null},
-    {icon:"message", l:"Avis reçus",                  action:null},
-    {icon:"home",    l:"Mes annonces",                action:null},
-    {icon:"car",     l:"Mes véhicules",               action:null},
-    {icon:"gear",    l:"Paramètres du compte",        action:null},
+    {icon:"user",    l:"Informations personnelles",  action:onOpenEditProfile},
+    {icon:"trips",   l:"Historique des réservations",action:onOpenHistory},
+    {icon:"message", l:"Avis reçus",                  action:onOpenReviews},
+    {icon:"home",    l:"Publier une annonce",           action:onOpenPublish},
+    {icon:"car",     l:"Mes véhicules",               action:() => onOpenPublish?.("vehicle")},
+    {icon:"gear",    l:"Paramètres du compte",        action:onOpenSettings},
   ];
   return (
     <div>
       <div style={S.pageHead}><p style={S.pageTitle}>Mon profil</p></div>
 
       {/* Avatar card */}
-      <div style={{margin:"0 16px 16px",background:C.white,borderRadius:16,padding:"18px 16px",display:"flex",alignItems:"center",gap:14,boxShadow:`0 1px 8px rgba(0,0,0,.05)`}}>
+      <div style={{margin:"0 16px 12px",background:C.white,borderRadius:16,padding:"18px 16px",display:"flex",alignItems:"center",gap:14,boxShadow:`0 1px 8px rgba(0,0,0,.05)`}}>
         <div style={{position:"relative"}}>
           <FaceAvatar photo={USER.photo} avatar={USER.avatar} bg={USER.bg} size={56} radius={28}/>
-          <div style={{position:"absolute",bottom:0,right:0,width:20,height:20,borderRadius:10,background:C.coral,border:"2px solid white",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+          <div onClick={onOpenEditProfile} style={{position:"absolute",bottom:0,right:0,width:20,height:20,borderRadius:10,background:C.coral,border:"2px solid white",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
             <svg width="10" height="10" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24">
               <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
               <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
             </svg>
           </div>
         </div>
-        <div>
+        <div style={{flex:1,minWidth:0}}>
           <p style={{fontSize:16,fontWeight:700,color:C.black}}>{USER.name}</p>
           <p style={{fontSize:12,color:C.light,marginTop:2}}>{USER.city} · Membre {USER.since}</p>
         </div>
+        <span style={{
+          fontSize:10,fontWeight:700,padding:"4px 9px",borderRadius:10,
+          background:tierBg,color:tierColor,
+          fontFamily:"'DM Sans',sans-serif",
+        }}>{rewardsTier}</span>
+      </div>
+
+      {/* Invite friends + Rewards : 2 cards row */}
+      <div style={{margin:"0 16px 14px",display:"flex",gap:10}}>
+        <button
+          onClick={() => setInviteOpen(true)}
+          style={{
+            flex:1,background:C.white,borderRadius:14,padding:"14px 12px",
+            border:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",
+            fontFamily:"'DM Sans',sans-serif",
+            display:"flex",flexDirection:"column",gap:6,
+          }}
+        >
+          <div style={{width:36,height:36,borderRadius:18,background:"#EFF6FF",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <span style={{fontSize:18}}>🎁</span>
+          </div>
+          <p style={{fontSize:13,fontWeight:700,color:C.black}}>Inviter des amis</p>
+          <p style={{fontSize:11,color:C.mid,lineHeight:1.4}}>+{POINTS_CONFIG.perReferral} pts par filleul</p>
+        </button>
+        <button
+          onClick={() => setRewardsOpen(true)}
+          style={{
+            flex:1,background:C.white,borderRadius:14,padding:"14px 12px",
+            border:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",
+            fontFamily:"'DM Sans',sans-serif",
+            display:"flex",flexDirection:"column",gap:6,
+          }}
+        >
+          <div style={{width:36,height:36,borderRadius:18,background:tierBg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <span style={{fontSize:18}}>⭐</span>
+          </div>
+          <p style={{fontSize:13,fontWeight:700,color:C.black}}>Récompenses</p>
+          <p style={{fontSize:11,color:C.mid,lineHeight:1.4}}>{rewardsPoints} pts · Niveau {rewardsTier}</p>
+        </button>
       </div>
 
       {/* Gestion des loyers — CTA card */}
@@ -57,16 +154,265 @@ function ProfileScreen({ onOpenRent }) {
         </div>
       </button>
 
+      {/* Dashboard bailleur — CTA card */}
+      <button style={{...S.rentCta,marginBottom:8}} onClick={onOpenDashboard}>
+        <div style={S.rentCtaLeft}>
+          <div style={{...S.rentCtaIcon,background:"#EFF6FF"}}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+            </svg>
+          </div>
+          <div>
+            <p style={{fontSize:14,fontWeight:700,color:C.black}}>Dashboard bailleur</p>
+            <p style={{fontSize:12,color:C.mid,marginTop:1}}>Propriétés · Stats · Boost</p>
+          </div>
+        </div>
+        <Icon name="chevron" size={16} color={C.light} stroke={2}/>
+      </button>
+
+      {/* Techniciens — CTA card */}
+      <button style={{...S.rentCta,marginBottom:8}} onClick={onOpenTechs}>
+        <div style={S.rentCtaLeft}>
+          <div style={{...S.rentCtaIcon,background:"#F0FDF4"}}>
+            <span style={{fontSize:20}}>🔧</span>
+          </div>
+          <div>
+            <p style={{fontSize:14,fontWeight:700,color:C.black}}>Techniciens</p>
+            <p style={{fontSize:12,color:C.mid,marginTop:1}}>Plomberie · Électricité · etc.</p>
+          </div>
+        </div>
+        <Icon name="chevron" size={16} color={C.light} stroke={2}/>
+      </button>
+
+      {/* Concierges & Agents immobiliers — CTA card */}
+      <button style={{...S.rentCta,marginBottom:8}} onClick={onOpenPros}>
+        <div style={S.rentCtaLeft}>
+          <div style={{...S.rentCtaIcon,background:"#FAF5FF"}}>
+            <span style={{fontSize:20}}>🛎️</span>
+          </div>
+          <div>
+            <p style={{fontSize:14,fontWeight:700,color:C.black}}>Concierges & Agents</p>
+            <p style={{fontSize:12,color:C.mid,marginTop:1}}>Conciergerie · Agence immo. · Gestion locative</p>
+          </div>
+        </div>
+        <Icon name="chevron" size={16} color={C.light} stroke={2}/>
+      </button>
+
       {/* Other rows */}
       <div style={{padding:"0 16px 32px"}}>
         {rows.map(row=>(
-          <button key={row.l} style={{display:"flex",alignItems:"center",gap:14,padding:"15px 0",background:"none",border:"none",width:"100%",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
+          <button key={row.l} style={{display:"flex",alignItems:"center",gap:14,padding:"15px 0",background:"none",border:"none",width:"100%",cursor:"pointer",borderBottom:`1px solid ${C.border}`}} onClick={row.action||undefined}>
             <Icon name={row.icon} size={20} color={C.dark} stroke={1.8}/>
             <span style={{flex:1,fontSize:14,fontWeight:500,color:C.dark,textAlign:"left"}}>{row.l}</span>
             <Icon name="chevron" size={16} color={C.light} stroke={2}/>
           </button>
         ))}
       </div>
+
+      {/* Invite modal */}
+      {inviteOpen && (
+        <>
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:200}} onClick={()=>setInviteOpen(false)}/>
+          <div style={{
+            position:"fixed",bottom:0,left:0,right:0,
+            background:C.white,borderRadius:"20px 20px 0 0",
+            padding:"18px 16px 24px",zIndex:201,
+            fontFamily:"'DM Sans',sans-serif",
+          }}>
+            <div style={{width:40,height:4,background:C.border,borderRadius:2,margin:"0 auto 14px"}}/>
+            <p style={{fontSize:18,fontWeight:800,color:C.black,textAlign:"center",marginBottom:6}}>
+              🎁 Inviter des amis
+            </p>
+            <p style={{fontSize:13,color:C.mid,textAlign:"center",marginBottom:14,lineHeight:1.5}}>
+              Partagez votre lien : vous recevez <strong style={{color:C.coral}}>{POINTS_CONFIG.perReferral} pts</strong> par filleul inscrit (et lui aussi !).
+              Échangez vos points contre des forfaits Byer gratuits.
+            </p>
+
+            {/* Lien de téléchargement de l'app */}
+            <div style={{
+              background:"linear-gradient(135deg,#FF5A5F 0%,#FF8A8E 100%)",borderRadius:12,padding:"14px 16px",marginBottom:12,
+              display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,
+            }}>
+              <div style={{minWidth:0}}>
+                <p style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.85)",textTransform:"uppercase",letterSpacing:.5}}>Télécharger Byer</p>
+                <p style={{fontSize:13,fontWeight:700,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>byer.cm/app</p>
+              </div>
+              <button
+                onClick={() => {
+                  const url = "https://byer.cm/app";
+                  if (navigator.clipboard) navigator.clipboard.writeText(url).then(()=>showToast("Lien de l'app copié !"));
+                  else showToast("Lien : " + url);
+                }}
+                style={{padding:"8px 12px",background:"rgba(255,255,255,.95)",border:"none",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,color:C.coral,fontFamily:"'DM Sans',sans-serif",flexShrink:0}}
+              >Copier</button>
+            </div>
+
+            {/* Code de parrainage */}
+            <div style={{
+              background:C.bg,borderRadius:12,padding:"14px 16px",marginBottom:14,
+              display:"flex",alignItems:"center",justifyContent:"space-between",
+              border:`1px dashed ${C.coral}`,
+            }}>
+              <div>
+                <p style={{fontSize:10,fontWeight:600,color:C.light,textTransform:"uppercase",letterSpacing:.5}}>Votre code promo</p>
+                <p style={{fontSize:18,fontWeight:800,color:C.coral,letterSpacing:1.2,fontFamily:"monospace"}}>{referralCode}</p>
+              </div>
+              <button
+                onClick={() => {
+                  if (navigator.clipboard) navigator.clipboard.writeText(referralCode).then(()=>showToast("Code copié !"));
+                  else showToast("Code : " + referralCode);
+                }}
+                style={{padding:"8px 12px",background:C.white,border:`1px solid ${C.border}`,borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:600,color:C.dark,fontFamily:"'DM Sans',sans-serif"}}
+              >Copier</button>
+            </div>
+
+            {/* Stats parrainage */}
+            <div style={{display:"flex",gap:10,marginBottom:14}}>
+              <div style={{flex:1,background:C.bg,borderRadius:12,padding:"10px 12px",textAlign:"center"}}>
+                <p style={{fontSize:18,fontWeight:800,color:C.black}}>{referralCount}</p>
+                <p style={{fontSize:10,color:C.mid,marginTop:2}}>Filleuls inscrits</p>
+              </div>
+              <div style={{flex:1,background:C.bg,borderRadius:12,padding:"10px 12px",textAlign:"center"}}>
+                <p style={{fontSize:18,fontWeight:800,color:C.coral}}>+{referralCount * POINTS_CONFIG.perReferral}</p>
+                <p style={{fontSize:10,color:C.mid,marginTop:2}}>Points gagnés</p>
+              </div>
+            </div>
+
+            {/* Boutons partage */}
+            <button
+              onClick={handleShareInvite}
+              style={{width:"100%",padding:"13px",background:C.coral,border:"none",borderRadius:10,color:C.white,fontSize:14,fontWeight:700,cursor:"pointer",marginBottom:8,fontFamily:"'DM Sans',sans-serif"}}
+            >Partager mon lien</button>
+            <button
+              onClick={() => setInviteOpen(false)}
+              style={{width:"100%",padding:"13px",background:C.bg,border:"none",borderRadius:10,color:C.dark,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}
+            >Plus tard</button>
+          </div>
+        </>
+      )}
+
+      {/* Rewards modal */}
+      {rewardsOpen && (
+        <>
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:200}} onClick={()=>setRewardsOpen(false)}/>
+          <div style={{
+            position:"fixed",bottom:0,left:0,right:0,
+            background:C.white,borderRadius:"20px 20px 0 0",
+            padding:"18px 16px 24px",zIndex:201,maxHeight:"85vh",overflowY:"auto",
+            fontFamily:"'DM Sans',sans-serif",
+          }}>
+            <div style={{width:40,height:4,background:C.border,borderRadius:2,margin:"0 auto 14px"}}/>
+            <p style={{fontSize:18,fontWeight:800,color:C.black,textAlign:"center",marginBottom:6}}>
+              ⭐ Mes récompenses
+            </p>
+
+            {/* Tier card */}
+            <div style={{
+              background:`linear-gradient(135deg, ${tierBg} 0%, ${C.white} 100%)`,
+              borderRadius:16,padding:"18px",marginBottom:14,marginTop:8,
+              border:`1px solid ${tierColor}33`,textAlign:"center",
+            }}>
+              <p style={{fontSize:11,fontWeight:700,color:tierColor,textTransform:"uppercase",letterSpacing:.6,marginBottom:4}}>
+                Niveau {rewardsTier}
+              </p>
+              <p style={{fontSize:32,fontWeight:800,color:C.black,marginBottom:2}}>{rewardsPoints}</p>
+              <p style={{fontSize:12,color:C.mid}}>points fidélité</p>
+            </div>
+
+            {/* Progress to next tier */}
+            <p style={{fontSize:11,color:C.mid,marginBottom:6}}>
+              {rewardsTier === "Or" ? "Niveau maximum atteint 🎉" :
+                `${(rewardsTier === "Argent" ? POINTS_TIERS.gold : POINTS_TIERS.silver) - rewardsPoints} pts jusqu'au niveau ${rewardsTier === "Argent" ? "Or" : "Argent"}`}
+            </p>
+            <div style={{height:6,background:C.bg,borderRadius:3,marginBottom:18,overflow:"hidden"}}>
+              <div style={{
+                height:"100%",
+                width:`${Math.min(100, (rewardsPoints / (rewardsTier === "Argent" ? POINTS_TIERS.gold : POINTS_TIERS.silver)) * 100)}%`,
+                background:tierColor,borderRadius:3,
+              }}/>
+            </div>
+
+            {/* Bons disponibles (déjà échangés, prêts à appliquer) */}
+            {coupons.length > 0 && (
+              <>
+                <p style={{fontSize:13,fontWeight:700,color:C.black,marginBottom:8}}>🎟️ Mes bons disponibles</p>
+                <div style={{marginBottom:18}}>
+                  {coupons.map(c => (
+                    <div key={c.id} style={{
+                      display:"flex",alignItems:"center",justifyContent:"space-between",
+                      background:"#F0FDF4",border:"1px dashed #16A34A",borderRadius:10,
+                      padding:"10px 12px",marginBottom:6,
+                    }}>
+                      <div style={{minWidth:0}}>
+                        <p style={{fontSize:13,fontWeight:700,color:"#16A34A"}}>{c.label}</p>
+                        <p style={{fontSize:10,color:C.mid,marginTop:1}}>Appliqué à votre prochaine {c.type==="boost"?"enchère Boost":"souscription forfait"}</p>
+                      </div>
+                      <span style={{fontSize:18}}>✓</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Catalogue d'échange : transformer ses points en bons */}
+            <p style={{fontSize:13,fontWeight:700,color:C.black,marginBottom:8}}>🛒 Échanger mes points</p>
+            <div style={{marginBottom:18}}>
+              {POINTS_REWARDS.map(reward => {
+                const canAfford = rewardsPoints >= reward.cost;
+                return (
+                  <div key={reward.id} style={{
+                    display:"flex",alignItems:"center",gap:10,
+                    background:canAfford?C.white:C.bg,
+                    border:`1px solid ${canAfford?C.border:C.border}`,
+                    borderRadius:12,padding:"10px 12px",marginBottom:6,
+                    opacity:canAfford?1:.55,
+                  }}>
+                    <span style={{fontSize:22,flexShrink:0}}>{reward.icon}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <p style={{fontSize:13,fontWeight:600,color:C.black}}>{reward.label}</p>
+                      <p style={{fontSize:11,color:C.coral,fontWeight:700,marginTop:1}}>{reward.cost} pts</p>
+                    </div>
+                    <button
+                      disabled={!canAfford}
+                      onClick={() => handleRedeem(reward)}
+                      style={{
+                        padding:"7px 12px",
+                        background:canAfford?C.coral:C.border,
+                        color:canAfford?C.white:C.light,
+                        border:"none",borderRadius:8,
+                        fontSize:12,fontWeight:700,
+                        cursor:canAfford?"pointer":"not-allowed",
+                        fontFamily:"'DM Sans',sans-serif",flexShrink:0,
+                      }}
+                    >Échanger</button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Comment gagner plus */}
+            <div style={{background:"#FFF8E1",borderRadius:10,padding:"10px 12px",marginBottom:14,fontSize:11,color:"#92400E",lineHeight:1.5}}>
+              💡 Gagnez +{POINTS_CONFIG.perReferral} pts par filleul inscrit, et +{POINTS_CONFIG.perBooking} pts par réservation effectuée.
+            </div>
+
+            <button
+              onClick={() => setRewardsOpen(false)}
+              style={{width:"100%",padding:"13px",background:C.coral,border:"none",borderRadius:10,color:C.white,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}
+            >Fermer</button>
+          </div>
+        </>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position:"fixed",bottom:90,left:16,right:16,
+          background:C.dark,color:C.white,
+          padding:"11px 16px",borderRadius:10,
+          textAlign:"center",fontSize:13,fontWeight:500,
+          zIndex:300,fontFamily:"'DM Sans',sans-serif",
+        }}>{toast}</div>
+      )}
     </div>
   );
 }

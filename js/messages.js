@@ -1,21 +1,183 @@
 /* Byer — Messages & Chat */
 
 /* ─── MESSAGES SCREEN ───────────────────────────── */
-function MessagesScreen() {
-  const [convos, setConvos]   = useState(CONVERSATIONS_DATA);
+function MessagesScreen({ role }) {
+  const isBailleur = role === "bailleur";
+
+  /* En mode bailleur on simule des conversations entrantes (voyageurs/locataires).
+     On enrichit chaque conv avec un rôle adapté côté bailleur.                  */
+  const baseConvs = isBailleur
+    ? CONVERSATIONS_DATA.map((c,i) => ({
+        ...c,
+        contact: ["Caroline N.","David M.","Aïcha B.","Junior K.","Sandrine T."][i % 5] || c.contact,
+        contactRole: ["Voyageur","Locataire long séjour","Voyageur","Demandeur","Voyageur"][i % 5],
+        lastMsg: ["Bonjour, est-ce disponible le 20 ?","Merci pour les clés !","Le wifi fonctionne pas...","Possible de visiter samedi ?","Tout est parfait, merci !"][i % 5],
+      }))
+    : CONVERSATIONS_DATA;
+
+  const [convos, setConvos]     = useState(baseConvs);
   const [openChat, setOpenChat] = useState(null);
+  const [search, setSearch]     = useState("");
+  const [newConvOpen, setNewConvOpen] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
+
+  /* Re-sync conversations quand on bascule de rôle */
+  React.useEffect(() => { setConvos(baseConvs); /* eslint-disable-next-line */ }, [role]);
+
+  /* Charge les vraies conversations depuis Supabase si user connecté.
+     Les convs Supabase sont préfixées dans la liste, en complément des mocks
+     (ainsi la démo reste vivante même si la BDD est vide). */
+  React.useEffect(() => {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) return;
+    let cancelled = false;
+    (async () => {
+      const { data: sess } = await db.auth.getSession();
+      const user = sess && sess.session && sess.session.user;
+      if (!user) return;
+      setCurrentUserId(user.id);
+      const { data, error } = await db.chat.listConversations(user.id);
+      if (error || cancelled || !Array.isArray(data) || data.length === 0) return;
+      const realConvs = data.map(c => {
+        const isHost = c.host_id === user.id;
+        const other  = isHost ? c.guest : c.host;
+        return {
+          id:           c.id,                        // UUID Supabase
+          _convId:      c.id,                        // marqueur Supabase
+          _supabase:    true,
+          contact:      other?.name || "Voyageur",
+          contactRole:  isHost ? "Voyageur" : "Hôte",
+          avatar:       other?.avatar_letter || (other?.name?.[0]?.toUpperCase() || "U"),
+          avatarBg:     other?.avatar_bg || "#6366F1",
+          photo:        other?.photo_url || null,
+          logement:     c.listings?.title || "Annonce",
+          lastMsg:      "",
+          lastTime:     c.last_message_at ? new Date(c.last_message_at).toLocaleDateString('fr-FR') : "—",
+          unread:       0,
+          blocked:      false,
+          messages:     [],
+        };
+      });
+      if (!cancelled) setConvos(prev => [...realConvs, ...prev]);
+    })();
+    return () => { cancelled = true; };
+  }, [role]);
 
   const toggleBlock = (id) => {
     setConvos(prev => prev.map(c => c.id===id ? {...c, blocked:!c.blocked} : c));
   };
 
+  // Filtrage par recherche : nom de contact, dernier message, logement
+  const q = search.trim().toLowerCase();
+  const filteredConvos = !q ? convos : convos.filter(c =>
+    c.contact.toLowerCase().includes(q) ||
+    (c.lastMsg || "").toLowerCase().includes(q) ||
+    (c.logement || "").toLowerCase().includes(q)
+  );
+
+  // Création d'une nouvelle conversation
+  const startNewConversation = (contact) => {
+    // Si la conv existe déjà, on l'ouvre
+    const existing = convos.find(c => c.contact === contact.name);
+    if (existing) {
+      setNewConvOpen(false);
+      setOpenChat(existing.id);
+      return;
+    }
+    const newConv = {
+      id: Date.now(),
+      contact: contact.name,
+      contactRole: contact.role,
+      avatar: contact.name[0],
+      avatarBg: contact.bg || "#6366F1",
+      photo: contact.photo || null,
+      logement: contact.logement || "Nouveau contact",
+      lastMsg: "",
+      lastTime: "Maintenant",
+      unread: 0,
+      blocked: false,
+      messages: [],
+    };
+    setConvos(prev => [newConv, ...prev]);
+    setNewConvOpen(false);
+    setOpenChat(newConv.id);
+  };
+
+  /* ─── Chat ouvert : load history + realtime si conv Supabase ─── */
+  React.useEffect(() => {
+    if (!openChat) return;
+    const conv = convos.find(c => c.id === openChat);
+    if (!conv || !conv._supabase) return;
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady || !currentUserId) return;
+    let cancelled = false;
+    let unsub = () => {};
+
+    // 1) Load message history
+    (async () => {
+      const { data, error } = await db.chat.listMessages(conv._convId);
+      if (cancelled || error || !Array.isArray(data)) return;
+      const adapted = data.map(m => ({
+        id:   m.id,
+        from: m.sender_id === currentUserId ? "me" : "them",
+        text: m.body || "",
+        time: new Date(m.created_at).toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"}),
+      }));
+      setConvos(prev => prev.map(c => c.id === openChat ? { ...c, messages: adapted } : c));
+    })();
+
+    // 2) Realtime subscription : pousse les nouveaux messages
+    unsub = db.chat.subscribeMessages(conv._convId, (newMsg) => {
+      if (cancelled) return;
+      setConvos(prev => prev.map(c => {
+        if (c.id !== openChat) return c;
+        // Évite le doublon si message émis par soi-même (déjà ajouté en optimiste)
+        if ((c.messages || []).some(m => m.id === newMsg.id)) return c;
+        return {
+          ...c,
+          lastMsg: newMsg.body,
+          lastTime: "Maintenant",
+          messages: [...(c.messages || []), {
+            id:   newMsg.id,
+            from: newMsg.sender_id === currentUserId ? "me" : "them",
+            text: newMsg.body || "",
+            time: new Date(newMsg.created_at).toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"}),
+          }],
+        };
+      }));
+    });
+
+    return () => { cancelled = true; try { unsub(); } catch (e) {} };
+  }, [openChat, currentUserId]);
+
   if (openChat) {
     const conv = convos.find(c => c.id === openChat);
+    if (!conv) { setOpenChat(null); return null; }
     return (
       <ChatScreen
         conv={conv}
         onBack={() => setOpenChat(null)}
         onToggleBlock={() => toggleBlock(openChat)}
+        onSendMessage={async (text) => {
+          // Optimistic UI : on ajoute tout de suite, on "ré-aligne" via Realtime
+          const optimistic = {
+            id: "tmp-" + Date.now(), from:"me", text,
+            time: new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})
+          };
+          setConvos(prev => prev.map(c => c.id === openChat ? {
+            ...c, lastMsg: text, lastTime: "Maintenant",
+            messages: [...(c.messages||[]), optimistic],
+          } : c));
+
+          // Send via Supabase si conv réelle
+          if (conv._supabase && currentUserId) {
+            const db = window.byer && window.byer.db;
+            if (db && db.isReady) {
+              try { await db.chat.sendMessage(conv._convId, currentUserId, text); }
+              catch (e) { console.warn("[byer] chat send error:", e); }
+            }
+          }
+        }}
       />
     );
   }
@@ -23,16 +185,81 @@ function MessagesScreen() {
   return (
     <div>
       <div style={S.pageHead}>
-        <p style={S.pageTitle}>Messages</p>
-        <p style={{fontSize:13,color:C.mid,marginTop:3}}>
-          {convos.filter(c=>c.unread>0).length > 0
-            ? `${convos.reduce((s,c)=>s+c.unread,0)} message${convos.reduce((s,c)=>s+c.unread,0)>1?"s":""} non lu${convos.reduce((s,c)=>s+c.unread,0)>1?"s":""}`
-            : "Tout est à jour"}
-        </p>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+          <div style={{flex:1}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <p style={S.pageTitle}>Messages</p>
+              {isBailleur && (
+                <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:8,background:"#FAF5FF",color:"#7E22CE",border:"1px solid #E9D5FF"}}>
+                  🔑 BAILLEUR
+                </span>
+              )}
+            </div>
+            <p style={{fontSize:13,color:C.mid,marginTop:3}}>
+              {isBailleur
+                ? (convos.filter(c=>c.unread>0).length > 0
+                    ? `${convos.reduce((s,c)=>s+c.unread,0)} message${convos.reduce((s,c)=>s+c.unread,0)>1?"s":""} de voyageur${convos.reduce((s,c)=>s+c.unread,0)>1?"s":""} à traiter`
+                    : "Aucune nouvelle demande de voyageur")
+                : (convos.filter(c=>c.unread>0).length > 0
+                    ? `${convos.reduce((s,c)=>s+c.unread,0)} message${convos.reduce((s,c)=>s+c.unread,0)>1?"s":""} non lu${convos.reduce((s,c)=>s+c.unread,0)>1?"s":""}`
+                    : "Tout est à jour")}
+            </p>
+          </div>
+          <button
+            onClick={() => setNewConvOpen(true)}
+            title="Nouvelle conversation"
+            style={{
+              width:42,height:42,borderRadius:21,
+              background:C.coral,border:"none",cursor:"pointer",
+              display:"flex",alignItems:"center",justifyContent:"center",
+              boxShadow:"0 2px 8px rgba(255,90,95,.3)",
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+              <line x1="12" y1="9" x2="12" y2="14"/>
+              <line x1="9.5" y1="11.5" x2="14.5" y2="11.5"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* Search bar */}
+        <div style={{
+          marginTop:12,display:"flex",alignItems:"center",gap:8,
+          background:C.bg,border:`1px solid ${C.border}`,
+          borderRadius:12,padding:"9px 12px",
+        }}>
+          <svg width="15" height="15" fill="none" stroke={C.light} strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            value={search}
+            onChange={e=>setSearch(e.target.value)}
+            placeholder="Rechercher un contact, un message…"
+            style={{flex:1,border:"none",outline:"none",background:"transparent",fontSize:13,color:C.dark,fontFamily:"'DM Sans',sans-serif"}}
+          />
+          {search && (
+            <button onClick={()=>setSearch("")} style={{background:"none",border:"none",cursor:"pointer",padding:0,color:C.light,fontSize:16,lineHeight:1}}>×</button>
+          )}
+        </div>
       </div>
 
       <div style={{display:"flex",flexDirection:"column",padding:"8px 0 100px"}}>
-        {convos.map(conv => (
+        {filteredConvos.length === 0 && (
+          <div style={{padding:"40px 24px",textAlign:"center"}}>
+            <p style={{fontSize:14,color:C.mid,fontFamily:"'DM Sans',sans-serif"}}>
+              {q ? `Aucune conversation pour « ${search} »` : "Aucune conversation pour le moment"}
+            </p>
+            {!q && (
+              <button
+                onClick={()=>setNewConvOpen(true)}
+                style={{marginTop:14,padding:"10px 20px",background:C.coral,color:C.white,border:"none",borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}
+              >Démarrer une conversation</button>
+            )}
+          </div>
+        )}
+
+        {filteredConvos.map(conv => (
           <button
             key={conv.id}
             style={S.convRow}
@@ -57,7 +284,7 @@ function MessagesScreen() {
                 <span style={{fontSize:11,color:C.light,flexShrink:0}}>{conv.lastTime}</span>
               </div>
               <p style={{fontSize:12,color:C.light,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%",marginBottom:2}}>
-                {conv.blocked ? "Cet utilisateur est bloqué" : conv.lastMsg}
+                {conv.blocked ? "Cet utilisateur est bloqué" : (conv.lastMsg || "Nouvelle conversation")}
               </p>
               <p style={{fontSize:11,color:C.light}}>{conv.logement}</p>
             </div>
@@ -66,25 +293,130 @@ function MessagesScreen() {
           </button>
         ))}
       </div>
+
+      {/* New conversation sheet */}
+      {newConvOpen && (
+        <NewConversationSheet
+          onClose={()=>setNewConvOpen(false)}
+          onSelect={startNewConversation}
+          existingNames={convos.map(c => c.contact)}
+        />
+      )}
     </div>
   );
 }
 
+/* ─── NEW CONVERSATION SHEET ───────────────────── */
+function NewConversationSheet({ onClose, onSelect, existingNames = [] }) {
+  const [search, setSearch] = useState("");
+
+  // Liste de contacts suggérés (dérivés des hôtes/propriétaires des annonces)
+  const suggested = (() => {
+    const seen = new Set();
+    const list = [];
+    [...PROPERTIES, ...VEHICLES].forEach(item => {
+      const name = item.host || item.owner;
+      if (!name || seen.has(name)) return;
+      seen.add(name);
+      list.push({
+        name,
+        role: item.type === "vehicle" ? "Loueur véhicule" : "Bailleur",
+        bg: ["#6366F1","#0EA5E9","#10B981","#F59E0B","#EC4899"][list.length % 5],
+        photo: item.hostPhoto || null,
+        logement: item.title,
+      });
+    });
+    return list;
+  })();
+
+  const q = search.trim().toLowerCase();
+  const filtered = !q ? suggested : suggested.filter(c => c.name.toLowerCase().includes(q));
+
+  return (
+    <>
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:200}} onClick={onClose}/>
+      <div style={{
+        position:"fixed",bottom:0,left:0,right:0,
+        background:C.white,borderRadius:"20px 20px 0 0",
+        padding:"16px 0 24px",zIndex:201,maxHeight:"80vh",
+        display:"flex",flexDirection:"column",
+        fontFamily:"'DM Sans',sans-serif",
+      }}>
+        {/* Handle */}
+        <div style={{width:40,height:4,background:C.border,borderRadius:2,margin:"0 auto 12px"}}/>
+
+        {/* Header */}
+        <div style={{padding:"0 16px 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <p style={{fontSize:17,fontWeight:700,color:C.black}}>Nouvelle conversation</p>
+          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",fontSize:22,color:C.mid,lineHeight:1,padding:0}}>×</button>
+        </div>
+
+        {/* Search */}
+        <div style={{padding:"0 16px 12px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,background:C.bg,border:`1px solid ${C.border}`,borderRadius:12,padding:"9px 12px"}}>
+            <svg width="15" height="15" fill="none" stroke={C.light} strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input
+              value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder="Rechercher un hôte ou bailleur…"
+              style={{flex:1,border:"none",outline:"none",background:"transparent",fontSize:13,color:C.dark,fontFamily:"'DM Sans',sans-serif"}}
+            />
+          </div>
+        </div>
+
+        {/* List */}
+        <div style={{flex:1,overflowY:"auto",padding:"0 0 8px"}}>
+          {filtered.length === 0 ? (
+            <p style={{textAlign:"center",fontSize:13,color:C.light,padding:"24px"}}>Aucun contact trouvé.</p>
+          ) : filtered.map((c, i) => {
+            const already = existingNames.includes(c.name);
+            return (
+              <button
+                key={i}
+                onClick={() => onSelect(c)}
+                style={{
+                  width:"100%",display:"flex",alignItems:"center",gap:12,
+                  padding:"12px 16px",background:"none",border:"none",
+                  borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",
+                  fontFamily:"'DM Sans',sans-serif",
+                }}
+              >
+                <FaceAvatar photo={c.photo} avatar={c.name[0]} bg={c.bg} size={42}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <p style={{fontSize:14,fontWeight:600,color:C.black}}>{c.name}</p>
+                  <p style={{fontSize:11,color:C.mid,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                    {c.role} · {c.logement}
+                  </p>
+                </div>
+                {already && (
+                  <span style={{fontSize:10,fontWeight:600,color:C.coral,background:"#FFF5F5",padding:"3px 8px",borderRadius:10}}>
+                    Existante
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
 /* ─── CHAT SCREEN ───────────────────────────────── */
-function ChatScreen({ conv, onBack, onToggleBlock }) {
-  const [messages, setMessages] = useState(conv.messages);
+function ChatScreen({ conv, onBack, onToggleBlock, onSendMessage }) {
   const [input, setInput]       = useState("");
   const [showMenu, setShowMenu] = useState(false);
   const [blockConfirm, setBlockConfirm] = useState(false);
+  const [chatToast, setChatToast] = useState("");
   const isBlocked = conv.blocked;
+  const messages = conv.messages || [];
+
+  const flashChat = (msg) => { setChatToast(msg); setTimeout(()=>setChatToast(""), 2200); };
 
   const sendMsg = () => {
     if (!input.trim() || isBlocked) return;
-    setMessages(prev => [...prev, {
-      id: Date.now(), from:"me",
-      text: input.trim(),
-      time: new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})
-    }]);
+    onSendMessage?.(input.trim());
     setInput("");
   };
 
@@ -120,7 +452,7 @@ function ChatScreen({ conv, onBack, onToggleBlock }) {
           <>
             <div style={{position:"fixed",inset:0,zIndex:50}} onClick={()=>setShowMenu(false)}/>
             <div style={S.chatMenu}>
-              <button style={S.chatMenuItem} onClick={()=>setShowMenu(false)}>
+              <button style={S.chatMenuItem} onClick={()=>{ setShowMenu(false); flashChat(`Logement : ${conv.logement}`); }}>
                 <Icon name="home" size={16} color={C.dark} stroke={1.8}/>
                 <span>Voir le logement</span>
               </button>
@@ -266,6 +598,12 @@ function ChatScreen({ conv, onBack, onToggleBlock }) {
             </div>
           </div>
         </>
+      )}
+
+      {chatToast && (
+        <div style={{position:"fixed",bottom:90,left:16,right:16,background:C.dark,color:C.white,padding:"12px 16px",borderRadius:8,textAlign:"center",fontSize:14,fontFamily:"'DM Sans',sans-serif",zIndex:1100}}>
+          {chatToast}
+        </div>
       )}
     </div>
   );

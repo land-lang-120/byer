@@ -139,6 +139,7 @@ function RatingBreakdown({ itemId, globalRating, reviews, onReview }) {
       <div style={{...S.criteriaGrid, marginTop:14}}>
         {RATING_CRITERIA.map(c => {
           const score = ratingData[c.key];
+          if (score == null) return null;
           const pct   = (score / 5) * 100;
           return (
             <div key={c.key} style={S.criteriaRow}>

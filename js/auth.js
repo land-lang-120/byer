@@ -131,7 +131,7 @@ function OnboardingScreen({ onDone }) {
 }
 
 /* ─── LOGIN ──────────────────────────────────────── */
-function LoginScreen({ onLogin, onSignup }) {
+function LoginScreen({ onLogin, onSignup, onForgotPassword, onSSO }) {
   const [method, setMethod]  = useState("email");
   const [email, setEmail]    = useState("");
   const [phone, setPhone]    = useState("");
@@ -140,11 +140,42 @@ function LoginScreen({ onLogin, onSignup }) {
   const [loading, setLoading]= useState(false);
   const [err, setErr]        = useState("");
 
-  const handle = () => {
+  const handle = async () => {
     const id = method==="email" ? email : phone;
     if (!id.trim())  { setErr(method==="email"?"Entrez votre adresse email.":"Entrez votre numéro de téléphone."); return; }
     if (!pwd.trim()) { setErr("Entrez votre mot de passe."); return; }
     setErr(""); setLoading(true);
+
+    // ── Connexion réelle Supabase si configuré, sinon mock ──
+    const db = window.byer && window.byer.db;
+    if (db && db.isReady && method === "email") {
+      const { data, error } = await db.auth.signIn(email.trim().toLowerCase(), pwd);
+      setLoading(false);
+      if (error) {
+        // Messages d'erreur Supabase traduits
+        const msg = error.message || "";
+        if (/Invalid login credentials/i.test(msg)) setErr("Email ou mot de passe incorrect.");
+        else if (/Email not confirmed/i.test(msg)) setErr("Email non confirmé — vérifiez votre boîte de réception.");
+        else setErr(msg);
+        return;
+      }
+      if (data && data.session) {
+        // SIGNED_IN va aussi être capté par main.js — on appelle quand même
+        // onLogin pour être robuste (au cas où l'event ne fire pas dans
+        // certains navigateurs)
+        onLogin();
+      }
+      return;
+    }
+
+    // Téléphone (Twilio non encore configuré côté Supabase) → mock pour l'instant
+    if (db && db.isReady && method === "phone") {
+      setLoading(false);
+      setErr("Connexion par SMS bientôt disponible. Utilisez votre email.");
+      return;
+    }
+
+    // Fallback mock (Supabase indisponible)
     setTimeout(()=>{ setLoading(false); onLogin(); }, 1400);
   };
 
@@ -175,7 +206,7 @@ function LoginScreen({ onLogin, onSignup }) {
             { label:"Google", icon:<svg width="18" height="18" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg> },
             { label:"Apple",  icon:<svg width="18" height="18" viewBox="0 0 24 24" fill={C.black}><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg> },
           ].map(s=>(
-            <button key={s.label} style={Os.socialBtn}>
+            <button key={s.label} style={Os.socialBtn} onClick={()=>onSSO?.(s.label)}>
               {s.icon}
               <span style={{fontSize:13,fontWeight:600,color:C.dark}}>{s.label}</span>
             </button>
@@ -253,7 +284,9 @@ function LoginScreen({ onLogin, onSignup }) {
           </div>
         </div>
 
-        <button style={{background:"none",border:"none",cursor:"pointer",fontSize:13,color:C.coral,fontWeight:600,fontFamily:"'DM Sans',sans-serif",textAlign:"right",width:"100%",marginBottom:18}}>
+        <button
+          onClick={()=>onForgotPassword?.(method==="email"?email:"")}
+          style={{background:"none",border:"none",cursor:"pointer",fontSize:13,color:C.coral,fontWeight:600,fontFamily:"'DM Sans',sans-serif",textAlign:"right",width:"100%",marginBottom:18}}>
           Mot de passe oublié ?
         </button>
 
@@ -275,22 +308,95 @@ function LoginScreen({ onLogin, onSignup }) {
 }
 
 /* ─── SIGNUP ─────────────────────────────────────── */
-function SignupScreen({ onBack, onDone }) {
+function SignupScreen({ onBack, onDone, onNeedVerify }) {
   const [step, setStep]      = useState(1);
-  const [form, setForm]      = useState({ name:"", email:"", phone:"", pwd:"", role:"locataire" });
+  const [form, setForm]      = useState({ name:"", email:"", phone:"", pwd:"", role:"locataire", promo:"" });
   const [showPwd, setShowPwd]= useState(false);
   const [loading, setLoading]= useState(false);
   const [code, setCode]      = useState(["","","","",""]);
+  const [err, setErr]        = useState("");
+  const [promoStatus, setPromoStatus] = useState(null); // null | "valid" | "invalid"
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
+
+  // Validation simple : code parrainage = 6+ chars alphanumériques se terminant par "24"
+  const validatePromo = (val) => {
+    const cleaned = (val || "").trim().toUpperCase();
+    if (!cleaned) return null;
+    return /^[A-Z0-9]{4,}24$/.test(cleaned) ? "valid" : "invalid";
+  };
+
+  const handlePromoChange = (val) => {
+    set("promo", val.toUpperCase());
+    setPromoStatus(validatePromo(val));
+  };
 
   const handleStep1 = () => {
     if (!form.name.trim()||!form.email.trim()||!form.phone.trim()||!form.pwd.trim()) return;
     setStep(2);
   };
   const handleStep2 = () => setStep(3);
-  const handleVerify = () => {
-    setLoading(true);
-    setTimeout(()=>{ setLoading(false); onDone(); }, 1400);
+  // Crédite les points de bienvenue si code de parrainage valide (côté local + plus tard côté Supabase)
+  const creditPromoBonus = () => {
+    if (form.promo && validatePromo(form.promo) === "valid") {
+      try {
+        pointsManager.add(POINTS_CONFIG.perReferral);
+        pointsManager.addCoupon({
+          rewardId: "welcome_promo",
+          label: `Bonus parrainage (${form.promo})`,
+          type: "welcome",
+          value: POINTS_CONFIG.perReferral * POINTS_CONFIG.ratio,
+        });
+      } catch (e) { /* localStorage indisponible */ }
+    }
+  };
+
+  const handleVerify = async () => {
+    setErr(""); setLoading(true);
+
+    // ── Inscription réelle Supabase si configuré, sinon mock ──
+    const db = window.byer && window.byer.db;
+    if (db && db.isReady) {
+      // Métadonnées passées au trigger handle_new_auth_user (qui crée le profile)
+      const { data, error } = await db.raw.auth.signUp({
+        email: form.email.trim().toLowerCase(),
+        password: form.pwd,
+        options: {
+          data: {
+            name: form.name.trim(),
+            phone: form.phone.trim() ? `+237${form.phone.replace(/\D/g,'')}` : null,
+            role: form.role,
+            promo_code: form.promo ? form.promo.trim().toUpperCase() : null,
+          },
+        },
+      });
+      setLoading(false);
+      if (error) {
+        const msg = error.message || "";
+        if (/already registered/i.test(msg) || /already been registered/i.test(msg))
+          setErr("Cette adresse email est déjà utilisée. Essayez de vous connecter.");
+        else if (/Password should be at least/i.test(msg))
+          setErr("Le mot de passe doit contenir au moins 6 caractères.");
+        else if (/Invalid email/i.test(msg))
+          setErr("Adresse email invalide.");
+        else
+          setErr(msg);
+        return;
+      }
+      // Bonus de parrainage local (sera dupliqué côté Supabase plus tard via Edge Function)
+      creditPromoBonus();
+      // Si une session existe déjà → email confirmation désactivée → on entre dans l'app
+      if (data && data.session) { onDone(); return; }
+      // Sinon → email confirmation requise → écran "Vérifie ton email"
+      if (onNeedVerify) onNeedVerify(form.email.trim().toLowerCase());
+      else onDone();
+      return;
+    }
+
+    // Fallback mock (Supabase indisponible)
+    setTimeout(()=>{
+      creditPromoBonus();
+      setLoading(false); onDone();
+    }, 1400);
   };
 
   return (
@@ -298,7 +404,7 @@ function SignupScreen({ onBack, onDone }) {
       <style>{AUTH_CSS}</style>
 
       {/* Header */}
-      <div style={{background:C.white,padding:"52px 20px 16px",display:"flex",alignItems:"center",gap:14,borderBottom:`1px solid ${C.border}`}}>
+      <div style={{background:C.white,padding:"var(--top-pad) 20px 16px",display:"flex",alignItems:"center",gap:14,borderBottom:`1px solid ${C.border}`}}>
         <button style={{background:"none",border:"none",cursor:"pointer",display:"flex"}} onClick={step===1?onBack:()=>setStep(s=>s-1)}>
           <svg width="22" height="22" fill="none" stroke={C.dark} strokeWidth="2.5" strokeLinecap="round" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
@@ -367,6 +473,53 @@ function SignupScreen({ onBack, onDone }) {
                     {form.pwd.length>=8?"Fort":form.pwd.length>=6?"Moyen":form.pwd.length>=4?"Faible":"Très faible"}
                   </span>
                 </div>
+              )}
+            </div>
+
+            {/* Code promo / parrainage (facultatif) */}
+            <div style={{marginBottom:24}}>
+              <label style={{...Os.fieldLabel,display:"flex",alignItems:"center",gap:6}}>
+                Code promo / parrainage
+                <span style={{fontSize:10,fontWeight:500,color:C.light,textTransform:"none",letterSpacing:0}}>(facultatif)</span>
+              </label>
+              <div style={{
+                ...Os.fieldWrap,
+                borderColor: promoStatus==="valid" ? "#16A34A" : promoStatus==="invalid" ? "#EF4444" : undefined,
+              }}>
+                <span style={{fontSize:14,paddingLeft:2}}>🎁</span>
+                <input
+                  style={{...Os.fieldInput,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"monospace"}}
+                  type="text"
+                  placeholder="ex. JEAN24"
+                  value={form.promo}
+                  onChange={e=>handlePromoChange(e.target.value)}
+                  maxLength={20}
+                />
+                {promoStatus==="valid" && (
+                  <svg width="16" height="16" fill="none" stroke="#16A34A" strokeWidth="2.5" strokeLinecap="round" viewBox="0 0 24 24">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                )}
+                {promoStatus==="invalid" && (
+                  <svg width="16" height="16" fill="none" stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round" viewBox="0 0 24 24">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                )}
+              </div>
+              {promoStatus==="valid" && (
+                <p style={{fontSize:11,color:"#16A34A",marginTop:6,fontWeight:600}}>
+                  ✓ Vous recevrez {POINTS_CONFIG.perReferral} pts de bienvenue à la création du compte
+                </p>
+              )}
+              {promoStatus==="invalid" && (
+                <p style={{fontSize:11,color:"#EF4444",marginTop:6}}>
+                  Code invalide. Format attendu : 6+ caractères se terminant par 24
+                </p>
+              )}
+              {!promoStatus && (
+                <p style={{fontSize:11,color:C.light,marginTop:6}}>
+                  Un ami vous a parrainé ? Entrez son code pour gagner {POINTS_CONFIG.perReferral} pts.
+                </p>
               )}
             </div>
 
@@ -470,9 +623,15 @@ function SignupScreen({ onBack, onDone }) {
                 />
               ))}
             </div>
-            <p style={{fontSize:12,color:C.light,marginBottom:32}}>
-              Code fictif pour la démo — entrez n'importe quoi
+            <p style={{fontSize:12,color:C.light,marginBottom:err?12:32}}>
+              Code SMS bientôt actif — pour l'instant, cliquez directement sur "Créer mon compte"
             </p>
+
+            {err && (
+              <p style={{fontSize:13,color:"#EF4444",marginBottom:16,textAlign:"center",padding:"10px 14px",background:"#FEF2F2",borderRadius:10,border:"1px solid #FECACA",width:"100%"}}>
+                {err}
+              </p>
+            )}
 
             <button
               style={{...Os.ctaBtn,width:"100%",opacity:loading?.7:1}}
@@ -497,4 +656,105 @@ function SignupFieldIcon({ name }) {
     phone: <svg width="16" height="16" fill="none" stroke={C.light} strokeWidth="1.8" strokeLinecap="round" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 11a19.79 19.79 0 01-3.07-8.67A2 2 0 012 .18h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>,
   };
   return icons[name]||null;
+}
+
+/* ─── VERIFY EMAIL ───────────────────────────────────
+   Affiché après signUp réussi quand Supabase exige
+   confirmation email. Lien magique → l'event SIGNED_IN
+   capté dans main.js basculera l'app automatiquement.
+   ─────────────────────────────────────────────────── */
+function VerifyEmailScreen({ email, onBack }) {
+  const [resending, setResending] = useState(false);
+  const [resentMsg, setResentMsg] = useState("");
+
+  const handleResend = async () => {
+    setResentMsg(""); setResending(true);
+    const db = window.byer && window.byer.db;
+    if (db && db.isReady && db.raw) {
+      try {
+        const { error } = await db.raw.auth.resend({ type: "signup", email });
+        if (error) setResentMsg("Erreur : " + error.message);
+        else setResentMsg("✓ Email renvoyé. Vérifiez votre boîte.");
+      } catch (e) {
+        setResentMsg("Erreur : " + (e.message || "inconnue"));
+      }
+    } else {
+      setResentMsg("Mode hors-ligne — relancez l'app et réessayez.");
+    }
+    setResending(false);
+  };
+
+  return (
+    <div style={Os.root}>
+      <style>{AUTH_CSS}</style>
+
+      {/* Header avec bouton retour */}
+      <div style={{background:C.white,padding:"var(--top-pad) 20px 16px",display:"flex",alignItems:"center",gap:14,borderBottom:`1px solid ${C.border}`}}>
+        <button style={{background:"none",border:"none",cursor:"pointer",display:"flex"}} onClick={onBack}>
+          <svg width="22" height="22" fill="none" stroke={C.dark} strokeWidth="2.5" strokeLinecap="round" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <p style={{fontSize:17,fontWeight:700,color:C.black}}>Vérification email</p>
+      </div>
+
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px 24px 40px",textAlign:"center"}}>
+        <div style={{width:96,height:96,borderRadius:24,background:"#EFF6FF",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:24}}>
+          <span style={{fontSize:48}}>📬</span>
+        </div>
+
+        <p style={{fontSize:24,fontWeight:800,color:C.black,marginBottom:12,lineHeight:1.25}}>
+          Vérifiez votre email
+        </p>
+
+        <p style={{fontSize:14,color:C.mid,lineHeight:1.6,maxWidth:340,marginBottom:8}}>
+          Nous avons envoyé un lien de confirmation à
+        </p>
+        <p style={{fontSize:15,fontWeight:700,color:C.black,marginBottom:24,wordBreak:"break-all",padding:"0 12px"}}>
+          {email}
+        </p>
+
+        <div style={{background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:12,padding:"14px 16px",marginBottom:28,maxWidth:360}}>
+          <p style={{fontSize:13,color:"#166534",lineHeight:1.55,fontWeight:500}}>
+            👉 Cliquez sur le lien dans l'email pour activer votre compte. L'app vous connectera automatiquement.
+          </p>
+        </div>
+
+        {resentMsg && (
+          <p style={{
+            fontSize:13,marginBottom:14,padding:"8px 14px",borderRadius:10,
+            background: resentMsg.startsWith("✓") ? "#F0FDF4" : "#FEF2F2",
+            color:      resentMsg.startsWith("✓") ? "#166534" : "#EF4444",
+            border:     "1px solid " + (resentMsg.startsWith("✓") ? "#BBF7D0" : "#FECACA"),
+          }}>{resentMsg}</p>
+        )}
+
+        <button
+          onClick={handleResend}
+          disabled={resending}
+          style={{
+            background:"none",border:`1.5px solid ${C.border}`,
+            padding:"12px 24px",borderRadius:12,fontSize:14,fontWeight:600,
+            color:C.dark,cursor:resending?"not-allowed":"pointer",opacity:resending?.6:1,
+            fontFamily:"'DM Sans',sans-serif",marginBottom:14,
+          }}
+        >
+          {resending ? "Envoi…" : "Renvoyer l'email"}
+        </button>
+
+        <button
+          onClick={onBack}
+          style={{
+            background:"none",border:"none",cursor:"pointer",
+            fontSize:13,color:C.coral,fontWeight:700,
+            fontFamily:"'DM Sans',sans-serif",
+          }}
+        >
+          ← Retour à la connexion
+        </button>
+
+        <p style={{fontSize:11,color:C.light,marginTop:32,maxWidth:300,lineHeight:1.5}}>
+          Vous ne recevez rien ? Vérifiez vos courriers indésirables ou contactez <strong>support@byer.cm</strong>
+        </p>
+      </div>
+    </div>
+  );
 }

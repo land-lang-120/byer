@@ -5,6 +5,19 @@
 
 const { useState, useEffect, useRef } = React;
 
+/* ── Supabase Backend ──────────────────────────────
+   ⚠️  À REMPLIR par Pino après création du projet :
+   Dashboard → Settings → API → URL  + anon public key
+   ─────────────────────────────────────────────────── */
+const SUPABASE_URL      = "https://xwqnsovfakzraafiudek.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_QxwtRGhKcJ3LCdcPJ-RNNg_1hi1BhX3";
+
+// Détecte si Supabase est configuré (sinon on continue avec les mocks).
+// Accepte 2 formats : nouvelle clé "sb_publishable_*" OU ancienne JWT (>100 chars).
+const SUPABASE_READY =
+  SUPABASE_URL.startsWith("https://") &&
+  (SUPABASE_ANON_KEY.startsWith("sb_publishable_") || SUPABASE_ANON_KEY.length > 100);
+
 /* ── Color Palette ── */
 const C = {
   coral:  "#FF5A5F",

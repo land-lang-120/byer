@@ -1,0 +1,24 @@
+{
+  "name": "byer",
+  "version": "1.0.0",
+  "description": "> [Description courte à compléter]",
+  "main": "build.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/land-lang-120/byer.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/land-lang-120/byer/issues"
+  },
+  "homepage": "https://github.com/land-lang-120/byer#readme"
+}

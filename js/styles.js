@@ -1,14 +1,6 @@
 /* Byer — Styles */
 
-/* ─── SIGNUP FIELD ICON ─────────────────────────── */
-function SignupFieldIcon({ name }) {
-  const icons = {
-    user:  <svg width="16" height="16" fill="none" stroke={C.light} strokeWidth="1.8" strokeLinecap="round" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
-    mail:  <svg width="16" height="16" fill="none" stroke={C.light} strokeWidth="1.8" strokeLinecap="round" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>,
-    phone: <svg width="16" height="16" fill="none" stroke={C.light} strokeWidth="1.8" strokeLinecap="round" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 11a19.79 19.79 0 01-3.07-8.67A2 2 0 012 .18h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>,
-  };
-  return icons[name]||null;
-}
+/* SignupFieldIcon defined in auth.js — removed duplicate here to avoid Babel "already declared" error */
 
 /* ─── AUTH CSS ───────────────────────────────────── */
 const AUTH_CSS = `
@@ -22,7 +14,7 @@ const AUTH_CSS = `
 /* ─── ONBOARDING STYLES ──────────────────────────── */
 const Os = {
   root:       { display:"flex", flexDirection:"column", height:"100vh", width:"100%", background:C.white, overflow:"hidden" },
-  authHero:   { background:C.coral, padding:"56px 28px 32px", position:"relative", overflow:"hidden" },
+  authHero:   { background:C.coral, padding:"var(--top-pad) 28px 32px", position:"relative", overflow:"hidden" },
   authLogoWrap:{ display:"flex", alignItems:"center", gap:10, marginBottom:20 },
   authLogoTxt:{ fontSize:28, fontWeight:800, color:"white", letterSpacing:-1, fontFamily:"'DM Sans',sans-serif" },
   authTitle:  { fontSize:28, fontWeight:800, color:"white", marginBottom:6, fontFamily:"'DM Sans',sans-serif" },
@@ -49,16 +41,16 @@ const Os = {
 /* ─── STYLES ────────────────────────────────────── */
 const S = {
   shell:    {display:"flex",flexDirection:"column",height:"100vh",width:"100%",background:C.bg,overflow:"hidden",position:"relative"},
-  scroll:   {flex:1,overflowY:"auto",overflowX:"hidden"},
-  nav:      {display:"flex",background:C.white,borderTop:`1px solid ${C.border}`,padding:"8px 0 18px",flexShrink:0},
+  scroll:   {flex:1,overflowY:"auto",overflowX:"hidden",paddingBottom:80},
+  nav:      {display:"flex",background:C.white,borderTop:`1px solid ${C.border}`,padding:"8px 0 18px",flexShrink:0,position:"absolute",bottom:0,left:0,right:0,zIndex:100,boxShadow:"0 -2px 8px rgba(0,0,0,0.04)"},
   navBtn:   {flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"none",border:"none",cursor:"pointer",padding:"4px 0"},
   navLabel: {fontSize:10,fontWeight:500},
 
-  stickyTop:{background:C.white,padding:"52px 20px 0",borderBottom:`1px solid ${C.border}`},
-  logoRow:  {display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16},
+  stickyTop:{background:C.white,padding:"var(--top-pad) 20px 0",borderBottom:`1px solid ${C.border}`},
+  logoRow:  {display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24},
   logoMark: {display:"flex",alignItems:"center",gap:7},
   logoTxt:  {fontSize:24,fontWeight:800,color:C.coral,letterSpacing:-1},
-  bellBtn:  {width:38,height:38,borderRadius:19,background:C.bg,border:`1.5px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"},
+  bellBtn:  {position:"relative",width:38,height:38,borderRadius:19,background:C.bg,border:`1.5px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0},
   greeting: {fontSize:18,fontWeight:700,color:C.black,marginBottom:12},
 
   // Search row with duration toggle
@@ -70,7 +62,7 @@ const S = {
 
   // Duration toggle
   durToggle:{display:"flex",background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:12,padding:2,flexShrink:0},
-  durBtn:   {background:"none",border:"none",borderRadius:9,padding:"7px 11px",fontSize:12,fontWeight:600,color:C.mid,cursor:"pointer",transition:"all .18s",whiteSpace:"nowrap"},
+  durBtn:   {background:"none",border:"none",borderRadius:9,padding:"7px 9px",fontSize:11.5,fontWeight:600,color:C.mid,cursor:"pointer",transition:"all .18s",whiteSpace:"nowrap"},
   durBtnOn: {background:C.white,color:C.coral,boxShadow:"0 1px 4px rgba(0,0,0,.1)"},
 
   // Duration banner
@@ -118,7 +110,7 @@ const S = {
 
   // Gallery
   galRoot:  {display:"flex",flexDirection:"column",height:"100vh",width:"100%",background:C.black,overflow:"hidden"},
-  galHeader:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"52px 16px 14px",background:C.white,flexShrink:0},
+  galHeader:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"var(--top-pad) 16px 14px",background:C.white,flexShrink:0},
   galBack:  {background:"none",border:"none",cursor:"pointer",padding:6,borderRadius:8,display:"flex"},
   galDetailBtn:{background:C.coral,color:C.white,border:"none",borderRadius:10,padding:"7px 14px",fontSize:13,fontWeight:600,cursor:"pointer"},
   galMain:  {flex:1,position:"relative",overflow:"hidden",minHeight:0},
@@ -146,7 +138,7 @@ const S = {
   dFooter:  {background:C.white,borderTop:`1px solid ${C.border}`,padding:"14px 20px 28px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0},
   reserveBtn:{background:C.coral,color:C.white,border:"none",borderRadius:14,padding:"14px 28px",fontWeight:700,fontSize:15,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"},
 
-  pageHead: {padding:"54px 20px 12px",background:C.white,borderBottom:`1px solid ${C.border}`,marginBottom:4},
+  pageHead: {padding:"var(--top-pad) 20px 12px",background:C.white,borderBottom:`1px solid ${C.border}`,marginBottom:4},
   pageTitle:{fontSize:22,fontWeight:700,color:C.black},
 
   // Trips screen
@@ -169,7 +161,7 @@ const S = {
   urgentBadge:{background:C.coral,color:C.white,fontSize:11,fontWeight:700,width:20,height:20,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center"},
 
   // Rent screen
-  rentHeader: {background:C.white,borderBottom:`1px solid ${C.border}`,padding:"52px 20px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0},
+  rentHeader: {background:C.white,borderBottom:`1px solid ${C.border}`,padding:"var(--top-pad) 20px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0},
   dBack2:     {background:"none",border:"none",cursor:"pointer",padding:6,borderRadius:8,display:"flex",alignItems:"center"},
   rentRoleWrap:{display:"flex",background:C.bg,borderRadius:14,margin:"16px 16px 0",padding:4,gap:4},
   roleBtn:    {flex:1,padding:"10px 8px",borderRadius:10,border:"none",fontSize:13,fontWeight:600,color:C.mid,cursor:"pointer",background:"none",transition:"all .18s"},
@@ -267,7 +259,7 @@ const S = {
   unreadDot:  {position:"absolute",top:-2,right:-2,width:18,height:18,borderRadius:9,background:C.coral,color:"white",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid white"},
 
   // Chat screen
-  chatHeader:   {background:C.white,borderBottom:`1px solid ${C.border}`,padding:"52px 16px 12px",display:"flex",alignItems:"center",gap:10,flexShrink:0,position:"relative",zIndex:10},
+  chatHeader:   {background:C.white,borderBottom:`1px solid ${C.border}`,padding:"var(--top-pad) 16px 12px",display:"flex",alignItems:"center",gap:10,flexShrink:0,position:"relative",zIndex:10},
   chatMenuBtn:  {background:"none",border:"none",cursor:"pointer",padding:6,borderRadius:8,display:"flex",flexShrink:0},
   chatMenu:     {position:"absolute",top:"100%",right:12,background:C.white,borderRadius:14,boxShadow:"0 8px 30px rgba(0,0,0,.14)",border:`1px solid ${C.border}`,minWidth:200,zIndex:60,padding:"6px"},
   chatMenuItem: {display:"flex",alignItems:"center",gap:10,width:"100%",padding:"11px 14px",background:"none",border:"none",cursor:"pointer",borderRadius:10,fontSize:13,fontWeight:500,color:C.dark,fontFamily:"'DM Sans',sans-serif",textAlign:"left",transition:"background .15s"},
@@ -276,7 +268,7 @@ const S = {
   chatContext:  {display:"flex",alignItems:"center",gap:5,padding:"6px 16px",background:"#FAFAFA",borderBottom:`1px solid ${C.border}`,flexShrink:0},
   chatMessages: {flex:1,overflowY:"auto",padding:"16px 16px 8px",display:"flex",flexDirection:"column"},
   blockedBanner:{display:"flex",alignItems:"flex-start",gap:8,background:"#FFF5F5",border:`1px solid #FFD6D7`,borderRadius:12,padding:"10px 12px",marginBottom:14,fontSize:12,color:C.dark,lineHeight:1.6},
-  chatInputRow: {display:"flex",alignItems:"center",gap:8,padding:"10px 14px 24px",background:C.white,borderTop:`1px solid ${C.border}`,flexShrink:0},
+  chatInputRow: {display:"flex",alignItems:"center",gap:8,padding:"10px 14px 24px",background:C.white,borderTop:`1px solid ${C.border}`,flexShrink:0,marginBottom:64},
   chatInput:    {flex:1,display:"flex",alignItems:"center",background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:24,padding:"10px 16px"},
   chatSendBtn:  {width:42,height:42,borderRadius:21,background:C.coral,border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,transition:"opacity .18s"},
   chatBlockedInput:{flex:1,display:"flex",alignItems:"center",gap:8,background:C.bg,borderRadius:24,padding:"12px 16px",justifyContent:"center"},
