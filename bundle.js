@@ -24102,7 +24102,7 @@ function NotificationsScreen({
 /* ─── 8 CATÉGORIES TOP-LEVEL ─────────────────────── */
 const BUILDING_TYPES = [{
   id: "maison",
-  label: "Maison",
+  label: "Maison/Villa",
   emoji: "🏡"
 }, {
   id: "immeuble",
@@ -26888,6 +26888,9 @@ function SettingsScreen({
 }
 
 // Réutilisable: feuille bottom-sheet avec liste de choix radio.
+// Architecture en 3 zones (header / liste scrollable / footer) pour gérer
+// proprement les longues listes (ex. 20 langues) — sans cette structure,
+// le bouton Annuler tombait hors écran et la liste n'était pas scrollable.
 function PickerSheet({
   title,
   options,
@@ -26912,8 +26915,16 @@ function PickerSheet({
       width: "100%",
       background: C.white,
       borderRadius: "16px 16px 0 0",
-      padding: "20px 16px 32px",
-      fontFamily: "DM Sans"
+      fontFamily: "DM Sans",
+      maxHeight: "85vh",
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "20px 16px 12px",
+      flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -26927,10 +26938,15 @@ function PickerSheet({
     style: {
       fontSize: 18,
       fontWeight: 700,
-      color: C.dark,
-      marginBottom: 16
+      color: C.dark
     }
-  }, title), options.map(opt => {
+  }, title)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      overflowY: "auto",
+      padding: "0 16px"
+    }
+  }, options.map(opt => {
     const active = opt === selected;
     return /*#__PURE__*/React.createElement("div", {
       key: opt,
@@ -26941,13 +26957,14 @@ function PickerSheet({
         justifyContent: "space-between",
         padding: "14px 4px",
         borderBottom: `1px solid ${C.border}`,
-        cursor: "pointer"
+        cursor: "pointer",
+        background: active ? "#FFF5F5" : "transparent"
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 15,
         fontWeight: active ? 700 : 500,
-        color: C.dark
+        color: active ? C.coral : C.dark
       }
     }, opt), active && /*#__PURE__*/React.createElement(Icon, {
       name: "check",
@@ -26955,11 +26972,17 @@ function PickerSheet({
       color: C.coral,
       stroke: 2.5
     }));
-  }), /*#__PURE__*/React.createElement("button", {
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "12px 16px 24px",
+      borderTop: `1px solid ${C.border}`,
+      flexShrink: 0,
+      background: C.white
+    }
+  }, /*#__PURE__*/React.createElement("button", {
     onClick: onClose,
     style: {
       width: "100%",
-      marginTop: 16,
       padding: "12px 16px",
       background: C.bg,
       border: "none",
@@ -26970,7 +26993,7 @@ function PickerSheet({
       cursor: "pointer",
       fontFamily: "DM Sans"
     }
-  }, "Annuler")));
+  }, t("common.cancel")))));
 }
 
 /* ═══ js/edit-profile.js ═══ */

@@ -502,6 +502,9 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
 }
 
 // Réutilisable: feuille bottom-sheet avec liste de choix radio.
+// Architecture en 3 zones (header / liste scrollable / footer) pour gérer
+// proprement les longues listes (ex. 20 langues) — sans cette structure,
+// le bouton Annuler tombait hors écran et la liste n'était pas scrollable.
 function PickerSheet({ title, options, selected, onSelect, onClose }) {
   return (
     <div
@@ -511,29 +514,57 @@ function PickerSheet({ title, options, selected, onSelect, onClose }) {
       <div
         onClick={(e)=>e.stopPropagation()}
         className="sheet"
-        style={{ width:"100%", background:C.white, borderRadius:"16px 16px 0 0", padding:"20px 16px 32px", fontFamily:"DM Sans" }}
+        style={{
+          width:"100%",
+          background:C.white,
+          borderRadius:"16px 16px 0 0",
+          fontFamily:"DM Sans",
+          maxHeight:"85vh",
+          display:"flex",
+          flexDirection:"column",
+          overflow:"hidden",
+        }}
       >
-        <div style={{ width:40, height:4, background:C.border, borderRadius:2, margin:"0 auto 16px" }} />
-        <div style={{ fontSize:18, fontWeight:700, color:C.dark, marginBottom:16 }}>{title}</div>
-        {options.map((opt) => {
-          const active = opt === selected;
-          return (
-            <div
-              key={opt}
-              onClick={() => onSelect(opt)}
-              style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 4px", borderBottom:`1px solid ${C.border}`, cursor:"pointer" }}
-            >
-              <span style={{ fontSize:15, fontWeight: active ? 700 : 500, color:C.dark }}>{opt}</span>
-              {active && <Icon name="check" size={18} color={C.coral} stroke={2.5} />}
-            </div>
-          );
-        })}
-        <button
-          onClick={onClose}
-          style={{ width:"100%", marginTop:16, padding:"12px 16px", background:C.bg, border:"none", borderRadius:8, color:C.dark, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"DM Sans" }}
-        >
-          Annuler
-        </button>
+        {/* Header (drag handle + titre) — fixe en haut */}
+        <div style={{ padding:"20px 16px 12px", flexShrink:0 }}>
+          <div style={{ width:40, height:4, background:C.border, borderRadius:2, margin:"0 auto 16px" }} />
+          <div style={{ fontSize:18, fontWeight:700, color:C.dark }}>{title}</div>
+        </div>
+        {/* Liste — scrollable si nécessaire */}
+        <div style={{ flex:1, overflowY:"auto", padding:"0 16px" }}>
+          {options.map((opt) => {
+            const active = opt === selected;
+            return (
+              <div
+                key={opt}
+                onClick={() => onSelect(opt)}
+                style={{
+                  display:"flex",
+                  alignItems:"center",
+                  justifyContent:"space-between",
+                  padding:"14px 4px",
+                  borderBottom:`1px solid ${C.border}`,
+                  cursor:"pointer",
+                  background: active ? "#FFF5F5" : "transparent",
+                }}
+              >
+                <span style={{ fontSize:15, fontWeight: active ? 700 : 500, color: active ? C.coral : C.dark }}>
+                  {opt}
+                </span>
+                {active && <Icon name="check" size={18} color={C.coral} stroke={2.5} />}
+              </div>
+            );
+          })}
+        </div>
+        {/* Footer (bouton Annuler) — toujours visible, fixe en bas */}
+        <div style={{ padding:"12px 16px 24px", borderTop:`1px solid ${C.border}`, flexShrink:0, background:C.white }}>
+          <button
+            onClick={onClose}
+            style={{ width:"100%", padding:"12px 16px", background:C.bg, border:"none", borderRadius:8, color:C.dark, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"DM Sans" }}
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
       </div>
     </div>
   );

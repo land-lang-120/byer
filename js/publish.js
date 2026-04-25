@@ -19,7 +19,7 @@
 
 /* ─── 8 CATÉGORIES TOP-LEVEL ─────────────────────── */
 const BUILDING_TYPES = [
-  { id:"maison",      label:"Maison",        emoji:"🏡" },
+  { id:"maison",      label:"Maison/Villa",  emoji:"🏡" },
   { id:"immeuble",    label:"Immeuble/Cité", emoji:"🏢" },
   { id:"hotel",       label:"Hôtel",         emoji:"🏨" },
   { id:"motel",       label:"Motel",         emoji:"🛏️" },
