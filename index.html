@@ -42,16 +42,16 @@
   <!-- React root -->
   <div id="root"></div>
 
-  <!-- React 18 + Babel — LOCAL (pas de CDN, fonctionne hors-ligne) -->
+  <!-- React 18 — LOCAL (pas de CDN, fonctionne hors-ligne) -->
+  <!-- Babel standalone retiré : le bundle est pré-transpilé par build.js (Babel CLI) -->
   <script src="lib/react.min.js"></script>
   <script src="lib/react-dom.min.js"></script>
-  <script src="lib/babel.min.js"></script>
 
   <!-- Supabase JS Client — LOCAL (expose window.supabase) -->
   <script src="lib/supabase.min.js"></script>
 
-  <!-- App Bundle (built from js/*.js via node build.js) -->
-  <script type="text/babel" data-presets="react" src="bundle.js?v=19"></script>
+  <!-- App Bundle (pré-transpilé : pur ES5+, plus besoin de Babel à l'exécution) -->
+  <script src="bundle.js?v=20"></script>
 
   <!-- Hide loading screen after React mounts -->
   <script>

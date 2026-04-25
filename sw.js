@@ -4,7 +4,7 @@
    Cache-first pour les libs et icônes (rarement modifiés)
    ═══════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'byer-v19';
+const CACHE_NAME = 'byer-v20';
 
 // Chemins RELATIFS au scope du SW (compatible GitHub Pages sous-dossier /byer/)
 const ASSETS = [
@@ -15,7 +15,6 @@ const ASSETS = [
   './bundle.js',
   './lib/react.min.js',
   './lib/react-dom.min.js',
-  './lib/babel.min.js',
   './lib/supabase.min.js',
   './icons/icon-192.svg',
   './icons/icon-512.svg',

@@ -1,9 +1,11 @@
 /* Byer — Build Script
-   Concatenates all JS modules into a single bundle for Babel standalone.
+   Transpile JSX → JS pur via Babel, puis concatène en bundle.js
+   → Aucun Babel runtime côté client (le mobile ne tient pas le coup sinon).
    Run: node build.js
 */
 const fs = require('fs');
 const path = require('path');
+const babel = require('@babel/core');
 
 const FILES = [
   'js/config.js',
@@ -37,12 +39,33 @@ const FILES = [
   'js/main.js',
 ];
 
-let bundle = '/* Byer — Auto-generated bundle. Do not edit manually. */\n\n';
+const BABEL_OPTS = {
+  presets: [
+    ['@babel/preset-env', { targets: '> 0.5%, last 2 versions, Firefox ESR, not dead' }],
+    ['@babel/preset-react', { runtime: 'classic' }],
+  ],
+  babelrc: false,
+  configFile: false,
+  sourceMaps: false,
+  compact: false,
+};
 
+let bundle = '/* Byer — Auto-generated bundle (Babel pre-compiled). Do not edit manually. */\n\n';
+
+const t0 = Date.now();
 for (const file of FILES) {
-  const content = fs.readFileSync(path.join(__dirname, file), 'utf-8');
-  bundle += `\n/* ═══ ${file} ═══ */\n${content}\n`;
+  const src = fs.readFileSync(path.join(__dirname, file), 'utf-8');
+  let out;
+  try {
+    const res = babel.transformSync(src, { ...BABEL_OPTS, filename: file });
+    out = res.code;
+  } catch (err) {
+    console.error(`✗ Babel a échoué sur ${file}:\n${err.message}`);
+    process.exit(1);
+  }
+  bundle += `\n/* ═══ ${file} ═══ */\n${out}\n`;
 }
 
 fs.writeFileSync(path.join(__dirname, 'bundle.js'), bundle, 'utf-8');
-console.log(`✓ Bundle created (${FILES.length} files → bundle.js)`);
+const sizeKB = (Buffer.byteLength(bundle, 'utf-8') / 1024).toFixed(1);
+console.log(`✓ Bundle créé : ${FILES.length} fichiers → bundle.js (${sizeKB} KB) en ${Date.now() - t0} ms`);

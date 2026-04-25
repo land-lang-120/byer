@@ -20,5 +20,10 @@
   "bugs": {
     "url": "https://github.com/land-lang-120/byer/issues"
   },
-  "homepage": "https://github.com/land-lang-120/byer#readme"
+  "homepage": "https://github.com/land-lang-120/byer#readme",
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.2",
+    "@babel/preset-react": "^7.28.5"
+  }
 }
