@@ -18,7 +18,7 @@
 
 ---
 
-## 2️⃣ Exécuter les 4 migrations SQL
+## 2️⃣ Exécuter les 5 migrations SQL
 
 Dès que le projet est prêt :
 
@@ -33,6 +33,9 @@ Dès que le projet est prêt :
 6. **Migration 4** : nouveau **"New query"** → colle `0004_auth_extensions.sql` → **Run**
    - ✅ `Success. No rows returned`
    - 🔐 Cette migration ajoute : champs first_name/last_name/bio, vérifications (email/phone/identité), 2FA, langue, préférences notifications, table `kyc_documents` (pièces d'identité), table `trusted_devices` (appareils de confiance), bucket privé `kyc-documents`, fonctions RPC `check_referral_code`, `apply_referral_code`, `delete_my_account_request`.
+7. **Migration 5** : nouveau **"New query"** → colle `0005_listings_optimizations.sql` → **Run**
+   - ✅ `Success. No rows returned`
+   - 🏠 Cette migration ajoute : colonnes `general_amenities`, `child_entities` (jsonb compo Bâtiment), `house_rules`, `custom_rules` sur `listings`, colonne `tag` sur `listing_photos`, contraintes métier (prix ≥ 0, lat/lng valides, subtype enum strict), full-text search pondéré (titre>ville>description), index GIN sur amenities + house_rules + child_entities, index spatial pour proximité, triggers auto `rating_avg`/`review_count`/`is_superhost`, RPC `search_listings`, `nearby_listings`, `toggle_listing_active`.
 
 > Si une migration échoue : copie-colle le message d'erreur dans le chat et je te corrige ça en 30 secondes.
 
