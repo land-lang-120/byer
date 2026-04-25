@@ -18,7 +18,7 @@
 
 ---
 
-## 2️⃣ Exécuter les 7 migrations SQL
+## 2️⃣ Exécuter les 8 migrations SQL
 
 Dès que le projet est prêt :
 
@@ -42,6 +42,10 @@ Dès que le projet est prêt :
 9. **Migration 7** : nouveau **"New query"** → colle `0007_reviews_rewards_notifications.sql` → **Run**
    - ✅ `Success. No rows returned`
    - ⭐ Cette migration finalise les 4 modules transverses : **REVIEWS** alignées sur les 8 critères de l'UI (proprete, confort, accessibilite, convivialite, emplacement, securite, equipement, qualite_prix) + auto-moyenne + validation que seul le guest d'un booking `completed` peut noter ; **RÉCOMPENSES** avec table `rewards_catalog` (6 récompenses seedées) + RPC atomique `redeem_reward` (vérif points + tier + débit + création coupon) + RPC `apply_coupon` ; **ANTI-TRICHE** verrou RLS sur `profiles.rewards_points` (impossible à modifier directement, doit passer par RPC) ; **POINTS AUTO** trigger qui crédite +2 pts au guest et +5 pts au host à chaque booking `completed` (idempotent) ; **NOTIFICATIONS** triggers auto sur nouvelle review, réponse host, nouveau message ; **CHAT** RPC `mark_conversation_read`, `block_conversation`, `unblock_conversation`, `get_unread_count` ; trigger `enforce_message_not_blocked` ; utilitaire `cleanup_expired_coupons` pour pg_cron.
+10. **Migration 8** : nouveau **"New query"** → colle `0008_pg_cron_jobs.sql` → **Run**
+    - ✅ `Success. No rows returned`
+    - ⏱️ Cette migration active l'extension `pg_cron` et programme **2 tâches automatiques** : (a) `auto-complete-bookings` toutes les heures (passe les bookings expirés en `completed`, déclenche en cascade les notifs + crédit auto de points +2 guest / +5 host), (b) `cleanup-expired-coupons` tous les jours à 03h UTC (marque comme expirés les coupons dont la date limite est dépassée). Crée aussi une vue `cron_jobs_status` pour vérifier l'état des jobs (`select * from cron_jobs_status;`).
+    - ⚠️ **Si erreur "extension pg_cron not available"** : va dans **Database → Extensions** dans le dashboard Supabase, cherche `pg_cron`, clique **Enable**, puis ré-exécute la migration. C'est gratuit sur tous les plans Supabase.
 
 > Si une migration échoue : copie-colle le message d'erreur dans le chat et je te corrige ça en 30 secondes.
 
