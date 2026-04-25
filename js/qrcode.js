@@ -554,12 +554,121 @@ function QRScannerOverlay({ onClose, onScan }) {
   );
 }
 
-/* ── Guest Verification Result ── */
+/* ── Guest Verification Result ──
+   Si Supabase prêt + code = UUID → RPC verify_booking_qr (vrai backend).
+   Sinon → fallback mock QR_GUESTS (démo).
+*/
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function GuestVerificationSheet({ code, onClose }) {
-  const guest = QR_GUESTS[code] || QR_GUESTS["BYR-UNKNOWN"];
+  const [guest, setGuest] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [validating, setValidating] = useState(false);
+  const [validationMsg, setValidationMsg] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const db = window.byer && window.byer.db;
+      const isUUID = UUID_RE.test(code);
+      // ── Backend path : vrai QR token UUID + Supabase prêt ─────
+      if (db && db.isReady && isUUID) {
+        const { data, error } = await db.bookings.verifyQR(code);
+        if (cancelled) return;
+        if (error || !data || data.length === 0) {
+          setGuest({ ...QR_GUESTS["BYR-UNKNOWN"], _qrToken: code });
+        } else {
+          const row = Array.isArray(data) ? data[0] : data;
+          // Map résultat RPC vers la structure attendue par l'UI
+          const formatDate = (iso) => {
+            if (!iso) return "—";
+            const d = new Date(iso);
+            return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
+          };
+          const nights = Math.max(1, Math.ceil(
+            (new Date(row.checkout) - new Date(row.checkin)) / (1000 * 60 * 60 * 24)
+          ));
+          setGuest({
+            name: row.guest_name || "Client",
+            phone: row.guest_phone || null,
+            photo: row.guest_photo || null,
+            booking: {
+              ref: row.ref,
+              title: row.listing_title || "Annonce",
+              city: row.listing_city || "—",
+              zone: row.listing_zone || row.listing_city || "—",
+              checkIn: formatDate(row.checkin),
+              checkOut: formatDate(row.checkout),
+              nights,
+              totalPaid: row.total_price || 0,
+              status: row.payment_status === "paid" ? "paid" : "unpaid",
+              paymentMethod: row.payment_status === "paid" ? "Confirmé" : null,
+              paymentDate: null,
+            },
+            _qrToken: code,
+            _backend: true,
+            _allGood: row.all_good === true,
+            _warning: row.warning,
+            _alreadyValidated: !!row.qr_validated_at,
+          });
+        }
+      } else {
+        // ── Mock path : démo locale ───────────────────────────
+        setGuest(QR_GUESTS[code] || QR_GUESTS["BYR-UNKNOWN"]);
+      }
+      setLoading(false);
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [code]);
+
+  const handleValidateAccess = async () => {
+    if (!guest || !guest._backend || !guest._qrToken) {
+      // Mock : ferme juste la sheet
+      onClose();
+      return;
+    }
+    setValidating(true);
+    setValidationMsg("");
+    const db = window.byer && window.byer.db;
+    const { data, error } = await db.bookings.validateArrival(guest._qrToken);
+    setValidating(false);
+    if (error) {
+      setValidationMsg(error.message || "Erreur lors de la validation");
+      return;
+    }
+    setValidationMsg("✅ Accès confirmé — séjour activé");
+    setTimeout(onClose, 1400);
+  };
+
+  // ── Loading state ───────────────────────────
+  if (loading || !guest) {
+    return (
+      <>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 500 }} onClick={onClose}/>
+        <div style={{
+          position: "fixed", bottom: 0, left: 0, right: 0, background: C.white,
+          borderRadius: "22px 22px 0 0", zIndex: 501, padding: "40px 20px 60px",
+          textAlign: "center",
+        }} className="sheet">
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 24px" }}/>
+          <div style={{
+            width: 28, height: 28, border: `3px solid ${C.border}`,
+            borderTopColor: C.coral, borderRadius: "50%",
+            animation: "spin 0.8s linear infinite", margin: "0 auto 12px",
+          }}/>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <p style={{ fontSize: 13, color: C.mid }}>Vérification du QR code...</p>
+        </div>
+      </>
+    );
+  }
+
   const hasBooking = !!guest.booking;
   const isPaid = hasBooking && guest.booking.status === "paid";
   const isPending = hasBooking && guest.booking.status === "pending";
+  // En backend mode : on n'autorise la confirmation que si all_good = true
+  const canValidate = guest._backend ? guest._allGood : isPaid;
 
   return (
     <>
@@ -722,16 +831,63 @@ function GuestVerificationSheet({ code, onClose }) {
           </div>
         )}
 
+        {/* Backend warning (si verify_booking_qr a renvoyé un avertissement) */}
+        {guest._backend && guest._warning && (
+          <div style={{ padding: "16px 20px 0" }}>
+            <div style={{
+              background: "#FEF3C7", border: "1.5px solid #FCD34D", borderRadius: 12,
+              padding: "12px 14px", display: "flex", alignItems: "flex-start", gap: 10,
+            }}>
+              <svg width="18" height="18" fill="none" stroke="#D97706" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0, marginTop: 1 }}>
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              <p style={{ fontSize: 12, color: "#92400E", lineHeight: 1.5, fontWeight: 600 }}>
+                {guest._warning}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Validation feedback (succès / erreur de validate_arrival) */}
+        {validationMsg && (
+          <div style={{ padding: "12px 20px 0" }}>
+            <div style={{
+              background: validationMsg.startsWith("✅") ? "#F0FDF4" : "#FEF2F2",
+              border: `1.5px solid ${validationMsg.startsWith("✅") ? "#BBF7D0" : "#FECACA"}`,
+              borderRadius: 12, padding: "10px 14px",
+            }}>
+              <p style={{
+                fontSize: 13, fontWeight: 600,
+                color: validationMsg.startsWith("✅") ? "#16A34A" : "#EF4444",
+              }}>{validationMsg}</p>
+            </div>
+          </div>
+        )}
+
         {/* Action buttons */}
         <div style={{ padding: "20px 20px 0", display: "flex", flexDirection: "column", gap: 10 }}>
-          {isPaid && (
-            <button style={{
-              width: "100%", background: "#16A34A", color: "white", border: "none",
-              borderRadius: 12, padding: "14px", fontWeight: 700, fontSize: 14,
-              cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
-            }}>
-              Confirmer l'accès au logement
+          {canValidate && !guest._alreadyValidated && (
+            <button
+              onClick={handleValidateAccess}
+              disabled={validating}
+              style={{
+                width: "100%", background: validating ? C.light : "#16A34A", color: "white", border: "none",
+                borderRadius: 12, padding: "14px", fontWeight: 700, fontSize: 14,
+                cursor: validating ? "wait" : "pointer", fontFamily: "'DM Sans',sans-serif",
+              }}
+            >
+              {validating ? "Validation..." : "Confirmer l'accès au logement"}
             </button>
+          )}
+          {guest._alreadyValidated && (
+            <div style={{
+              width: "100%", background: "#F0FDF4", color: "#16A34A", border: "1.5px solid #BBF7D0",
+              borderRadius: 12, padding: "14px", fontWeight: 600, fontSize: 13,
+              textAlign: "center", fontFamily: "'DM Sans',sans-serif",
+            }}>
+              ✓ Arrivée déjà validée
+            </div>
           )}
           {hasBooking && !isPaid && (
             <button style={{

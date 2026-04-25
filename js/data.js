@@ -857,17 +857,31 @@ const POINTS_REWARDS = [
   { id:"forfait_prm",  type:"paywall", cost:1000, label:"Forfait Premium gratuit",     icon:"💎", value:10000 },
 ];
 
-/* Helper: gestion des points (lecture/écriture localStorage) */
+/* Helper: gestion des points (lecture/écriture localStorage)
+   ─────────────────────────────────────────────────────────
+   Mode hybride :
+   - get()/getCoupons()/getReferrals() lisent le cache localStorage
+     pour un affichage instantané (utilisable comme initialiseur useState).
+   - syncFromBackend() rafraîchit ce cache depuis Supabase si l'utilisateur
+     est connecté. À appeler dans useEffect des écrans qui affichent des points.
+   - redeem(rewardId) appelle la RPC SECURITY DEFINER `redeem_reward` côté
+     serveur (anti-triche) puis rafraîchit le cache local.
+   ─────────────────────────────────────────────────────────
+*/
 const pointsManager = {
   get()         { return byerStorage.get("rewardsPoints", 25); },
   set(n)        { byerStorage.set("rewardsPoints", Math.max(0, n|0)); },
   add(n)        { const cur = this.get(); this.set(cur + (n|0)); return cur + (n|0); },
+
+  /* Échange local fallback uniquement — utilisé si Supabase indispo.
+     Côté serveur, c'est `redeemBackend` qui décide (avec vérif tier + atomique). */
   redeem(cost)  {
     const cur = this.get();
     if (cur < cost) return false;
     this.set(cur - cost);
     return true;
   },
+
   /* Bons générés par échange (= coupons en attente d'application) */
   getCoupons()  { return byerStorage.get("pointsCoupons", []); },
   addCoupon(c)  {
@@ -880,6 +894,7 @@ const pointsManager = {
     const arr = this.getCoupons().filter(c => c.id !== id);
     byerStorage.set("pointsCoupons", arr);
   },
+
   /* Compteur filleuls (pour stats de la page parrainage) */
   getReferrals()  { return byerStorage.get("referralCount", 0); },
   addReferral()   {
@@ -887,5 +902,93 @@ const pointsManager = {
     byerStorage.set("referralCount", n);
     this.add(POINTS_CONFIG.perReferral);
     return n;
+  },
+
+  /* ── Synchronisation backend ──────────────────────────
+     Appel typique dans un useEffect :
+       useEffect(() => { pointsManager.syncFromBackend().then(() => {
+         setPoints(pointsManager.get());
+         setCoupons(pointsManager.getCoupons());
+         setReferrals(pointsManager.getReferrals());
+       }); }, []);
+     Renvoie true si la sync a eu lieu, false sinon (offline ou non connecté).
+  */
+  async syncFromBackend() {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) return false;
+    try {
+      const { data: sess } = await db.auth.getSession();
+      const user = sess && sess.session && sess.session.user;
+      if (!user) return false;
+
+      // Solde + tier + nombre de filleuls (RLS : lecture autorisée)
+      const { data: bal, error: balErr } = await db.rewards.getBalance(user.id);
+      if (!balErr && bal) {
+        this.set(bal.rewards_points || 0);
+        byerStorage.set("referralCount", bal.referral_count || 0);
+      }
+
+      // Coupons actifs (non utilisés / non expirés)
+      const { data: cps, error: cpErr } = await db.rewards.listCoupons(user.id, true);
+      if (!cpErr && Array.isArray(cps)) {
+        const formatted = cps.map(c => ({
+          id: c.id,
+          rewardId: c.reward_id,
+          label: c.label,
+          type: c.type,
+          value: c.value,
+          createdAt: c.created_at ? new Date(c.created_at).getTime() : Date.now(),
+          expiresAt: c.expires_at,
+          status: c.status,
+        }));
+        byerStorage.set("pointsCoupons", formatted);
+      }
+
+      return true;
+    } catch (e) {
+      console.warn("[byer] pointsManager.syncFromBackend error:", e);
+      return false;
+    }
+  },
+
+  /* Échange backend (RPC redeem_reward) — atomique + anti-triche serveur.
+     Renvoie : { ok, error, coupon } */
+  async redeemBackend(rewardId) {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) {
+      return { ok: false, error: "Backend non disponible — connecte-toi pour échanger." };
+    }
+    try {
+      const { data, error } = await db.rewards.redeem(rewardId);
+      if (error) {
+        return { ok: false, error: error.message || "Échange refusé" };
+      }
+      // Re-sync après échange réussi pour rafraîchir solde + coupons
+      await this.syncFromBackend();
+      return { ok: true, coupon: data };
+    } catch (e) {
+      return { ok: false, error: e.message || "Erreur inattendue" };
+    }
+  },
+
+  /* Liste du catalogue depuis le backend (table rewards_catalog).
+     Fallback : POINTS_REWARDS hardcodé si backend indispo. */
+  async getCatalog() {
+    const db = window.byer && window.byer.db;
+    if (db && db.isReady) {
+      const { data, error } = await db.rewards.listCatalog();
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data.map(r => ({
+          id: r.id,
+          type: r.type,
+          cost: r.cost,
+          label: r.label,
+          icon: r.icon || "🎁",
+          value: r.value,
+          minTier: r.min_tier || null,
+        }));
+      }
+    }
+    return POINTS_REWARDS; // fallback hardcodé
   },
 };

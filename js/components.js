@@ -211,10 +211,70 @@ function ReviewSheet({ item, onClose, onSubmit }) {
   const [scores, setScores] = useState(init);
   const [comment, setComment] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   const avg = (Object.values(scores).reduce((s,v)=>s+v,0) / RATING_CRITERIA.length).toFixed(1);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitError("");
+    setSubmitting(true);
+
+    // ── Insert backend si Supabase prêt + listing réel + booking lié ──
+    const db = window.byer && window.byer.db;
+    const isBackendItem = item && (item._supabase || /^[0-9a-f-]{36}$/.test(String(item.id)));
+    if (db && db.isReady && isBackendItem) {
+      try {
+        const { data: sess } = await db.auth.getSession();
+        const user = sess && sess.session && sess.session.user;
+        if (user) {
+          // Map UI keys → colonnes DB rating_<key>
+          const dbScores = {};
+          Object.entries(scores).forEach(([k, v]) => {
+            const col = RATING_KEY_TO_DB[k];
+            if (col) dbScores[col] = v;
+          });
+
+          // Cherche le booking_id le plus récent du user pour ce listing
+          // (le trigger validate_review_eligibility exigera un booking completed)
+          const { data: bks } = await db.raw
+            .from("bookings")
+            .select("id, status")
+            .eq("listing_id", item.id)
+            .eq("guest_id", user.id)
+            .eq("status", "completed")
+            .order("checkout", { ascending: false })
+            .limit(1);
+
+          if (!bks || bks.length === 0) {
+            setSubmitError("Vous devez avoir un séjour terminé pour laisser un avis.");
+            setSubmitting(false);
+            return;
+          }
+
+          const { error } = await db.reviews.create({
+            booking_id: bks[0].id,
+            listing_id: item.id,
+            author_id:  user.id,
+            comment:    comment || null,
+            ...dbScores,
+            // rating global laissé à null → trigger compute_review_rating le calcule
+          });
+          if (error) {
+            // Cas typique : déjà reviewed (unique constraint) ou non éligible
+            setSubmitError(error.message || "Impossible de publier l'avis");
+            setSubmitting(false);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("[byer] review submit error:", e);
+        // On ne bloque pas l'UX en mode démo
+      }
+    }
+
+    setSubmitting(false);
     setSubmitted(true);
     setTimeout(() => { onSubmit?.(); onClose(); }, 2000);
   };
@@ -323,8 +383,26 @@ function ReviewSheet({ item, onClose, onSubmit }) {
                 />
               </div>
 
-              <button style={{...S.payBtn,marginBottom:8}} onClick={handleSubmit}>
-                Publier mon avis
+              {submitError && (
+                <div style={{
+                  background:"#FEF2F2",border:"1.5px solid #FECACA",borderRadius:12,
+                  padding:"10px 14px",marginBottom:12,
+                }}>
+                  <p style={{fontSize:12,fontWeight:600,color:"#EF4444"}}>{submitError}</p>
+                </div>
+              )}
+
+              <button
+                style={{
+                  ...S.payBtn,
+                  marginBottom:8,
+                  opacity: submitting ? 0.6 : 1,
+                  cursor:  submitting ? "wait" : "pointer",
+                }}
+                disabled={submitting}
+                onClick={handleSubmit}
+              >
+                {submitting ? "Publication..." : "Publier mon avis"}
               </button>
             </div>
           </>

@@ -14,10 +14,33 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
   // et autres actions rapides — évite la redondance avec un row dédié).
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
 
-  // Points dynamiques (persistés via byerStorage)
+  // Points dynamiques (cache localStorage pour affichage instantané,
+  // refresh asynchrone depuis Supabase via syncFromBackend)
   const [rewardsPoints, setRewardsPoints] = useState(() => pointsManager.get());
   const [referralCount, setReferralCount] = useState(() => pointsManager.getReferrals());
   const [coupons, setCoupons]             = useState(() => pointsManager.getCoupons());
+  const [catalog, setCatalog]             = useState(POINTS_REWARDS); // fallback initial
+  const [redeeming, setRedeeming]         = useState(false);
+
+  // Sync backend au montage : solde + coupons + catalog
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const synced = await pointsManager.syncFromBackend();
+      if (cancelled) return;
+      if (synced) {
+        setRewardsPoints(pointsManager.get());
+        setReferralCount(pointsManager.getReferrals());
+        setCoupons(pointsManager.getCoupons());
+      }
+      // Catalog backend (rewards_catalog) — fallback POINTS_REWARDS si indispo
+      const cat = await pointsManager.getCatalog();
+      if (!cancelled && Array.isArray(cat) && cat.length > 0) {
+        setCatalog(cat);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -47,16 +70,45 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
   };
 
   // Échange de points contre une récompense
-  const handleRedeem = (reward) => {
+  // ⚠️ Mode hybride : backend RPC redeem_reward (atomique + anti-triche)
+  //    si Supabase prêt et user connecté, sinon fallback localStorage.
+  const handleRedeem = async (reward) => {
+    if (redeeming) return;
     if (rewardsPoints < reward.cost) {
       showToast(`Il vous manque ${reward.cost - rewardsPoints} pts`);
       return;
     }
-    pointsManager.redeem(reward.cost);
-    pointsManager.addCoupon({ rewardId: reward.id, label: reward.label, type: reward.type, value: reward.value });
-    setRewardsPoints(pointsManager.get());
-    setCoupons(pointsManager.getCoupons());
-    showToast(`Bon "${reward.label}" généré !`);
+    setRedeeming(true);
+
+    const db = window.byer && window.byer.db;
+    const isReady = db && db.isReady;
+    let session = null;
+    if (isReady) {
+      const { data: sess } = await db.auth.getSession();
+      session = sess && sess.session;
+    }
+
+    if (isReady && session) {
+      // ── Backend path (anti-triche) ───────────────
+      const { ok, error } = await pointsManager.redeemBackend(reward.id);
+      setRedeeming(false);
+      if (!ok) {
+        showToast(error || "Échange refusé");
+        return;
+      }
+      // syncFromBackend a été rappelé dans redeemBackend, on rafraîchit l'état React
+      setRewardsPoints(pointsManager.get());
+      setCoupons(pointsManager.getCoupons());
+      showToast(`Bon "${reward.label}" généré !`);
+    } else {
+      // ── Fallback localStorage (mode démo / offline) ──
+      pointsManager.redeem(reward.cost);
+      pointsManager.addCoupon({ rewardId: reward.id, label: reward.label, type: reward.type, value: reward.value });
+      setRewardsPoints(pointsManager.get());
+      setCoupons(pointsManager.getCoupons());
+      setRedeeming(false);
+      showToast(`Bon "${reward.label}" généré !`);
+    }
   };
 
   // Niveau (tier) basé sur les points
@@ -446,10 +498,11 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
               </>
             )}
 
-            {/* Catalogue d'échange : transformer ses points en bons */}
+            {/* Catalogue d'échange : transformer ses points en bons
+               Source = table rewards_catalog si Supabase prêt, sinon POINTS_REWARDS */}
             <p style={{fontSize:13,fontWeight:700,color:C.black,marginBottom:8}}>🛒 Échanger mes points</p>
             <div style={{marginBottom:18}}>
-              {POINTS_REWARDS.map(reward => {
+              {catalog.map(reward => {
                 const canAfford = rewardsPoints >= reward.cost;
                 return (
                   <div key={reward.id} style={{
@@ -465,7 +518,7 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
                       <p style={{fontSize:11,color:C.coral,fontWeight:700,marginTop:1}}>{reward.cost} pts</p>
                     </div>
                     <button
-                      disabled={!canAfford}
+                      disabled={!canAfford || redeeming}
                       onClick={() => handleRedeem(reward)}
                       style={{
                         padding:"7px 12px",

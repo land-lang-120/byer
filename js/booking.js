@@ -90,6 +90,20 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
         const { data: sess } = await db.auth.getSession();
         const user = sess && sess.session && sess.session.user;
         if (user) {
+          // 1) Vérification disponibilité côté serveur (RPC migration 0006)
+          //    → bloque le double-clic et les conflits de fenêtre
+          const { data: avail, error: availErr } = await db.bookings.isAvailable(
+            item.id, arrivalDate, departDate
+          );
+          if (availErr) {
+            console.warn("[byer] availability check failed:", availErr.message);
+          } else if (avail === false) {
+            setBookingError("Ces dates ne sont plus disponibles. Choisissez d'autres dates.");
+            setBookingLoading(false);
+            return;
+          }
+
+          // 2) Mapping payment method → enum DB
           const paymentMap = {
             mtn:      "momo",
             om:       "om",
@@ -99,6 +113,19 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
             virement: "card",
             eu:       "card",
           };
+          const isMobileMoney = paymentMethod === "mtn" || paymentMethod === "om" || paymentMethod === "orange";
+
+          // 3) Détermination rental_mode pour le serveur (calcul payout/durée)
+          const isVehicle = item.type === "vehicle";
+          let rentalMode = "night";
+          if (duration === "month")        rentalMode = "month";
+          else if (duration === "week")    rentalMode = "week";
+          else if (duration === "day" && isVehicle) rentalMode = "day";
+
+          // 4) Insert avec décomposition prix complète + audit paiement
+          //    (le trigger compute_payout calcule commission + payout host
+          //     le trigger notify_host_on_booking envoie la notif
+          //     l'EXCLUDE constraint bloque toute double-résa concurrente)
           const { error: bookErr } = await db.bookings.create({
             guest_id:       user.id,
             host_id:        item.ownerId,
@@ -106,14 +133,34 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
             checkin:        arrivalDate,
             checkout:       departDate,
             guests_count:   guests,
+            rental_mode:    rentalMode,
+            // Décomposition prix (audit + remboursement par politique)
+            price_base:     pricing.base    || 0,
+            price_service:  pricing.service || 0,
+            price_dossier:  pricing.dossier || 0,
+            price_taxes:    pricing.taxes   || 0,
+            price_caution:  pricing.caution || 0,
             total_price:    pricing.total,
+            // Paiement
             payment_method: paymentMap[paymentMethod] || "momo",
+            payment_phone:  isMobileMoney ? phone : null,
             payment_status: "paid",
+            paid_at:        new Date().toISOString(),
             status:         "confirmed",
+            // Référence client lisible (la colonne `ref` existe en BDD avec
+            // default auto-généré ; on l'écrase avec celle affichée à l'utilisateur
+            // pour rester cohérent. Le qr_token UUID est généré par défaut.)
+            ref,
           });
           if (bookErr) {
+            // Si la contrainte EXCLUDE rejette → conflit dates
+            if (bookErr.code === "23P01" || /overlap|exclud/i.test(bookErr.message || "")) {
+              setBookingError("Ces dates viennent d'être prises par un autre client. Réessayez avec d'autres dates.");
+              setBookingLoading(false);
+              return;
+            }
             console.warn("[byer] booking insert error:", bookErr.message);
-            // On n'interrompt PAS le flow : la résa locale fonctionne quand même
+            // Sinon on n'interrompt PAS le flow : la résa locale fonctionne quand même
           }
         }
       } catch (e) {

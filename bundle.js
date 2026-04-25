@@ -89,48 +89,64 @@ const LOCATIONS = [{
   sub: "Est · Région forestière"
 }];
 
-/* ── Rating criteria ── */
+/* ── Rating criteria ──
+   ⚠️  Les 8 clés ci-dessous sont alignées sur les colonnes DB
+   `rating_<key>` créées en migration 0007 (sauf qualitePrix → rating_qualite_prix).
+   Toute modif ici doit être reflétée côté SQL.
+*/
 const RATING_CRITERIA = [{
   key: "proprete",
   label: "Propreté",
   icon: "🧹",
-  weight: 20
+  weight: 15
+}, {
+  key: "confort",
+  label: "Confort",
+  icon: "🛋️",
+  weight: 15
 }, {
   key: "emplacement",
   label: "Emplacement",
   icon: "📍",
   weight: 15
 }, {
-  key: "communication",
-  label: "Communication",
+  key: "convivialite",
+  label: "Convivialité",
   icon: "💬",
-  weight: 15
+  weight: 12
 }, {
-  key: "rapport",
-  label: "Rapport qualité",
-  icon: "💰",
-  weight: 15
+  key: "accessibilite",
+  label: "Accessibilité",
+  icon: "🚪",
+  weight: 10
 }, {
   key: "securite",
   label: "Sécurité",
   icon: "🔒",
-  weight: 10
+  weight: 11
 }, {
-  key: "confort",
-  label: "Confort",
-  icon: "🛋️",
-  weight: 10
-}, {
-  key: "equipements",
-  label: "Équipements",
+  key: "equipement",
+  label: "Équipement",
   icon: "📦",
   weight: 10
 }, {
-  key: "arrivee",
-  label: "Arrivée",
-  icon: "🚪",
-  weight: 5
+  key: "qualitePrix",
+  label: "Rapport qualité/prix",
+  icon: "💰",
+  weight: 12
 }];
+
+/* Mapping clé UI → colonne DB Postgres (snake_case) */
+const RATING_KEY_TO_DB = {
+  proprete: "rating_proprete",
+  confort: "rating_confort",
+  emplacement: "rating_emplacement",
+  convivialite: "rating_convivialite",
+  accessibilite: "rating_accessibilite",
+  securite: "rating_securite",
+  equipement: "rating_equipement",
+  qualitePrix: "rating_qualite_prix"
+};
 
 /* ── User profile ── */
 const USER = {
@@ -208,6 +224,14 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
    Si Supabase n'est pas configuré (SUPABASE_READY=false),
    les méthodes renvoient { data:null, error:{message:"offline"} }
    pour que l'UI continue de fonctionner avec les mocks.
+
+   Couvre les 7 migrations :
+   0001-0003 : schéma initial + RLS + storage
+   0004     : auth (KYC, 2FA, trusted devices, parrainage RPC)
+   0005     : listings (search, nearby, toggle_active, photos taggées)
+   0006     : bookings (anti double-résa, cancel, QR, payout)
+   0007     : reviews 8 critères, rewards_catalog, anti-triche points,
+              chat (block, mark_read, unread_count)
    ═══════════════════════════════════════════════════ */
 
 (function initSupabase() {
@@ -246,7 +270,6 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
   //  AUTH
   // ──────────────────────────────────────────────────
   const auth = {
-    // Inscription email + password
     signUp: async (email, password, name) => {
       return await sb.auth.signUp({
         email,
@@ -258,20 +281,17 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
         }
       });
     },
-    // Connexion email + password
     signIn: async (email, password) => {
       return await sb.auth.signInWithPassword({
         email,
         password
       });
     },
-    // Connexion par lien magique (envoyé par email)
     signInMagicLink: async email => {
       return await sb.auth.signInWithOtp({
         email
       });
     },
-    // Connexion par OTP SMS
     signInSMS: async phone => {
       return await sb.auth.signInWithOtp({
         phone
@@ -284,31 +304,33 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
         type: "sms"
       });
     },
-    // SSO (Google, Apple, Facebook)
     signInOAuth: async provider => {
       return await sb.auth.signInWithOAuth({
         provider
       });
     },
-    // Récupération de mot de passe
     resetPassword: async email => {
       return await sb.auth.resetPasswordForEmail(email, {
         redirectTo: window.location.origin + "/?reset=1"
       });
     },
-    // Changement de mot de passe (user connecté)
     updatePassword: async newPassword => {
       return await sb.auth.updateUser({
         password: newPassword
       });
     },
-    // Déconnexion
     signOut: async () => sb.auth.signOut(),
-    // User courant
     getUser: async () => sb.auth.getUser(),
     getSession: async () => sb.auth.getSession(),
-    // Écoute les changements de session (login/logout)
-    onAuthChange: cb => sb.auth.onAuthStateChange(cb)
+    onAuthChange: cb => sb.auth.onAuthStateChange(cb),
+    // RPC parrainage (migration 0004)
+    checkReferralCode: async code => sb.rpc("check_referral_code", {
+      p_code: code
+    }),
+    applyReferralCode: async code => sb.rpc("apply_referral_code", {
+      p_code: code
+    }),
+    requestAccountDeletion: async () => sb.rpc("delete_my_account_request")
   };
 
   // ──────────────────────────────────────────────────
@@ -318,6 +340,8 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
     get: async userId => {
       return await sb.from("profiles").select("*").eq("id", userId).single();
     },
+    // ⚠️ rewards_points / referral_count NE PEUVENT PAS être modifiés ici
+    // (RLS policy profiles_self_update_safe) → utiliser rewards.redeem(...)
     update: async (userId, patch) => {
       return await sb.from("profiles").update(patch).eq("id", userId).select().single();
     },
@@ -327,7 +351,59 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
   };
 
   // ──────────────────────────────────────────────────
-  //  LISTINGS (logements + véhicules)
+  //  KYC (migration 0004)
+  // ──────────────────────────────────────────────────
+  const kyc = {
+    list: async userId => sb.from("kyc_documents").select("*").eq("user_id", userId).order("uploaded_at", {
+      ascending: false
+    }),
+    upload: async (file, userId, docType) => {
+      const ext = file.name.split(".").pop();
+      const path = `${userId}/${docType}-${Date.now()}.${ext}`;
+      const {
+        error: upErr
+      } = await sb.storage.from("kyc-documents").upload(path, file, {
+        cacheControl: "3600",
+        upsert: false
+      });
+      if (upErr) return {
+        data: null,
+        error: upErr
+      };
+      // Insertion du record
+      return await sb.from("kyc_documents").insert({
+        user_id: userId,
+        doc_type: docType,
+        file_path: path,
+        status: "pending"
+      }).select().single();
+    },
+    delete: async (id, filePath) => {
+      await sb.storage.from("kyc-documents").remove([filePath]);
+      return await sb.from("kyc_documents").delete().eq("id", id);
+    }
+  };
+
+  // ──────────────────────────────────────────────────
+  //  TRUSTED DEVICES (migration 0004)
+  // ──────────────────────────────────────────────────
+  const devices = {
+    list: async userId => sb.from("trusted_devices").select("*").eq("user_id", userId).order("last_seen_at", {
+      ascending: false
+    }),
+    register: async (userId, deviceName, fingerprint) => sb.from("trusted_devices").upsert({
+      user_id: userId,
+      device_name: deviceName,
+      fingerprint,
+      last_seen_at: new Date().toISOString()
+    }, {
+      onConflict: "user_id,fingerprint"
+    }).select().single(),
+    remove: async id => sb.from("trusted_devices").delete().eq("id", id)
+  };
+
+  // ──────────────────────────────────────────────────
+  //  LISTINGS (migrations 0001 + 0005)
   // ──────────────────────────────────────────────────
   const listings = {
     list: async ({
@@ -335,34 +411,85 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
       city,
       limit = 30
     } = {}) => {
-      let q = sb.from("listings").select("*, listing_photos(url, position)").eq("is_active", true).order("rating_avg", {
+      let q = sb.from("listings").select("*, listing_photos(url, position, tag)").eq("is_active", true).order("rating_avg", {
         ascending: false
       }).limit(limit);
       if (type) q = q.eq("type", type);
       if (city) q = q.eq("city", city);
       return await q;
     },
-    get: async id => {
-      return await sb.from("listings").select("*, listing_photos(url, position), profiles!owner_id(name, photo_url, avatar_letter, avatar_bg, member_since)").eq("id", id).single();
-    },
-    create: async data => {
-      return await sb.from("listings").insert(data).select().single();
-    },
-    update: async (id, patch) => {
-      return await sb.from("listings").update(patch).eq("id", id).select().single();
-    },
-    remove: async id => {
-      return await sb.from("listings").delete().eq("id", id);
-    },
-    listMine: async userId => {
-      return await sb.from("listings").select("*, listing_photos(url, position)").eq("owner_id", userId).order("created_at", {
-        ascending: false
-      });
-    }
+    get: async id => sb.from("listings").select("*, listing_photos(url, position, tag), profiles!owner_id(name, photo_url, avatar_letter, avatar_bg, member_since, is_superhost, identity_verified)").eq("id", id).single(),
+    create: async data => sb.from("listings").insert(data).select().single(),
+    update: async (id, patch) => sb.from("listings").update(patch).eq("id", id).select().single(),
+    remove: async id => sb.from("listings").delete().eq("id", id),
+    listMine: async userId => sb.from("listings").select("*, listing_photos(url, position, tag)").eq("owner_id", userId).order("created_at", {
+      ascending: false
+    }),
+    // RPC migration 0005 — full-text search pondéré + filtres
+    search: async ({
+      query,
+      type,
+      subtype,
+      city,
+      minPrice,
+      maxPrice,
+      minRating,
+      amenities,
+      limit = 30,
+      offset = 0
+    } = {}) => sb.rpc("search_listings", {
+      p_query: query || null,
+      p_type: type || null,
+      p_subtype: subtype || null,
+      p_city: city || null,
+      p_min_price: minPrice ?? null,
+      p_max_price: maxPrice ?? null,
+      p_min_rating: minRating ?? null,
+      p_amenities: amenities || null,
+      p_limit: limit,
+      p_offset: offset
+    }),
+    // RPC migration 0005 — proximité géo
+    nearby: async ({
+      lat,
+      lng,
+      radiusKm = 10,
+      type,
+      limit = 20
+    } = {}) => sb.rpc("nearby_listings", {
+      p_lat: lat,
+      p_lng: lng,
+      p_radius_km: radiusKm,
+      p_type: type || null,
+      p_limit: limit
+    }),
+    // RPC migration 0005 — bascule actif/inactif (avec check propriétaire)
+    toggleActive: async listingId => sb.rpc("toggle_listing_active", {
+      p_listing_id: listingId
+    })
   };
 
   // ──────────────────────────────────────────────────
-  //  BOOKINGS
+  //  LISTING PHOTOS (migration 0005)
+  // ──────────────────────────────────────────────────
+  const photos = {
+    listForListing: async listingId => sb.from("listing_photos").select("*").eq("listing_id", listingId).order("position", {
+      ascending: true
+    }),
+    insert: async (listingId, url, position, tag = null) => sb.from("listing_photos").insert({
+      listing_id: listingId,
+      url,
+      position,
+      tag
+    }).select().single(),
+    updateTag: async (photoId, tag) => sb.from("listing_photos").update({
+      tag
+    }).eq("id", photoId),
+    remove: async photoId => sb.from("listing_photos").delete().eq("id", photoId)
+  };
+
+  // ──────────────────────────────────────────────────
+  //  BOOKINGS (migrations 0001 + 0006)
   // ──────────────────────────────────────────────────
   const bookings = {
     listMine: async (userId, role = "guest") => {
@@ -371,32 +498,53 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
         ascending: false
       });
     },
-    create: async data => {
-      return await sb.from("bookings").insert(data).select().single();
-    },
-    updateStatus: async (id, status) => {
-      return await sb.from("bookings").update({
-        status
-      }).eq("id", id).select().single();
-    }
+    get: async id => sb.from("bookings").select("*, listings(title, city, listing_photos(url, position)), profiles!host_id(name, photo_url, avatar_letter, avatar_bg)").eq("id", id).single(),
+    // ⚠️ Crée la résa avec décomposition prix complète + champ rental_mode
+    create: async data => sb.from("bookings").insert(data).select().single(),
+    updateStatus: async (id, status) => sb.from("bookings").update({
+      status
+    }).eq("id", id).select().single(),
+    // RPC migration 0006 — vérifie disponibilité (sans réserver)
+    isAvailable: async (listingId, checkin, checkout, excludeId = null) => sb.rpc("is_listing_available", {
+      p_listing_id: listingId,
+      p_checkin: checkin,
+      p_checkout: checkout,
+      p_exclude_id: excludeId
+    }),
+    // RPC migration 0006 — dates bloquées sur une période (pour calendrier)
+    getBlockedDates: async (listingId, fromDate, toDate) => sb.rpc("get_blocked_dates", {
+      p_listing_id: listingId,
+      p_from: fromDate,
+      p_to: toDate
+    }),
+    // RPC migration 0006 — annulation atomique avec calcul remboursement
+    cancel: async (bookingId, reason = null) => sb.rpc("cancel_booking", {
+      p_booking_id: bookingId,
+      p_reason: reason
+    }),
+    // RPC migration 0006 — vérification QR par hôte (lecture)
+    verifyQR: async qrToken => sb.rpc("verify_booking_qr", {
+      p_qr_token: qrToken
+    }),
+    // RPC migration 0006 — validation arrivée (idempotent)
+    validateArrival: async qrToken => sb.rpc("validate_arrival", {
+      p_qr_token: qrToken
+    })
   };
 
   // ──────────────────────────────────────────────────
-  //  CHAT (conversations + messages)
+  //  CHAT (migrations 0001 + 0007)
   // ──────────────────────────────────────────────────
   const chat = {
-    listConversations: async userId => {
-      return await sb.from("conversations").select(`
-          *,
-          guest:profiles!guest_id(name, photo_url, avatar_letter, avatar_bg),
-          host:profiles!host_id(name, photo_url, avatar_letter, avatar_bg),
-          listings(title, city)
-        `).or(`guest_id.eq.${userId},host_id.eq.${userId}`).order("last_message_at", {
-        ascending: false
-      });
-    },
+    listConversations: async userId => sb.from("conversations").select(`
+        *,
+        guest:profiles!guest_id(name, photo_url, avatar_letter, avatar_bg),
+        host:profiles!host_id(name, photo_url, avatar_letter, avatar_bg),
+        listings(title, city)
+      `).or(`guest_id.eq.${userId},host_id.eq.${userId}`).order("last_message_at", {
+      ascending: false
+    }),
     getOrCreate: async (guestId, hostId, listingId) => {
-      // Tente la lecture
       const {
         data: existing
       } = await sb.from("conversations").select("*").eq("guest_id", guestId).eq("host_id", hostId).eq("listing_id", listingId).maybeSingle();
@@ -404,19 +552,17 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
         data: existing,
         error: null
       };
-      // Sinon création
       return await sb.from("conversations").insert({
         guest_id: guestId,
         host_id: hostId,
         listing_id: listingId
       }).select().single();
     },
-    listMessages: async (conversationId, limit = 100) => {
-      return await sb.from("messages").select("*, sender:profiles!sender_id(name, avatar_letter, avatar_bg)").eq("conversation_id", conversationId).order("created_at", {
-        ascending: true
-      }).limit(limit);
-    },
+    listMessages: async (conversationId, limit = 100) => sb.from("messages").select("*, sender:profiles!sender_id(name, avatar_letter, avatar_bg)").eq("conversation_id", conversationId).order("created_at", {
+      ascending: true
+    }).limit(limit),
     sendMessage: async (conversationId, senderId, body) => {
+      // Le trigger enforce_message_not_blocked rejettera si conv bloquée
       const {
         data,
         error
@@ -426,9 +572,10 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
         body
       }).select().single();
       if (!error) {
-        // Bumpe le last_message_at de la conv
+        // Bumpe last_message_at + last_message_preview
         await sb.from("conversations").update({
-          last_message_at: new Date().toISOString()
+          last_message_at: new Date().toISOString(),
+          last_message_preview: body.slice(0, 200)
         }).eq("id", conversationId);
       }
       return {
@@ -436,7 +583,6 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
         error
       };
     },
-    // Realtime : écoute les nouveaux messages d'une conversation
     subscribeMessages: (conversationId, onNew) => {
       const channel = sb.channel(`messages:${conversationId}`).on("postgres_changes", {
         event: "INSERT",
@@ -444,75 +590,108 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
         table: "messages",
         filter: `conversation_id=eq.${conversationId}`
       }, payload => onNew(payload.new)).subscribe();
-      return () => sb.removeChannel(channel); // unsubscribe
-    }
+      return () => sb.removeChannel(channel);
+    },
+    // RPC migration 0007 — bulk read pour badge non-lus
+    markRead: async conversationId => sb.rpc("mark_conversation_read", {
+      p_conversation_id: conversationId
+    }),
+    // RPC migration 0007 — bloque/débloque (les 2 sens via conversation)
+    block: async conversationId => sb.rpc("block_conversation", {
+      p_conversation_id: conversationId
+    }),
+    unblock: async conversationId => sb.rpc("unblock_conversation", {
+      p_conversation_id: conversationId
+    })
   };
 
   // ──────────────────────────────────────────────────
-  //  REVIEWS
+  //  REVIEWS (migrations 0001 + 0007 — 8 critères)
   // ──────────────────────────────────────────────────
   const reviews = {
-    listForListing: async listingId => {
-      return await sb.from("reviews").select("*, profiles!author_id(name, photo_url, avatar_letter, avatar_bg)").eq("listing_id", listingId).order("created_at", {
-        ascending: false
-      });
-    },
-    create: async data => {
-      return await sb.from("reviews").insert(data).select().single();
-    },
-    reply: async (reviewId, replyText) => {
-      return await sb.from("reviews").update({
-        reply: replyText,
-        reply_at: new Date().toISOString()
-      }).eq("id", reviewId).select().single();
-    }
+    listForListing: async listingId => sb.from("reviews").select("*, profiles!author_id(name, photo_url, avatar_letter, avatar_bg)").eq("listing_id", listingId).order("created_at", {
+      ascending: false
+    }),
+    // ⚠️ Champs 8 critères (alignement schema 0007) :
+    //   rating_proprete, rating_confort, rating_accessibilite,
+    //   rating_convivialite, rating_emplacement, rating_securite,
+    //   rating_equipement, rating_qualite_prix
+    //   Le rating global est calculé auto par trigger compute_review_rating
+    //   si non fourni. Le trigger validate_review_eligibility rejette si
+    //   l'auteur n'est pas le guest d'un booking completed.
+    create: async data => sb.from("reviews").insert(data).select().single(),
+    // Réponse hôte (champ host_response, host_response_at)
+    reply: async (reviewId, replyText) => sb.from("reviews").update({
+      host_response: replyText,
+      host_response_at: new Date().toISOString()
+    }).eq("id", reviewId).select().single()
   };
 
   // ──────────────────────────────────────────────────
   //  NOTIFICATIONS
   // ──────────────────────────────────────────────────
   const notifications = {
-    listMine: async (userId, limit = 50) => {
-      return await sb.from("notifications").select("*").eq("user_id", userId).order("created_at", {
-        ascending: false
-      }).limit(limit);
-    },
-    markRead: async id => {
-      return await sb.from("notifications").update({
-        is_read: true
-      }).eq("id", id);
-    },
-    markAllRead: async userId => {
-      return await sb.from("notifications").update({
-        is_read: true
-      }).eq("user_id", userId).eq("is_read", false);
-    }
+    listMine: async (userId, limit = 50) => sb.from("notifications").select("*").eq("user_id", userId).order("created_at", {
+      ascending: false
+    }).limit(limit),
+    markRead: async id => sb.from("notifications").update({
+      is_read: true
+    }).eq("id", id),
+    markAllRead: async userId => sb.from("notifications").update({
+      is_read: true
+    }).eq("user_id", userId).eq("is_read", false)
   };
 
   // ──────────────────────────────────────────────────
-  //  POINTS / COUPONS / REFERRALS
+  //  POINTS / COUPONS / REFERRALS / REWARDS_CATALOG
+  //  (migrations 0001 + 0007)
   // ──────────────────────────────────────────────────
   const rewards = {
-    listPoints: async userId => {
-      return await sb.from("points_transactions").select("*").eq("user_id", userId).order("created_at", {
+    // Catalogue éditable depuis dashboard Supabase (table rewards_catalog)
+    listCatalog: async () => sb.from("rewards_catalog").select("*").eq("is_active", true).order("cost", {
+      ascending: true
+    }),
+    // Solde + tier — lus depuis profile (read-only via API)
+    getBalance: async userId => sb.from("profiles").select("rewards_points, rewards_tier, referral_count").eq("id", userId).single(),
+    // Historique des transactions (gain + débit)
+    listPoints: async userId => sb.from("points_transactions").select("*").eq("user_id", userId).order("created_at", {
+      ascending: false
+    }),
+    // Coupons générés par échange (filtrable actifs / utilisés / expirés)
+    listCoupons: async (userId, activeOnly = true) => {
+      let q = sb.from("coupons").select("*").eq("user_id", userId);
+      if (activeOnly) {
+        q = q.eq("status", "active");
+      }
+      return await q.order("created_at", {
         ascending: false
       });
     },
-    listCoupons: async userId => {
-      return await sb.from("coupons").select("*").eq("user_id", userId).eq("is_used", false).order("created_at", {
-        ascending: false
-      });
-    },
-    listReferrals: async userId => {
-      return await sb.from("referrals").select("*, profiles!referred_id(name, created_at)").eq("referrer_id", userId);
-    }
+    // Filleuls (parrainage)
+    listReferrals: async userId => sb.from("referrals").select("*, profiles!referred_id(name, created_at)").eq("referrer_id", userId),
+    // RPC migration 0007 — échange ATOMIQUE points → coupon
+    // Vérifie pts + tier + débit + création coupon + log tx, le tout serveur-side
+    redeem: async rewardId => sb.rpc("redeem_reward", {
+      p_reward_id: rewardId
+    }),
+    // RPC migration 0007 — marque le coupon utilisé (idempotent)
+    applyCoupon: async couponId => sb.rpc("apply_coupon", {
+      p_coupon_id: couponId
+    })
   };
 
   // ──────────────────────────────────────────────────
-  //  STORAGE (photos d'annonces)
+  //  COMPTEURS GLOBAUX (migration 0007)
+  // ──────────────────────────────────────────────────
+  const counters = {
+    // RPC : { notifications: n, messages: n } pour badges
+    getUnreadCount: async () => sb.rpc("get_unread_count")
+  };
+
+  // ──────────────────────────────────────────────────
+  //  STORAGE (photos d'annonces — bucket public)
   // ──────────────────────────────────────────────────
   const storage = {
-    // Upload d'une photo dans le bucket "listing-photos"
     uploadPhoto: async (file, listingId) => {
       const ext = file.name.split(".").pop();
       const path = `${listingId}/${Date.now()}.${ext}`;
@@ -538,8 +717,32 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
         error: null
       };
     },
-    deletePhoto: async path => {
-      return await sb.storage.from("listing-photos").remove([path]);
+    deletePhoto: async path => sb.storage.from("listing-photos").remove([path]),
+    // Avatar (bucket avatars public)
+    uploadAvatar: async (file, userId) => {
+      const ext = file.name.split(".").pop();
+      const path = `${userId}/avatar.${ext}`;
+      const {
+        data,
+        error
+      } = await sb.storage.from("avatars").upload(path, file, {
+        cacheControl: "3600",
+        upsert: true
+      });
+      if (error) return {
+        data: null,
+        error
+      };
+      const {
+        data: urlData
+      } = sb.storage.from("avatars").getPublicUrl(path);
+      return {
+        data: {
+          path,
+          url: urlData.publicUrl
+        },
+        error: null
+      };
     }
   };
 
@@ -552,12 +755,16 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
     // accès brut au client (pour cas avancés)
     auth,
     profiles,
+    kyc,
+    devices,
     listings,
+    photos,
     bookings,
     chat,
     reviews,
     notifications,
     rewards,
+    counters,
     storage,
     isReady: true
   };
@@ -587,12 +794,25 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
         signInOAuth: off,
         resetPassword: off,
         updatePassword: off,
-        onAuthChange: () => () => {}
+        onAuthChange: () => () => {},
+        checkReferralCode: off,
+        applyReferralCode: off,
+        requestAccountDeletion: off
       },
       profiles: {
         get: off,
         update: off,
         findByReferralCode: off
+      },
+      kyc: {
+        list: off,
+        upload: off,
+        delete: off
+      },
+      devices: {
+        list: off,
+        register: off,
+        remove: off
       },
       listings: {
         list: off,
@@ -600,19 +820,37 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
         create: off,
         update: off,
         remove: off,
-        listMine: off
+        listMine: off,
+        search: off,
+        nearby: off,
+        toggleActive: off
+      },
+      photos: {
+        listForListing: off,
+        insert: off,
+        updateTag: off,
+        remove: off
       },
       bookings: {
         listMine: off,
+        get: off,
         create: off,
-        updateStatus: off
+        updateStatus: off,
+        isAvailable: off,
+        getBlockedDates: off,
+        cancel: off,
+        verifyQR: off,
+        validateArrival: off
       },
       chat: {
         listConversations: off,
         getOrCreate: off,
         listMessages: off,
         sendMessage: off,
-        subscribeMessages: () => () => {}
+        subscribeMessages: () => () => {},
+        markRead: off,
+        block: off,
+        unblock: off
       },
       reviews: {
         listForListing: off,
@@ -625,13 +863,21 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
         markAllRead: off
       },
       rewards: {
+        listCatalog: off,
+        getBalance: off,
         listPoints: off,
         listCoupons: off,
-        listReferrals: off
+        listReferrals: off,
+        redeem: off,
+        applyCoupon: off
+      },
+      counters: {
+        getUnreadCount: off
       },
       storage: {
         uploadPhoto: off,
-        deletePhoto: off
+        deletePhoto: off,
+        uploadAvatar: off
       }
     };
   }
@@ -2761,7 +3007,17 @@ const POINTS_REWARDS = [{
   value: 10000
 }];
 
-/* Helper: gestion des points (lecture/écriture localStorage) */
+/* Helper: gestion des points (lecture/écriture localStorage)
+   ─────────────────────────────────────────────────────────
+   Mode hybride :
+   - get()/getCoupons()/getReferrals() lisent le cache localStorage
+     pour un affichage instantané (utilisable comme initialiseur useState).
+   - syncFromBackend() rafraîchit ce cache depuis Supabase si l'utilisateur
+     est connecté. À appeler dans useEffect des écrans qui affichent des points.
+   - redeem(rewardId) appelle la RPC SECURITY DEFINER `redeem_reward` côté
+     serveur (anti-triche) puis rafraîchit le cache local.
+   ─────────────────────────────────────────────────────────
+*/
 const pointsManager = {
   get() {
     return byerStorage.get("rewardsPoints", 25);
@@ -2774,6 +3030,8 @@ const pointsManager = {
     this.set(cur + (n | 0));
     return cur + (n | 0);
   },
+  /* Échange local fallback uniquement — utilisé si Supabase indispo.
+     Côté serveur, c'est `redeemBackend` qui décide (avec vérif tier + atomique). */
   redeem(cost) {
     const cur = this.get();
     if (cur < cost) return false;
@@ -2807,6 +3065,116 @@ const pointsManager = {
     byerStorage.set("referralCount", n);
     this.add(POINTS_CONFIG.perReferral);
     return n;
+  },
+  /* ── Synchronisation backend ──────────────────────────
+     Appel typique dans un useEffect :
+       useEffect(() => { pointsManager.syncFromBackend().then(() => {
+         setPoints(pointsManager.get());
+         setCoupons(pointsManager.getCoupons());
+         setReferrals(pointsManager.getReferrals());
+       }); }, []);
+     Renvoie true si la sync a eu lieu, false sinon (offline ou non connecté).
+  */
+  async syncFromBackend() {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) return false;
+    try {
+      const {
+        data: sess
+      } = await db.auth.getSession();
+      const user = sess && sess.session && sess.session.user;
+      if (!user) return false;
+
+      // Solde + tier + nombre de filleuls (RLS : lecture autorisée)
+      const {
+        data: bal,
+        error: balErr
+      } = await db.rewards.getBalance(user.id);
+      if (!balErr && bal) {
+        this.set(bal.rewards_points || 0);
+        byerStorage.set("referralCount", bal.referral_count || 0);
+      }
+
+      // Coupons actifs (non utilisés / non expirés)
+      const {
+        data: cps,
+        error: cpErr
+      } = await db.rewards.listCoupons(user.id, true);
+      if (!cpErr && Array.isArray(cps)) {
+        const formatted = cps.map(c => ({
+          id: c.id,
+          rewardId: c.reward_id,
+          label: c.label,
+          type: c.type,
+          value: c.value,
+          createdAt: c.created_at ? new Date(c.created_at).getTime() : Date.now(),
+          expiresAt: c.expires_at,
+          status: c.status
+        }));
+        byerStorage.set("pointsCoupons", formatted);
+      }
+      return true;
+    } catch (e) {
+      console.warn("[byer] pointsManager.syncFromBackend error:", e);
+      return false;
+    }
+  },
+  /* Échange backend (RPC redeem_reward) — atomique + anti-triche serveur.
+     Renvoie : { ok, error, coupon } */
+  async redeemBackend(rewardId) {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) {
+      return {
+        ok: false,
+        error: "Backend non disponible — connecte-toi pour échanger."
+      };
+    }
+    try {
+      const {
+        data,
+        error
+      } = await db.rewards.redeem(rewardId);
+      if (error) {
+        return {
+          ok: false,
+          error: error.message || "Échange refusé"
+        };
+      }
+      // Re-sync après échange réussi pour rafraîchir solde + coupons
+      await this.syncFromBackend();
+      return {
+        ok: true,
+        coupon: data
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e.message || "Erreur inattendue"
+      };
+    }
+  },
+  /* Liste du catalogue depuis le backend (table rewards_catalog).
+     Fallback : POINTS_REWARDS hardcodé si backend indispo. */
+  async getCatalog() {
+    const db = window.byer && window.byer.db;
+    if (db && db.isReady) {
+      const {
+        data,
+        error
+      } = await db.rewards.listCatalog();
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data.map(r => ({
+          id: r.id,
+          type: r.type,
+          cost: r.cost,
+          label: r.label,
+          icon: r.icon || "🎁",
+          value: r.value,
+          minTier: r.min_tier || null
+        }));
+      }
+    }
+    return POINTS_REWARDS; // fallback hardcodé
   }
 };
 
@@ -6681,8 +7049,66 @@ function ReviewSheet({
   const [scores, setScores] = useState(init);
   const [comment, setComment] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const avg = (Object.values(scores).reduce((s, v) => s + v, 0) / RATING_CRITERIA.length).toFixed(1);
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitError("");
+    setSubmitting(true);
+
+    // ── Insert backend si Supabase prêt + listing réel + booking lié ──
+    const db = window.byer && window.byer.db;
+    const isBackendItem = item && (item._supabase || /^[0-9a-f-]{36}$/.test(String(item.id)));
+    if (db && db.isReady && isBackendItem) {
+      try {
+        const {
+          data: sess
+        } = await db.auth.getSession();
+        const user = sess && sess.session && sess.session.user;
+        if (user) {
+          // Map UI keys → colonnes DB rating_<key>
+          const dbScores = {};
+          Object.entries(scores).forEach(([k, v]) => {
+            const col = RATING_KEY_TO_DB[k];
+            if (col) dbScores[col] = v;
+          });
+
+          // Cherche le booking_id le plus récent du user pour ce listing
+          // (le trigger validate_review_eligibility exigera un booking completed)
+          const {
+            data: bks
+          } = await db.raw.from("bookings").select("id, status").eq("listing_id", item.id).eq("guest_id", user.id).eq("status", "completed").order("checkout", {
+            ascending: false
+          }).limit(1);
+          if (!bks || bks.length === 0) {
+            setSubmitError("Vous devez avoir un séjour terminé pour laisser un avis.");
+            setSubmitting(false);
+            return;
+          }
+          const {
+            error
+          } = await db.reviews.create({
+            booking_id: bks[0].id,
+            listing_id: item.id,
+            author_id: user.id,
+            comment: comment || null,
+            ...dbScores
+            // rating global laissé à null → trigger compute_review_rating le calcule
+          });
+          if (error) {
+            // Cas typique : déjà reviewed (unique constraint) ou non éligible
+            setSubmitError(error.message || "Impossible de publier l'avis");
+            setSubmitting(false);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("[byer] review submit error:", e);
+        // On ne bloque pas l'UX en mode démo
+      }
+    }
+    setSubmitting(false);
     setSubmitted(true);
     setTimeout(() => {
       onSubmit?.();
@@ -6918,13 +7344,30 @@ function ReviewSheet({
     placeholder: "D\xE9crivez votre exp\xE9rience\u2026",
     value: comment,
     onChange: e => setComment(e.target.value)
-  })), /*#__PURE__*/React.createElement("button", {
+  })), submitError && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#FEF2F2",
+      border: "1.5px solid #FECACA",
+      borderRadius: 12,
+      padding: "10px 14px",
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      fontWeight: 600,
+      color: "#EF4444"
+    }
+  }, submitError)), /*#__PURE__*/React.createElement("button", {
     style: {
       ...S.payBtn,
-      marginBottom: 8
+      marginBottom: 8,
+      opacity: submitting ? 0.6 : 1,
+      cursor: submitting ? "wait" : "pointer"
     },
+    disabled: submitting,
     onClick: handleSubmit
-  }, "Publier mon avis")))));
+  }, submitting ? "Publication..." : "Publier mon avis")))));
 }
 
 /* ─── EMPTY STATE ──────────────────────────────── */
@@ -11806,7 +12249,18 @@ function MessagesScreen({
         error
       } = await db.chat.listConversations(user.id);
       if (error || cancelled || !Array.isArray(data) || data.length === 0) return;
-      const realConvs = data.map(c => {
+
+      // Pour chaque conv : compter les messages non lus (sender ≠ moi & read_at null)
+      const unreadCounts = await Promise.all(data.map(async c => {
+        const {
+          count
+        } = await db.raw.from("messages").select("id", {
+          count: "exact",
+          head: true
+        }).eq("conversation_id", c.id).neq("sender_id", user.id).is("read_at", null);
+        return count || 0;
+      }));
+      const realConvs = data.map((c, idx) => {
         const isHost = c.host_id === user.id;
         const other = isHost ? c.guest : c.host;
         return {
@@ -11821,10 +12275,13 @@ function MessagesScreen({
           avatarBg: other?.avatar_bg || "#6366F1",
           photo: other?.photo_url || null,
           logement: c.listings?.title || "Annonce",
-          lastMsg: "",
+          lastMsg: c.last_message_preview || "",
           lastTime: c.last_message_at ? new Date(c.last_message_at).toLocaleDateString('fr-FR') : "—",
-          unread: 0,
-          blocked: false,
+          unread: unreadCounts[idx],
+          // blocked = bloqué par n'importe quelle partie de la conv
+          blocked: !!c.blocked_by,
+          // _blockedByMe pour distinguer "je bloque" vs "on m'a bloqué"
+          _blockedByMe: c.blocked_by === user.id,
           messages: []
         };
       });
@@ -11834,7 +12291,32 @@ function MessagesScreen({
       cancelled = true;
     };
   }, [role]);
-  const toggleBlock = id => {
+  const toggleBlock = async id => {
+    const conv = convos.find(c => c.id === id);
+    if (!conv) return;
+
+    // Backend path : RPC block_conversation / unblock_conversation
+    if (conv._supabase) {
+      const db = window.byer && window.byer.db;
+      if (db && db.isReady) {
+        const fn = conv._blockedByMe ? "unblock" : "block";
+        const {
+          error
+        } = await db.chat[fn](conv._convId);
+        if (error) {
+          console.warn("[byer] toggleBlock backend error:", error.message);
+          return;
+        }
+        // Mise à jour optimiste locale
+        setConvos(prev => prev.map(c => c.id === id ? {
+          ...c,
+          blocked: !c._blockedByMe,
+          _blockedByMe: !c._blockedByMe
+        } : c));
+        return;
+      }
+    }
+    // Mock path
     setConvos(prev => prev.map(c => c.id === id ? {
       ...c,
       blocked: !c.blocked
@@ -11903,6 +12385,18 @@ function MessagesScreen({
         ...c,
         messages: adapted
       } : c));
+
+      // 1.b) Marque la conversation comme lue (RPC bulk update read_at)
+      //      → vide le badge non-lu
+      try {
+        await db.chat.markRead(conv._convId);
+        if (!cancelled) {
+          setConvos(prev => prev.map(c => c.id === openChat ? {
+            ...c,
+            unread: 0
+          } : c));
+        }
+      } catch (e) {/* silencieux */}
     })();
 
     // 2) Realtime subscription : pousse les nouveaux messages
@@ -12837,10 +13331,35 @@ function ProfileScreen({
   // et autres actions rapides — évite la redondance avec un row dédié).
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
 
-  // Points dynamiques (persistés via byerStorage)
+  // Points dynamiques (cache localStorage pour affichage instantané,
+  // refresh asynchrone depuis Supabase via syncFromBackend)
   const [rewardsPoints, setRewardsPoints] = useState(() => pointsManager.get());
   const [referralCount, setReferralCount] = useState(() => pointsManager.getReferrals());
   const [coupons, setCoupons] = useState(() => pointsManager.getCoupons());
+  const [catalog, setCatalog] = useState(POINTS_REWARDS); // fallback initial
+  const [redeeming, setRedeeming] = useState(false);
+
+  // Sync backend au montage : solde + coupons + catalog
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const synced = await pointsManager.syncFromBackend();
+      if (cancelled) return;
+      if (synced) {
+        setRewardsPoints(pointsManager.get());
+        setReferralCount(pointsManager.getReferrals());
+        setCoupons(pointsManager.getCoupons());
+      }
+      // Catalog backend (rewards_catalog) — fallback POINTS_REWARDS si indispo
+      const cat = await pointsManager.getCatalog();
+      if (!cancelled && Array.isArray(cat) && cat.length > 0) {
+        setCatalog(cat);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const showToast = msg => {
     setToast(msg);
     setTimeout(() => setToast(""), 2200);
@@ -12868,21 +13387,53 @@ function ProfileScreen({
   };
 
   // Échange de points contre une récompense
-  const handleRedeem = reward => {
+  // ⚠️ Mode hybride : backend RPC redeem_reward (atomique + anti-triche)
+  //    si Supabase prêt et user connecté, sinon fallback localStorage.
+  const handleRedeem = async reward => {
+    if (redeeming) return;
     if (rewardsPoints < reward.cost) {
       showToast(`Il vous manque ${reward.cost - rewardsPoints} pts`);
       return;
     }
-    pointsManager.redeem(reward.cost);
-    pointsManager.addCoupon({
-      rewardId: reward.id,
-      label: reward.label,
-      type: reward.type,
-      value: reward.value
-    });
-    setRewardsPoints(pointsManager.get());
-    setCoupons(pointsManager.getCoupons());
-    showToast(`Bon "${reward.label}" généré !`);
+    setRedeeming(true);
+    const db = window.byer && window.byer.db;
+    const isReady = db && db.isReady;
+    let session = null;
+    if (isReady) {
+      const {
+        data: sess
+      } = await db.auth.getSession();
+      session = sess && sess.session;
+    }
+    if (isReady && session) {
+      // ── Backend path (anti-triche) ───────────────
+      const {
+        ok,
+        error
+      } = await pointsManager.redeemBackend(reward.id);
+      setRedeeming(false);
+      if (!ok) {
+        showToast(error || "Échange refusé");
+        return;
+      }
+      // syncFromBackend a été rappelé dans redeemBackend, on rafraîchit l'état React
+      setRewardsPoints(pointsManager.get());
+      setCoupons(pointsManager.getCoupons());
+      showToast(`Bon "${reward.label}" généré !`);
+    } else {
+      // ── Fallback localStorage (mode démo / offline) ──
+      pointsManager.redeem(reward.cost);
+      pointsManager.addCoupon({
+        rewardId: reward.id,
+        label: reward.label,
+        type: reward.type,
+        value: reward.value
+      });
+      setRewardsPoints(pointsManager.get());
+      setCoupons(pointsManager.getCoupons());
+      setRedeeming(false);
+      showToast(`Bon "${reward.label}" généré !`);
+    }
   };
 
   // Niveau (tier) basé sur les points
@@ -13766,7 +14317,7 @@ function ProfileScreen({
     style: {
       marginBottom: 18
     }
-  }, POINTS_REWARDS.map(reward => {
+  }, catalog.map(reward => {
     const canAfford = rewardsPoints >= reward.cost;
     return /*#__PURE__*/React.createElement("div", {
       key: reward.id,
@@ -13805,7 +14356,7 @@ function ProfileScreen({
         marginTop: 1
       }
     }, reward.cost, " pts")), /*#__PURE__*/React.createElement("button", {
-      disabled: !canAfford,
+      disabled: !canAfford || redeeming,
       onClick: () => handleRedeem(reward),
       style: {
         padding: "7px 12px",
@@ -16836,15 +17387,159 @@ function QRScannerOverlay({
   })))));
 }
 
-/* ── Guest Verification Result ── */
+/* ── Guest Verification Result ──
+   Si Supabase prêt + code = UUID → RPC verify_booking_qr (vrai backend).
+   Sinon → fallback mock QR_GUESTS (démo).
+*/
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function GuestVerificationSheet({
   code,
   onClose
 }) {
-  const guest = QR_GUESTS[code] || QR_GUESTS["BYR-UNKNOWN"];
+  const [guest, setGuest] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [validating, setValidating] = useState(false);
+  const [validationMsg, setValidationMsg] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const db = window.byer && window.byer.db;
+      const isUUID = UUID_RE.test(code);
+      // ── Backend path : vrai QR token UUID + Supabase prêt ─────
+      if (db && db.isReady && isUUID) {
+        const {
+          data,
+          error
+        } = await db.bookings.verifyQR(code);
+        if (cancelled) return;
+        if (error || !data || data.length === 0) {
+          setGuest({
+            ...QR_GUESTS["BYR-UNKNOWN"],
+            _qrToken: code
+          });
+        } else {
+          const row = Array.isArray(data) ? data[0] : data;
+          // Map résultat RPC vers la structure attendue par l'UI
+          const formatDate = iso => {
+            if (!iso) return "—";
+            const d = new Date(iso);
+            return d.toLocaleDateString("fr-FR", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric"
+            });
+          };
+          const nights = Math.max(1, Math.ceil((new Date(row.checkout) - new Date(row.checkin)) / (1000 * 60 * 60 * 24)));
+          setGuest({
+            name: row.guest_name || "Client",
+            phone: row.guest_phone || null,
+            photo: row.guest_photo || null,
+            booking: {
+              ref: row.ref,
+              title: row.listing_title || "Annonce",
+              city: row.listing_city || "—",
+              zone: row.listing_zone || row.listing_city || "—",
+              checkIn: formatDate(row.checkin),
+              checkOut: formatDate(row.checkout),
+              nights,
+              totalPaid: row.total_price || 0,
+              status: row.payment_status === "paid" ? "paid" : "unpaid",
+              paymentMethod: row.payment_status === "paid" ? "Confirmé" : null,
+              paymentDate: null
+            },
+            _qrToken: code,
+            _backend: true,
+            _allGood: row.all_good === true,
+            _warning: row.warning,
+            _alreadyValidated: !!row.qr_validated_at
+          });
+        }
+      } else {
+        // ── Mock path : démo locale ───────────────────────────
+        setGuest(QR_GUESTS[code] || QR_GUESTS["BYR-UNKNOWN"]);
+      }
+      setLoading(false);
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [code]);
+  const handleValidateAccess = async () => {
+    if (!guest || !guest._backend || !guest._qrToken) {
+      // Mock : ferme juste la sheet
+      onClose();
+      return;
+    }
+    setValidating(true);
+    setValidationMsg("");
+    const db = window.byer && window.byer.db;
+    const {
+      data,
+      error
+    } = await db.bookings.validateArrival(guest._qrToken);
+    setValidating(false);
+    if (error) {
+      setValidationMsg(error.message || "Erreur lors de la validation");
+      return;
+    }
+    setValidationMsg("✅ Accès confirmé — séjour activé");
+    setTimeout(onClose, 1400);
+  };
+
+  // ── Loading state ───────────────────────────
+  if (loading || !guest) {
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,.5)",
+        zIndex: 500
+      },
+      onClick: onClose
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "fixed",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        background: C.white,
+        borderRadius: "22px 22px 0 0",
+        zIndex: 501,
+        padding: "40px 20px 60px",
+        textAlign: "center"
+      },
+      className: "sheet"
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 36,
+        height: 4,
+        borderRadius: 2,
+        background: C.border,
+        margin: "0 auto 24px"
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 28,
+        height: 28,
+        border: `3px solid ${C.border}`,
+        borderTopColor: C.coral,
+        borderRadius: "50%",
+        animation: "spin 0.8s linear infinite",
+        margin: "0 auto 12px"
+      }
+    }), /*#__PURE__*/React.createElement("style", null, `@keyframes spin { to { transform: rotate(360deg); } }`), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 13,
+        color: C.mid
+      }
+    }, "V\xE9rification du QR code...")));
+  }
   const hasBooking = !!guest.booking;
   const isPaid = hasBooking && guest.booking.status === "paid";
   const isPending = hasBooking && guest.booking.status === "pending";
+  // En backend mode : on n'autorise la confirmation que si all_good = true
+  const canValidate = guest._backend ? guest._allGood : isPaid;
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
@@ -17218,27 +17913,103 @@ function GuestVerificationSheet({
       textAlign: "center",
       lineHeight: 1.6
     }
-  }, "Ce code ne correspond \xE0 aucune r\xE9servation active dans Byer. Le visiteur doit d'abord effectuer une r\xE9servation et un paiement avant d'acc\xE9der au logement."))), /*#__PURE__*/React.createElement("div", {
+  }, "Ce code ne correspond \xE0 aucune r\xE9servation active dans Byer. Le visiteur doit d'abord effectuer une r\xE9servation et un paiement avant d'acc\xE9der au logement."))), guest._backend && guest._warning && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "16px 20px 0"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#FEF3C7",
+      border: "1.5px solid #FCD34D",
+      borderRadius: 12,
+      padding: "12px 14px",
+      display: "flex",
+      alignItems: "flex-start",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    width: "18",
+    height: "18",
+    fill: "none",
+    stroke: "#D97706",
+    strokeWidth: "2",
+    viewBox: "0 0 24 24",
+    style: {
+      flexShrink: 0,
+      marginTop: 1
+    }
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "9",
+    x2: "12",
+    y2: "13"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "17",
+    x2: "12.01",
+    y2: "17"
+  })), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: "#92400E",
+      lineHeight: 1.5,
+      fontWeight: 600
+    }
+  }, guest._warning))), validationMsg && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "12px 20px 0"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: validationMsg.startsWith("✅") ? "#F0FDF4" : "#FEF2F2",
+      border: `1.5px solid ${validationMsg.startsWith("✅") ? "#BBF7D0" : "#FECACA"}`,
+      borderRadius: 12,
+      padding: "10px 14px"
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: validationMsg.startsWith("✅") ? "#16A34A" : "#EF4444"
+    }
+  }, validationMsg))), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "20px 20px 0",
       display: "flex",
       flexDirection: "column",
       gap: 10
     }
-  }, isPaid && /*#__PURE__*/React.createElement("button", {
+  }, canValidate && !guest._alreadyValidated && /*#__PURE__*/React.createElement("button", {
+    onClick: handleValidateAccess,
+    disabled: validating,
     style: {
       width: "100%",
-      background: "#16A34A",
+      background: validating ? C.light : "#16A34A",
       color: "white",
       border: "none",
       borderRadius: 12,
       padding: "14px",
       fontWeight: 700,
       fontSize: 14,
-      cursor: "pointer",
+      cursor: validating ? "wait" : "pointer",
       fontFamily: "'DM Sans',sans-serif"
     }
-  }, "Confirmer l'acc\xE8s au logement"), hasBooking && !isPaid && /*#__PURE__*/React.createElement("button", {
+  }, validating ? "Validation..." : "Confirmer l'accès au logement"), guest._alreadyValidated && /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: "100%",
+      background: "#F0FDF4",
+      color: "#16A34A",
+      border: "1.5px solid #BBF7D0",
+      borderRadius: 12,
+      padding: "14px",
+      fontWeight: 600,
+      fontSize: 13,
+      textAlign: "center",
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, "\u2713 Arriv\xE9e d\xE9j\xE0 valid\xE9e"), hasBooking && !isPaid && /*#__PURE__*/React.createElement("button", {
     style: {
       width: "100%",
       background: C.coral,
@@ -28485,6 +29256,21 @@ function BookingScreen({
         } = await db.auth.getSession();
         const user = sess && sess.session && sess.session.user;
         if (user) {
+          // 1) Vérification disponibilité côté serveur (RPC migration 0006)
+          //    → bloque le double-clic et les conflits de fenêtre
+          const {
+            data: avail,
+            error: availErr
+          } = await db.bookings.isAvailable(item.id, arrivalDate, departDate);
+          if (availErr) {
+            console.warn("[byer] availability check failed:", availErr.message);
+          } else if (avail === false) {
+            setBookingError("Ces dates ne sont plus disponibles. Choisissez d'autres dates.");
+            setBookingLoading(false);
+            return;
+          }
+
+          // 2) Mapping payment method → enum DB
           const paymentMap = {
             mtn: "momo",
             om: "om",
@@ -28494,6 +29280,17 @@ function BookingScreen({
             virement: "card",
             eu: "card"
           };
+          const isMobileMoney = paymentMethod === "mtn" || paymentMethod === "om" || paymentMethod === "orange";
+
+          // 3) Détermination rental_mode pour le serveur (calcul payout/durée)
+          const isVehicle = item.type === "vehicle";
+          let rentalMode = "night";
+          if (duration === "month") rentalMode = "month";else if (duration === "week") rentalMode = "week";else if (duration === "day" && isVehicle) rentalMode = "day";
+
+          // 4) Insert avec décomposition prix complète + audit paiement
+          //    (le trigger compute_payout calcule commission + payout host
+          //     le trigger notify_host_on_booking envoie la notif
+          //     l'EXCLUDE constraint bloque toute double-résa concurrente)
           const {
             error: bookErr
           } = await db.bookings.create({
@@ -28503,14 +29300,34 @@ function BookingScreen({
             checkin: arrivalDate,
             checkout: departDate,
             guests_count: guests,
+            rental_mode: rentalMode,
+            // Décomposition prix (audit + remboursement par politique)
+            price_base: pricing.base || 0,
+            price_service: pricing.service || 0,
+            price_dossier: pricing.dossier || 0,
+            price_taxes: pricing.taxes || 0,
+            price_caution: pricing.caution || 0,
             total_price: pricing.total,
+            // Paiement
             payment_method: paymentMap[paymentMethod] || "momo",
+            payment_phone: isMobileMoney ? phone : null,
             payment_status: "paid",
-            status: "confirmed"
+            paid_at: new Date().toISOString(),
+            status: "confirmed",
+            // Référence client lisible (la colonne `ref` existe en BDD avec
+            // default auto-généré ; on l'écrase avec celle affichée à l'utilisateur
+            // pour rester cohérent. Le qr_token UUID est généré par défaut.)
+            ref
           });
           if (bookErr) {
+            // Si la contrainte EXCLUDE rejette → conflit dates
+            if (bookErr.code === "23P01" || /overlap|exclud/i.test(bookErr.message || "")) {
+              setBookingError("Ces dates viennent d'être prises par un autre client. Réessayez avec d'autres dates.");
+              setBookingLoading(false);
+              return;
+            }
             console.warn("[byer] booking insert error:", bookErr.message);
-            // On n'interrompt PAS le flow : la résa locale fonctionne quand même
+            // Sinon on n'interrompt PAS le flow : la résa locale fonctionne quand même
           }
         }
       } catch (e) {

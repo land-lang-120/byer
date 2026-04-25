@@ -46,17 +46,33 @@ const LOCATIONS = [
   { id: "bertoua",  label: "Bertoua",    sub: "Est · Région forestière" },
 ];
 
-/* ── Rating criteria ── */
+/* ── Rating criteria ──
+   ⚠️  Les 8 clés ci-dessous sont alignées sur les colonnes DB
+   `rating_<key>` créées en migration 0007 (sauf qualitePrix → rating_qualite_prix).
+   Toute modif ici doit être reflétée côté SQL.
+*/
 const RATING_CRITERIA = [
-  { key: "proprete",      label: "Propreté",        icon: "🧹", weight: 20 },
-  { key: "emplacement",   label: "Emplacement",     icon: "📍", weight: 15 },
-  { key: "communication", label: "Communication",   icon: "💬", weight: 15 },
-  { key: "rapport",       label: "Rapport qualité", icon: "💰", weight: 15 },
-  { key: "securite",      label: "Sécurité",        icon: "🔒", weight: 10 },
-  { key: "confort",       label: "Confort",          icon: "🛋️", weight: 10 },
-  { key: "equipements",   label: "Équipements",     icon: "📦", weight: 10 },
-  { key: "arrivee",       label: "Arrivée",          icon: "🚪", weight: 5  },
+  { key: "proprete",       label: "Propreté",            icon: "🧹",  weight: 15 },
+  { key: "confort",        label: "Confort",             icon: "🛋️", weight: 15 },
+  { key: "emplacement",    label: "Emplacement",         icon: "📍",  weight: 15 },
+  { key: "convivialite",   label: "Convivialité",        icon: "💬",  weight: 12 },
+  { key: "accessibilite",  label: "Accessibilité",       icon: "🚪",  weight: 10 },
+  { key: "securite",       label: "Sécurité",            icon: "🔒",  weight: 11 },
+  { key: "equipement",     label: "Équipement",          icon: "📦",  weight: 10 },
+  { key: "qualitePrix",    label: "Rapport qualité/prix", icon: "💰",  weight: 12 },
 ];
+
+/* Mapping clé UI → colonne DB Postgres (snake_case) */
+const RATING_KEY_TO_DB = {
+  proprete:       "rating_proprete",
+  confort:        "rating_confort",
+  emplacement:    "rating_emplacement",
+  convivialite:   "rating_convivialite",
+  accessibilite:  "rating_accessibilite",
+  securite:       "rating_securite",
+  equipement:     "rating_equipement",
+  qualitePrix:    "rating_qualite_prix",
+};
 
 /* ── User profile ── */
 const USER = {

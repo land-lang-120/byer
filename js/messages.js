@@ -46,7 +46,19 @@ function MessagesScreen({ role, onChatActiveChange }) {
       setCurrentUserId(user.id);
       const { data, error } = await db.chat.listConversations(user.id);
       if (error || cancelled || !Array.isArray(data) || data.length === 0) return;
-      const realConvs = data.map(c => {
+
+      // Pour chaque conv : compter les messages non lus (sender ≠ moi & read_at null)
+      const unreadCounts = await Promise.all(data.map(async c => {
+        const { count } = await db.raw
+          .from("messages")
+          .select("id", { count: "exact", head: true })
+          .eq("conversation_id", c.id)
+          .neq("sender_id", user.id)
+          .is("read_at", null);
+        return count || 0;
+      }));
+
+      const realConvs = data.map((c, idx) => {
         const isHost = c.host_id === user.id;
         const other  = isHost ? c.guest : c.host;
         return {
@@ -59,10 +71,13 @@ function MessagesScreen({ role, onChatActiveChange }) {
           avatarBg:     other?.avatar_bg || "#6366F1",
           photo:        other?.photo_url || null,
           logement:     c.listings?.title || "Annonce",
-          lastMsg:      "",
+          lastMsg:      c.last_message_preview || "",
           lastTime:     c.last_message_at ? new Date(c.last_message_at).toLocaleDateString('fr-FR') : "—",
-          unread:       0,
-          blocked:      false,
+          unread:       unreadCounts[idx],
+          // blocked = bloqué par n'importe quelle partie de la conv
+          blocked:      !!c.blocked_by,
+          // _blockedByMe pour distinguer "je bloque" vs "on m'a bloqué"
+          _blockedByMe: c.blocked_by === user.id,
           messages:     [],
         };
       });
@@ -71,7 +86,28 @@ function MessagesScreen({ role, onChatActiveChange }) {
     return () => { cancelled = true; };
   }, [role]);
 
-  const toggleBlock = (id) => {
+  const toggleBlock = async (id) => {
+    const conv = convos.find(c => c.id === id);
+    if (!conv) return;
+
+    // Backend path : RPC block_conversation / unblock_conversation
+    if (conv._supabase) {
+      const db = window.byer && window.byer.db;
+      if (db && db.isReady) {
+        const fn = conv._blockedByMe ? "unblock" : "block";
+        const { error } = await db.chat[fn](conv._convId);
+        if (error) {
+          console.warn("[byer] toggleBlock backend error:", error.message);
+          return;
+        }
+        // Mise à jour optimiste locale
+        setConvos(prev => prev.map(c => c.id === id
+          ? { ...c, blocked: !c._blockedByMe, _blockedByMe: !c._blockedByMe }
+          : c));
+        return;
+      }
+    }
+    // Mock path
     setConvos(prev => prev.map(c => c.id===id ? {...c, blocked:!c.blocked} : c));
   };
 
@@ -132,6 +168,15 @@ function MessagesScreen({ role, onChatActiveChange }) {
         time: new Date(m.created_at).toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"}),
       }));
       setConvos(prev => prev.map(c => c.id === openChat ? { ...c, messages: adapted } : c));
+
+      // 1.b) Marque la conversation comme lue (RPC bulk update read_at)
+      //      → vide le badge non-lu
+      try {
+        await db.chat.markRead(conv._convId);
+        if (!cancelled) {
+          setConvos(prev => prev.map(c => c.id === openChat ? { ...c, unread: 0 } : c));
+        }
+      } catch (e) { /* silencieux */ }
     })();
 
     // 2) Realtime subscription : pousse les nouveaux messages
