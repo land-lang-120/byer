@@ -521,6 +521,69 @@ select cron.unschedule('cleanup-expired-coupons');
 | v45     | 2026-04-25 | Bouton × pour annuler le wizard publish à toutes les étapes |
 | v46     | 2026-04-25 | Wrapper Supabase étendu (13 modules / 18 RPCs) ; booking flow câblé (pré-flight `is_listing_available` + capture conflit EXCLUDE 23P01 + décomposition prix complète) ; QR scan réel via `verify_booking_qr` + `validate_arrival` (UUID détecté, fallback démo BYR-XXXX) ; Reviews 8 critères alignés DB ; Récompenses sync backend + RPC atomique `redeem_reward` ; Chat compteur non-lus par conv + auto mark-read + RPC block/unblock ; pointsManager passe en backend-first |
 
+## 10bis. Bugs rencontrés & leçons apprises
+
+> Cette section capture les pièges réels qu'on a touchés sur Byer pour ne pas
+> les répéter sur les prochains projets. Format : symptôme → cause racine →
+> fix → leçon transposable.
+
+### 🐛 Bug B-001 : PL/pgSQL multi-INTO record + scalaire (mig.0006 → 0009)
+- **Symptôme** : `select validate_arrival('uuid')` échoue avec `ERREUR 42601 : la variable d'enregistrement ne peut pas faire partie d'une liste INTO à plusieurs éléments`. Pas détecté à `CREATE FUNCTION`, seulement au 1er appel.
+- **Cause racine** : pattern `select b.*, l.owner_id into v_b, v_owner` interdit en PL/pgSQL quand `v_b` est un `%rowtype`. PostgreSQL ne valide PAS le corps des fonctions PL/pgSQL à la création — seulement à l'exécution.
+- **Fix (mig.0009)** : scinder en 2 requêtes (`select b.* into v_b` puis `select l.owner_id into v_owner`).
+- **Leçon transposable** : à chaque RPC créée, **faire immédiatement un appel réel** (`select my_rpc(test_args);`). Ne jamais se contenter du `Success. No rows returned` à la création.
+
+### 🐛 Bug B-002 : Wrapper client out-of-sync avec les migrations (sessions précédentes)
+- **Symptôme** : 18 RPCs côté DB mais frontend appelait toujours du `sb.from()` direct ou des méthodes inexistantes. Logique métier dupliquée client/serveur.
+- **Cause racine** : pas de discipline « 1 migration = 1 méthode wrapper ». Le wrapper a accumulé du retard sur les migrations 0004→0007.
+- **Fix** : refonte complète du `js/supabase-client.js` avec 13 sous-modules cartographiés sur les 7 migrations. Commentaires `// migration 0006` / `// migration 0007` à chaque méthode.
+- **Leçon** : à chaque migration SQL qui ajoute une RPC, mettre à jour le wrapper dans le **même PR/commit**. Sinon le frontend dérive.
+
+### 🐛 Bug B-003 : Mismatch clés UI ↔ colonnes DB sur les ratings
+- **Symptôme** : `db.reviews.create({ rating_communication: 4 })` échoue avec `column does not exist`. La table avait `rating_convivialite`.
+- **Cause racine** : UI codée en premier (`communication`, `rapport`, `equipements`, `arrivee`) sans aligner sur le schéma DB (`convivialite`, `qualite_prix`, `equipement`, `accessibilite`).
+- **Fix** : mapping centralisé `RATING_KEY_TO_DB` dans `js/config.js` + correction des 8 clés UI. Schema DB devient la source de vérité.
+- **Leçon** : définir le **contrat de données (DB schema)** en premier. Toute clé UI = projection de ce contrat, jamais l'inverse. Stocker le mapping dans 1 seul endroit.
+
+### 🐛 Bug B-004 : Anti-triche points en localStorage
+- **Symptôme** : un user motivé pouvait modifier `localStorage.byer_points` et se créditer 100k pts.
+- **Cause racine** : pointsManager initial gérait la balance côté client uniquement.
+- **Fix (mig.0007)** : RLS column-level qui interdit `UPDATE profiles SET rewards_points = ...`. Tout passe par RPC `redeem_reward` SECURITY DEFINER ou par le trigger `award_booking_points`. Frontend `pointsManager.syncFromBackend()` lit la valeur serveur, jamais l'inverse.
+- **Leçon** : tout ce qui a une **valeur économique** (points, soldes, tokens) doit vivre côté serveur, validé par RLS column-level + RPC SECURITY DEFINER. Le client n'écrit JAMAIS directement, il appelle une RPC qui contrôle la légitimité.
+
+### 🐛 Bug B-005 : Concurrence sur les réservations
+- **Symptôme** : risque que 2 users réservent les mêmes dates en simultané (race condition entre `is_available` check et `INSERT`).
+- **Cause racine** : pas de verrou Postgres au niveau du schema. La logique applicative `if available then insert` est intrinsèquement non-atomique.
+- **Fix (mig.0006)** : contrainte `EXCLUDE USING gist (listing_id WITH =, daterange(checkin,checkout) WITH &&)` qui rend l'insertion conflictuelle physiquement impossible. Capture du code erreur SQL `23P01` côté frontend pour message clair.
+- **Leçon** : pour la concurrence sur des ressources finies, **toujours préférer une contrainte Postgres** (EXCLUDE, UNIQUE partielle, FOR UPDATE) à de la logique applicative. La DB garantit l'atomicité, l'app non.
+
+### 🐛 Bug B-006 : PWA cache trop agressif
+- **Symptôme** : Cloudflare déploie v23 mais les users voient encore v22 (HTML cached, JS cached, SW garde l'ancienne version).
+- **Cause racine** : Service Worker `byer-v22` cache `bundle.js` sans query param de version, donc nouvelle build = même clé cache.
+- **Fix** : double cache-busting obligatoire à chaque release : (a) `bundle.js?v=N` dans `index.html` (b) `CACHE_NAME = 'byer-vN'` dans `sw.js`. Listener `controllerchange` déclenche `window.location.reload()` automatiquement.
+- **Leçon** : tout déploiement front avec PWA doit bumper **2 versions** synchronisées (asset URL + cache key). Documenter cette règle visiblement (dans CLAUDE.md / contributing.md). Idéalement, automatiser via un script `bump-version.js`.
+
+### 🐛 Bug B-007 : Cloudflare Workers refuse le déploiement (>25 MB)
+- **Symptôme** : `wrangler deploy` échoue avec « total asset size exceeds 25 MiB ». Le binaire `node_modules/workerd/bin/workerd` à lui seul fait 122 MiB.
+- **Cause racine** : `wrangler` upload TOUT le directory par défaut, y compris node_modules.
+- **Fix** : créer `.assetsignore` qui exclut `node_modules/`, `.git/`, `.github/`, `*.md`, scripts batch, `android-project/`, `supabase/`, `scripts/`.
+- **Leçon** : sur un projet Cloudflare Workers Static Assets, **créer `.assetsignore` au tout début** (avant le 1er deploy). Modèle de référence à conserver.
+
+### 🐛 Bug B-008 : Auth confirme l'email mais user "incorrect" au login (en cours)
+- **Symptôme** : signup réussit, mais login avec mêmes credentials renvoie « Email ou mot de passe incorrect ».
+- **Cause racine probable** : option **« Confirm email »** activée par défaut dans Supabase Authentication. Tant que le user n'a pas cliqué le lien dans l'email reçu, `signInWithPassword` est rejeté avec `Email not confirmed`.
+- **Fix immédiat (phase QA)** : Dashboard Supabase → Authentication → Providers → Email → décocher « Confirm email » + Save. Signup direct = entrée immédiate dans l'app.
+- **Fix prod** : garder « Confirm email » activé, mais soigner l'UX du flow VerifyEmailScreen + customiser le template d'email (déjà fait via `VerifyEmailScreen.handleResend`).
+- **Leçon** : toujours vérifier l'état des **toggles Auth Supabase** (Confirm email, Secure email change, Allow phone signup, etc.) AVANT de tester en QA. Ces toggles silencieux changent radicalement le comportement.
+
+### 🐛 Bug B-009 : Cloudflare auto-deploy invisible (sessions précédentes)
+- **Symptôme** : commit pushé sur master, mais Cloudflare sert toujours l'ancienne version. Aucun message d'erreur.
+- **Cause racine** : il n'y avait AUCUN auto-deploy configuré. Le déploiement se faisait manuellement via `wrangler deploy`. Pas de webhook, pas de GitHub Action.
+- **Fix** : créer `.github/workflows/deploy.yml` avec `cloudflare/wrangler-action@v3`. Secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` stockés dans GitHub Secrets.
+- **Leçon** : à la 1re session sur un nouveau projet, **vérifier explicitement** : « est-ce que `git push` déclenche un déploiement ? ». Si non, le mettre en place AVANT toute autre feature. Sinon, on debug pendant des heures un code qui n'est pas en prod.
+
+---
+
 ## 10. Historique des migrations SQL
 
 | Migration                                  | Contenu |
