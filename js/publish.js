@@ -376,6 +376,12 @@ function PublishScreen({ onBack, initialSegment }) {
 
   const [uploadError, setUploadError] = useState("");
 
+  /* Index de la photo actuellement en cours d'étiquetage.
+     - null      : aucun picker ouvert
+     - number    : index de la photo dans form.photos pour laquelle
+                   le picker (TagPickerSheet) est affiché. */
+  const [taggingPhotoIdx, setTaggingPhotoIdx] = useState(null);
+
   const handleFiles = async (fileList) => {
     setUploadError("");
     const files = Array.from(fileList || []);
@@ -387,6 +393,9 @@ function PublishScreen({ onBack, initialSegment }) {
     }
     const toProcess = files.slice(0, remaining);
     const skipped = files.length - toProcess.length;
+    /* Capture la position de départ AVANT la mise à jour async — sert à
+       identifier la 1ère nouvelle photo non-étiquetée pour ouvrir le picker. */
+    const startIdx = form.photos.length;
     try {
       const compressed = [];
       for (const f of toProcess) {
@@ -401,16 +410,28 @@ function PublishScreen({ onBack, initialSegment }) {
            l'affichage selon la position parmi les photos de même type. */
         compressed.push({ src: dataUrl, tag: null });
       }
+      if (compressed.length === 0) return;
       setForm(p => {
-        const startIdx = p.photos.length;
+        const sIdx = p.photos.length;
         const tagged = compressed.map((ph, i) => ({
           ...ph,
           /* La toute 1ère photo de l'annonce est auto-étiquetée "exterior" (façade) */
-          tag: (startIdx + i === 0) ? "exterior" : null,
+          tag: (sIdx + i === 0) ? "exterior" : null,
         }));
         return { ...p, photos: [...p.photos, ...tagged] };
       });
       if (skipped > 0) setUploadError(`${skipped} photo(s) ignorée(s) — limite de 10 atteinte.`);
+      /* Ouvre AUTOMATIQUEMENT le picker d'étiquette pour la 1ère nouvelle
+         photo non-déjà-étiquetée. Si c'est la toute 1ère photo de l'annonce
+         (startIdx === 0), elle reçoit "exterior" auto → on saute à la 2ème. */
+      const firstUntaggedIdx = startIdx === 0
+        ? (compressed.length > 1 ? 1 : null)
+        : startIdx;
+      if (firstUntaggedIdx !== null) {
+        /* setTimeout pour laisser React appliquer setForm avant d'ouvrir
+           le picker (évite que le picker lise un form.photos désynchronisé). */
+        setTimeout(() => setTaggingPhotoIdx(firstUntaggedIdx), 120);
+      }
     } catch (err) {
       setUploadError("Erreur lors du chargement d'une photo. Réessayez.");
     }
@@ -442,7 +463,7 @@ function PublishScreen({ onBack, initialSegment }) {
         const usedByOthers = form.photos.filter((p, j) => p.tag === typeId && j !== idx).length;
         if (usedByOthers >= meta.maxCount) {
           setUploadError(`Limite atteinte pour « ${meta.label} » (${meta.maxCount} photo${meta.maxCount>1?"s":""} max). Modifiez la composition au step précédent pour en ajouter.`);
-          return;
+          return false;
         }
       }
     }
@@ -451,6 +472,17 @@ function PublishScreen({ onBack, initialSegment }) {
       ...p,
       photos: p.photos.map((ph, i) => i === idx ? { ...ph, tag: typeId || null } : ph),
     }));
+    return true;
+  };
+
+  /* Cherche la prochaine photo NON-étiquetée à partir d'un index donné
+     (exclus). Renvoie son index ou null si aucune. Utilisé pour enchaîner
+     automatiquement les pickers après upload multiple. */
+  const findNextUntaggedIdx = (afterIdx) => {
+    for (let i = afterIdx + 1; i < form.photos.length; i++) {
+      if (!form.photos[i].tag) return i;
+    }
+    return null;
   };
 
   /* Liste des TYPES disponibles pour ce buildingType.
@@ -1205,8 +1237,11 @@ function PublishScreen({ onBack, initialSegment }) {
                       overflow:"hidden",
                       display:"flex",flexDirection:"column",
                     }}>
-                      {/* Image */}
-                      <div style={{position:"relative",height:108,background:C.bg}}>
+                      {/* Image — cliquable pour ouvrir le picker (modifier l'étiquette) */}
+                      <div
+                        onClick={() => setTaggingPhotoIdx(i)}
+                        style={{position:"relative",height:108,background:C.bg,cursor:"pointer"}}
+                      >
                         <img src={src} alt={`Photo ${i+1}`} style={{
                           width:"100%",height:"100%",objectFit:"cover",display:"block",
                         }}/>
@@ -1246,53 +1281,27 @@ function PublishScreen({ onBack, initialSegment }) {
                           }}
                         >×</button>
                       </div>
-                      {/* Badge du label numéroté auto (visible quand tag défini) */}
-                      {tag && autoLabel && (
-                        <div style={{
-                          padding:"5px 6px",
-                          background:"#FFF5F5",
-                          color:C.coral,
-                          fontSize:10,fontWeight:700,
-                          textAlign:"center",
-                          borderTop:`1px solid ${C.border}`,
-                          fontFamily:"'DM Sans',sans-serif",
-                        }}>{autoLabel}</div>
-                      )}
-                      {/* Sélecteur de TYPE — l'utilisateur choisit juste le type
-                          (Chambre, Séjour…). Le numéro est ajouté automatiquement
-                          au-dessus selon la position parmi les photos de même type. */}
-                      <select
-                        value={tag || ""}
-                        onChange={(e) => setPhotoTag(i, e.target.value)}
+                      {/* Bouton-badge unique : affiche l'étiquette si définie,
+                          sinon "Étiqueter cette photo" en rouge. Clic = ouvre le picker. */}
+                      <button
+                        onClick={() => setTaggingPhotoIdx(i)}
                         style={{
-                          border:"none",borderTop:`1px solid ${C.border}`,
-                          background: tag ? C.white : C.bg,
-                          color: tag ? C.dark : C.mid,
-                          fontSize:10,fontWeight:600,
-                          padding:"6px 6px",
-                          fontFamily:"'DM Sans',sans-serif",
-                          cursor:"pointer",
-                          outline:"none",
-                          width:"100%",
-                          appearance:"none",
-                          textAlign:"center",
+                          border:"none",
+                          borderTop:`1px solid ${C.border}`,
+                          background: tag ? "#FFF5F5" : "#FFE5E7",
+                          color: C.coral,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: "9px 6px",
+                          textAlign: "center",
+                          fontFamily: "'DM Sans',sans-serif",
+                          cursor: "pointer",
+                          width: "100%",
+                          lineHeight: 1.3,
                         }}
                       >
-                        <option value="">📍 Choisir le type…</option>
-                        {PHOTO_TAG_TYPES.map(t => {
-                          const usedByOthers = form.photos.filter((p, j) => p.tag === t.id && j !== i).length;
-                          const isCurrent = tag === t.id;
-                          const isFull = usedByOthers >= t.maxCount;
-                          const counter = t.maxCount > 1
-                            ? ` (${usedByOthers + (isCurrent ? 1 : 0)}/${t.maxCount})`
-                            : "";
-                          return (
-                            <option key={t.id} value={t.id} disabled={isFull && !isCurrent}>
-                              {t.emoji} {t.label}{counter}{isFull && !isCurrent ? " — complet" : ""}
-                            </option>
-                          );
-                        })}
-                      </select>
+                        {tag && autoLabel ? autoLabel : "📍 Étiqueter cette photo"}
+                      </button>
                     </div>
                   );
                 })}
@@ -1375,6 +1384,175 @@ function PublishScreen({ onBack, initialSegment }) {
               >
                 {form.photos.length >= 3 ? "Continuer →" : `Ajoutez ${3 - form.photos.length} photo(s) de plus`}
               </button>
+
+              {/* ─── TAG PICKER SHEET ───
+                  Bottom-sheet plein écran qui s'ouvre AUTOMATIQUEMENT après
+                  upload (pour la 1ère nouvelle photo non étiquetée) ou au CLIC
+                  sur une photo déjà uploadée (pour modifier son étiquette).
+                  L'utilisateur choisit un type → enchaîne sur la photo suivante
+                  non étiquetée s'il y en a, sinon ferme le picker. */}
+              {taggingPhotoIdx !== null && form.photos[taggingPhotoIdx] && (() => {
+                const idx     = taggingPhotoIdx;
+                const photo   = form.photos[idx];
+                const curTag  = photo.tag || null;
+                const types   = computePhotoTagTypes();
+                const close   = () => setTaggingPhotoIdx(null);
+                const advance = () => {
+                  /* Cherche la prochaine photo non étiquetée APRÈS celle-ci.
+                     Si trouvée → bascule sur elle. Sinon → ferme. */
+                  const next = findNextUntaggedIdx(idx);
+                  if (next !== null) setTaggingPhotoIdx(next);
+                  else close();
+                };
+                return (
+                  <div
+                    onClick={close}
+                    style={{
+                      position:"fixed",inset:0,zIndex:200,
+                      background:"rgba(0,0,0,0.55)",
+                      display:"flex",alignItems:"flex-end",justifyContent:"center",
+                    }}
+                  >
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="sheet"
+                      style={{
+                        background:C.white,
+                        width:"100%",maxWidth:480,
+                        borderTopLeftRadius:24,borderTopRightRadius:24,
+                        padding:"18px 18px calc(18px + env(safe-area-inset-bottom)) 18px",
+                        maxHeight:"85vh",overflow:"auto",
+                        display:"flex",flexDirection:"column",gap:14,
+                      }}
+                    >
+                      {/* Drag handle */}
+                      <div style={{
+                        width:42,height:4,borderRadius:2,background:C.border,
+                        margin:"0 auto",
+                      }}/>
+
+                      {/* Header */}
+                      <div style={{textAlign:"center"}}>
+                        <p style={{fontSize:18,fontWeight:800,color:C.black,marginBottom:4}}>
+                          Étiqueter la photo {idx + 1}
+                        </p>
+                        <p style={{fontSize:12,color:C.mid,lineHeight:1.4}}>
+                          Choisissez ce que représente cette photo. Le numéro
+                          (Chambre 1, 2…) est ajouté automatiquement.
+                        </p>
+                      </div>
+
+                      {/* Aperçu de la photo */}
+                      <div style={{
+                        height:160,borderRadius:14,overflow:"hidden",
+                        background:C.bg,position:"relative",
+                      }}>
+                        <img
+                          src={photo.src || photo}
+                          alt={`Photo ${idx + 1}`}
+                          style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
+                        />
+                        {curTag && computePhotoLabel(idx) && (
+                          <span style={{
+                            position:"absolute",bottom:8,left:8,
+                            background:"rgba(0,0,0,0.65)",color:C.white,
+                            fontSize:11,fontWeight:700,
+                            padding:"4px 9px",borderRadius:10,
+                            fontFamily:"'DM Sans',sans-serif",
+                          }}>
+                            Actuel : {computePhotoLabel(idx)}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Erreur (limite atteinte) */}
+                      {uploadError && (
+                        <div style={{
+                          background:"#FFE5E7",border:`1px solid ${C.coral}`,
+                          borderRadius:10,padding:"8px 10px",
+                          fontSize:11,color:C.coral,fontWeight:600,lineHeight:1.4,
+                        }}>
+                          {uploadError}
+                        </div>
+                      )}
+
+                      {/* Grille de types */}
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                        {types.map(t => {
+                          const usedByOthers = form.photos.filter((p, j) => p.tag === t.id && j !== idx).length;
+                          const isCurrent = curTag === t.id;
+                          const isFull = usedByOthers >= t.maxCount;
+                          const counter = t.maxCount > 1
+                            ? `${usedByOthers + (isCurrent ? 1 : 0)}/${t.maxCount}`
+                            : null;
+                          const disabled = isFull && !isCurrent;
+                          return (
+                            <button
+                              key={t.id}
+                              disabled={disabled}
+                              onClick={() => {
+                                const ok = setPhotoTag(idx, t.id);
+                                if (ok) {
+                                  /* Petit délai pour que l'utilisateur voit
+                                     visuellement la sélection avant transition. */
+                                  setTimeout(advance, 180);
+                                }
+                              }}
+                              style={{
+                                display:"flex",flexDirection:"column",alignItems:"center",
+                                justifyContent:"center",gap:4,
+                                padding:"12px 8px",
+                                borderRadius:14,
+                                border: isCurrent ? `2px solid ${C.coral}` : `1.5px solid ${C.border}`,
+                                background: isCurrent ? "#FFF5F5" : (disabled ? C.bg : C.white),
+                                color: disabled ? C.light : C.dark,
+                                cursor: disabled ? "not-allowed" : "pointer",
+                                opacity: disabled ? .55 : 1,
+                                fontFamily:"'DM Sans',sans-serif",
+                              }}
+                            >
+                              <span style={{fontSize:22,lineHeight:1}}>{t.emoji}</span>
+                              <span style={{fontSize:12,fontWeight:700,textAlign:"center",lineHeight:1.2}}>
+                                {t.label}
+                              </span>
+                              {counter && (
+                                <span style={{
+                                  fontSize:10,fontWeight:600,
+                                  color: isFull ? "#0A8754" : C.mid,
+                                }}>{counter}{isFull ? " ✓" : ""}</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Action bar */}
+                      <div style={{display:"flex",gap:8,marginTop:4}}>
+                        {curTag && (
+                          <button
+                            onClick={() => { setPhotoTag(idx, null); }}
+                            style={{
+                              flex:1,padding:"12px 10px",borderRadius:14,
+                              border:`1.5px solid ${C.border}`,background:C.white,
+                              color:C.mid,fontWeight:700,fontSize:13,
+                              fontFamily:"'DM Sans',sans-serif",cursor:"pointer",
+                            }}
+                          >Retirer l'étiquette</button>
+                        )}
+                        <button
+                          onClick={close}
+                          style={{
+                            flex:1,padding:"12px 10px",borderRadius:14,
+                            border:"none",background:C.dark,color:C.white,
+                            fontWeight:700,fontSize:13,
+                            fontFamily:"'DM Sans',sans-serif",cursor:"pointer",
+                          }}
+                        >Plus tard</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
