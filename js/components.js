@@ -25,6 +25,10 @@ const Icon = ({ name, size=22, color=C.mid, stroke=1.8 }) => {
     chevron: <svg {...p}><polyline points="9 18 15 12 9 6"/></svg>,
     grid:    <svg {...p}><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>,
     close:   <svg {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+    /* history : horloge avec flèche de retour — dédié à "Historique des réservations" */
+    history: <svg {...p}><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.4 2.6L3 8"/><polyline points="3 3 3 8 8 8"/><polyline points="12 7 12 12 15.5 14"/></svg>,
+    /* logout : flèche sortante hors d'une porte */
+    logout:  <svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
     // Property type icons
     villa:   <svg {...p}><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/><path d="M9 21V12h6v9"/><rect x="10" y="3" width="4" height="4" fill={color} stroke="none" rx="1"/></svg>,
     studio:  <svg {...p}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>,

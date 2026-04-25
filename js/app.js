@@ -213,77 +213,138 @@ function ByerApp({ onLogout }) {
     return !q || i.title.toLowerCase().includes(q) || i.city.toLowerCase().includes(q);
   });
 
-  if (gallery) return <GalleryScreen item={gallery.item} startIdx={gallery.idx} onBack={()=>setGallery(null)} onOpenDetail={()=>{setDetail(gallery.item);setGallery(null);}}/>;
-  if (detail)  return <DetailScreen  item={detail} saved={saved} toggleSave={toggleSave} onBack={()=>setDetail(null)} openGallery={(idx,e)=>openGallery(detail,idx,e)} duration={duration} onViewOwner={name=>setOwnerProfile(name)} onBook={(localDur)=>{ if(localDur)setDuration(localDur); setBookingItem(detail); setDetail(null); }} onOpenAllReviews={(it)=>setAllReviewsItem(it)}/>;
-  if (allReviewsItem) return <AllReviewsScreen item={allReviewsItem} onBack={()=>setAllReviewsItem(null)}/>;
-  if (rentOpen) return <RentScreen onBack={()=>setRentOpen(false)}/>;
-  if (ownerProfile) return <OwnerProfileScreen ownerName={ownerProfile} onBack={()=>setOwnerProfile(null)}/>;
-
-  /* New feature screens */
-  if (buildingDetail) return <BuildingDetailScreen building={buildingDetail} onBack={()=>{ setBuildingDetail(null); if (returnToDashboard) { setDashboardOpen(true); setReturnToDashboard(false); } }}/>;
-  if (dashboardOpen)  return <OwnerDashboardScreen
-                                onBack={()=>setDashboardOpen(false)}
-                                onViewBuilding={b=>{setDashboardOpen(false);setBuildingDetail(b);setReturnToDashboard(true);}}
-                                onManageTechs={()=>{setDashboardOpen(false);setTechsRole("bailleur");setTechsOpen(true);setReturnToDashboard(true);}}
-                                onManagePros={()=>{setDashboardOpen(false);setProsRole("bailleur");setProsOpen(true);setReturnToDashboard(true);}}
-                                onBoost={()=>{setDashboardOpen(false);setBoostOpen(true);setReturnToDashboard(true);}}
-                                onAddListing={(seg)=>{setDashboardOpen(false);setPublishSegment(seg);setPublishOpen(true);setReturnToDashboard(true);}}
-                                onViewAll={(filter)=>{setDashboardOpen(false);setListAllFilter(filter);setReturnToDashboard(true);}}
-                              />;
-  if (listAllFilter)  return <OwnerListAllScreen
-                                filter={listAllFilter}
-                                onBack={()=>{ setListAllFilter(null); if (returnToDashboard) { setDashboardOpen(true); setReturnToDashboard(false); } }}
-                                onViewBuilding={b=>{ setListAllFilter(null); setBuildingDetail(b); setReturnToDashboard(true); }}
-                              />;
-  if (techsOpen)      return <TechniciansScreen onBack={()=>closeAndMaybeReturnToDashboard(setTechsOpen)} role={techsRole}/>;
-  if (prosOpen)       return <ProfessionalsScreen onBack={()=>closeAndMaybeReturnToDashboard(setProsOpen)} role={prosRole}/>;
-  if (boostOpen)      return <BoostScreen onBack={()=>closeAndMaybeReturnToDashboard(setBoostOpen)}/>;
-  if (notifsOpen)      return <NotificationsScreen
-                                onBack={()=>setNotifsOpen(false)}
-                                onOpenBookings={()=>{ setNotifsOpen(false); setTab("trips"); }}
-                                onOpenMessages={()=>{ setNotifsOpen(false); setTab("messages"); }}
-                                onOpenRent={()=>{ setNotifsOpen(false); setRentOpen(true); }}
-                                onOpenBoost={()=>{ setNotifsOpen(false); setBoostOpen(true); }}
-                                onOpenTechs={()=>{ setNotifsOpen(false); setTechsOpen(true); }}
-                                onOpenReviews={()=>{ setNotifsOpen(false); setReviewsOpen(true); }}
-                              />;
-  if (publishOpen)     return <PublishScreen
-                                onBack={()=>{
-                                  setPublishOpen(false);setPublishSegment(null);
-                                  if (returnToDashboard) { setDashboardOpen(true); setReturnToDashboard(false); }
-                                }}
-                                initialSegment={publishSegment}
-                              />;
-  if (settingsOpen)    return <SettingsScreen
-                                onBack={()=>setSettingsOpen(false)}
-                                onOpenTerms={()=>setTermsOpen(true)}
-                                onOpenPrivacy={()=>setPrivacyOpen(true)}
-                                onOpenForgotPassword={()=>setForgotOpen(true)}
-                                onOpenSupport={()=>setSupportOpen(true)}
-                                onLogout={()=>{ setSettingsOpen(false); onLogout?.(); }}
-                                onDeleteAccount={()=>{ setSettingsOpen(false); onLogout?.(); }}
-                              />;
-  if (termsOpen)       return <TermsScreen   onBack={()=>setTermsOpen(false)}/>;
-  if (privacyOpen)     return <PrivacyScreen onBack={()=>setPrivacyOpen(false)}/>;
-  if (forgotOpen)      return <ForgotPasswordScreen onBack={()=>setForgotOpen(false)}/>;
-  if (supportOpen)     return <SupportScreen onBack={()=>setSupportOpen(false)}/>;
-  if (editProfileOpen) return <EditProfileScreen onBack={()=>setEditProfileOpen(false)}/>;
-  if (bookingItem)     return <BookingScreen
-                                item={bookingItem}
-                                duration={duration}
-                                onBack={()=>setBookingItem(null)}
-                                onComplete={()=>{setBookingItem(null);setTab("trips");}}
-                                onCreateBooking={(b)=>setUserBookings(prev=>[b, ...prev])}
-                              />;
-  if (reviewsOpen)     return <ReviewsScreen onBack={()=>setReviewsOpen(false)}/>;
-  if (historyOpen)     return <BookingHistoryScreen onBack={()=>setHistoryOpen(false)}/>;
-
   // Le bouton "Mon QR Code" affiche le QR de la réservation utilisateur
   // la plus récente (ou la première booking mock si aucune userBooking).
   const myQrBooking = userBookings[0] || BOOKINGS[0];
 
-  return (
-    <Shell tab={tab} setTab={setTab} hideNav={chatActive}>
+  /* closeAllOverlays : ferme tous les écrans secondaires en un seul appel.
+     Sert quand on clique sur un onglet de la nav bar globale alors qu'un
+     écran secondaire est ouvert : on veut basculer vers l'onglet demandé
+     et donc fermer ce qui était ouvert par-dessus. */
+  const closeAllOverlays = () => {
+    setGallery(null);
+    setDetail(null);
+    setAllReviewsItem(null);
+    setRentOpen(false);
+    setOwnerProfile(null);
+    setBuildingDetail(null);
+    setDashboardOpen(false);
+    setListAllFilter(null);
+    setTechsOpen(false);
+    setProsOpen(false);
+    setBoostOpen(false);
+    setNotifsOpen(false);
+    setPublishOpen(false);
+    setPublishSegment(null);
+    setSettingsOpen(false);
+    setTermsOpen(false);
+    setPrivacyOpen(false);
+    setForgotOpen(false);
+    setSupportOpen(false);
+    setEditProfileOpen(false);
+    setBookingItem(null);
+    setReviewsOpen(false);
+    setHistoryOpen(false);
+    setReturnToDashboard(false);
+  };
+
+  /* switchTab : helper passé à BottomNavBar pour fermer tout écran
+     secondaire AVANT de changer d'onglet. */
+  const switchTab = (newTab) => {
+    closeAllOverlays();
+    setTab(newTab);
+  };
+
+  /* Hide nav bar dans certains contextes immersifs :
+     - Conversation chat (UX plein écran)
+     - Galerie photo plein écran
+     - Scanner QR overlay (caméra plein écran) */
+  const hideGlobalNav = chatActive || !!gallery || qrScanOpen;
+
+  /* renderScreen : sélectionne l'écran courant. Une seule sortie pour
+     que le nav bar soit toujours rendu en dessous (au niveau racine). */
+  let screenContent;
+  if (detail) {
+    screenContent = <DetailScreen item={detail} saved={saved} toggleSave={toggleSave} onBack={()=>setDetail(null)} openGallery={(idx,e)=>openGallery(detail,idx,e)} duration={duration} onViewOwner={name=>setOwnerProfile(name)} onBook={(localDur)=>{ if(localDur)setDuration(localDur); setBookingItem(detail); setDetail(null); }} onOpenAllReviews={(it)=>setAllReviewsItem(it)}/>;
+  } else if (gallery) {
+    screenContent = <GalleryScreen item={gallery.item} startIdx={gallery.idx} onBack={()=>setGallery(null)} onOpenDetail={()=>{setDetail(gallery.item);setGallery(null);}}/>;
+  } else if (allReviewsItem) {
+    screenContent = <AllReviewsScreen item={allReviewsItem} onBack={()=>setAllReviewsItem(null)}/>;
+  } else if (rentOpen) {
+    screenContent = <RentScreen onBack={()=>setRentOpen(false)}/>;
+  } else if (ownerProfile) {
+    screenContent = <OwnerProfileScreen ownerName={ownerProfile} onBack={()=>setOwnerProfile(null)}/>;
+  } else if (buildingDetail) {
+    screenContent = <BuildingDetailScreen building={buildingDetail} onBack={()=>{ setBuildingDetail(null); if (returnToDashboard) { setDashboardOpen(true); setReturnToDashboard(false); } }}/>;
+  } else if (dashboardOpen) {
+    screenContent = <OwnerDashboardScreen
+                      onBack={()=>setDashboardOpen(false)}
+                      onViewBuilding={b=>{setDashboardOpen(false);setBuildingDetail(b);setReturnToDashboard(true);}}
+                      onManageTechs={()=>{setDashboardOpen(false);setTechsRole("bailleur");setTechsOpen(true);setReturnToDashboard(true);}}
+                      onManagePros={()=>{setDashboardOpen(false);setProsRole("bailleur");setProsOpen(true);setReturnToDashboard(true);}}
+                      onBoost={()=>{setDashboardOpen(false);setBoostOpen(true);setReturnToDashboard(true);}}
+                      onAddListing={(seg)=>{setDashboardOpen(false);setPublishSegment(seg);setPublishOpen(true);setReturnToDashboard(true);}}
+                      onViewAll={(filter)=>{setDashboardOpen(false);setListAllFilter(filter);setReturnToDashboard(true);}}
+                    />;
+  } else if (listAllFilter) {
+    screenContent = <OwnerListAllScreen
+                      filter={listAllFilter}
+                      onBack={()=>{ setListAllFilter(null); if (returnToDashboard) { setDashboardOpen(true); setReturnToDashboard(false); } }}
+                      onViewBuilding={b=>{ setListAllFilter(null); setBuildingDetail(b); setReturnToDashboard(true); }}
+                    />;
+  } else if (techsOpen) {
+    screenContent = <TechniciansScreen onBack={()=>closeAndMaybeReturnToDashboard(setTechsOpen)} role={techsRole}/>;
+  } else if (prosOpen) {
+    screenContent = <ProfessionalsScreen onBack={()=>closeAndMaybeReturnToDashboard(setProsOpen)} role={prosRole}/>;
+  } else if (boostOpen) {
+    screenContent = <BoostScreen onBack={()=>closeAndMaybeReturnToDashboard(setBoostOpen)}/>;
+  } else if (notifsOpen) {
+    screenContent = <NotificationsScreen
+                      onBack={()=>setNotifsOpen(false)}
+                      onOpenBookings={()=>{ setNotifsOpen(false); setTab("trips"); }}
+                      onOpenMessages={()=>{ setNotifsOpen(false); setTab("messages"); }}
+                      onOpenRent={()=>{ setNotifsOpen(false); setRentOpen(true); }}
+                      onOpenBoost={()=>{ setNotifsOpen(false); setBoostOpen(true); }}
+                      onOpenTechs={()=>{ setNotifsOpen(false); setTechsOpen(true); }}
+                      onOpenReviews={()=>{ setNotifsOpen(false); setReviewsOpen(true); }}
+                    />;
+  } else if (publishOpen) {
+    screenContent = <PublishScreen
+                      onBack={()=>{
+                        setPublishOpen(false);setPublishSegment(null);
+                        if (returnToDashboard) { setDashboardOpen(true); setReturnToDashboard(false); }
+                      }}
+                      initialSegment={publishSegment}
+                    />;
+  } else if (settingsOpen) {
+    screenContent = <SettingsScreen
+                      onBack={()=>setSettingsOpen(false)}
+                      onOpenTerms={()=>setTermsOpen(true)}
+                      onOpenPrivacy={()=>setPrivacyOpen(true)}
+                      onOpenForgotPassword={()=>setForgotOpen(true)}
+                      onOpenSupport={()=>setSupportOpen(true)}
+                      onLogout={()=>{ setSettingsOpen(false); onLogout?.(); }}
+                      onDeleteAccount={()=>{ setSettingsOpen(false); onLogout?.(); }}
+                    />;
+  } else if (termsOpen)       { screenContent = <TermsScreen   onBack={()=>setTermsOpen(false)}/>; }
+  else if (privacyOpen)       { screenContent = <PrivacyScreen onBack={()=>setPrivacyOpen(false)}/>; }
+  else if (forgotOpen)        { screenContent = <ForgotPasswordScreen onBack={()=>setForgotOpen(false)}/>; }
+  else if (supportOpen)       { screenContent = <SupportScreen onBack={()=>setSupportOpen(false)}/>; }
+  else if (editProfileOpen)   { screenContent = <EditProfileScreen onBack={()=>setEditProfileOpen(false)}/>; }
+  else if (bookingItem) {
+    screenContent = <BookingScreen
+                      item={bookingItem}
+                      duration={duration}
+                      onBack={()=>setBookingItem(null)}
+                      onComplete={()=>{setBookingItem(null);setTab("trips");}}
+                      onCreateBooking={(b)=>setUserBookings(prev=>[b, ...prev])}
+                    />;
+  } else if (reviewsOpen)     { screenContent = <ReviewsScreen onBack={()=>setReviewsOpen(false)}/>; }
+  else if (historyOpen)       { screenContent = <BookingHistoryScreen onBack={()=>setHistoryOpen(false)}/>; }
+  else {
+    /* Onglets principaux dans le Shell */
+    screenContent = (
+      <Shell hideNav={chatActive}>
       {locOpen && (
         <LocationSheet
           location={location}
@@ -328,7 +389,7 @@ function ByerApp({ onLogout }) {
       {tab==="trips" && <MyQRCodeButton onClick={() => setMyQrOpen(true)}/>}
       {tab==="trips" && <QRScanButton onClick={() => setQrInfoOpen(true)}/>}
       {tab==="messages" && <MessagesScreen role={role} onChatActiveChange={setChatActive}/>}
-      {tab==="profile"  && <ProfileScreen role={role} setRole={setRole} onOpenRent={() => setRentOpen(true)} onOpenDashboard={()=>setDashboardOpen(true)} onOpenTechs={()=>{setTechsRole(role);setTechsOpen(true);}} onOpenPros={()=>{setProsRole(role);setProsOpen(true);}} onOpenPublish={()=>{setPublishSegment(null);setPublishOpen(true);}} onOpenSettings={()=>setSettingsOpen(true)} onOpenEditProfile={()=>setEditProfileOpen(true)} onOpenReviews={()=>setReviewsOpen(true)} onOpenHistory={()=>setHistoryOpen(true)}/>}
+      {tab==="profile"  && <ProfileScreen role={role} setRole={setRole} onOpenRent={() => setRentOpen(true)} onOpenDashboard={()=>setDashboardOpen(true)} onOpenTechs={()=>{setTechsRole(role);setTechsOpen(true);}} onOpenPros={()=>{setProsRole(role);setProsOpen(true);}} onOpenPublish={()=>{setPublishSegment(null);setPublishOpen(true);}} onOpenSettings={()=>setSettingsOpen(true)} onOpenEditProfile={()=>setEditProfileOpen(true)} onOpenReviews={()=>setReviewsOpen(true)} onOpenHistory={()=>setHistoryOpen(true)} onLogout={onLogout}/>}
 
       {/* My QR Code dialog (locataire) */}
       {myQrOpen && <MyQRCodeDialog booking={myQrBooking} onClose={() => setMyQrOpen(false)}/>}
@@ -340,36 +401,55 @@ function ByerApp({ onLogout }) {
       {qrResult && <GuestVerificationSheet code={qrResult} onClose={() => setQrResult(null)}/>}
     </Shell>
   );
+  }
+
+  /* Render final : l'écran courant + la nav bar globale toujours visible
+     (sauf en mode immersif chat/galerie/scanner). */
+  return (
+    <>
+      {screenContent}
+      {!hideGlobalNav && <BottomNavBar tab={tab} setTab={switchTab}/>}
+    </>
+  );
 }
 
 /* ─── SHELL ─────────────────────────────────────── */
-function Shell({ children, tab, setTab, hideNav }) {
-  const nav = [
-    {id:"home",icon:"home",label:"Accueil"},{id:"saved",icon:"heart",label:"Favoris"},
-    {id:"trips",icon:"trips",label:"Voyages"},{id:"messages",icon:"message",label:"Messages"},
-    {id:"profile",icon:"user",label:"Profil"},
-  ];
-  // Quand on est dans une conversation (hideNav=true), on retire la nav bar
-  // ET on supprime le paddingBottom du scroll pour que la barre de saisie
-  // colle bien au bas de l'écran (UX chat full-screen).
+/* La nav bar est désormais rendue séparément (BottomNavBar) au niveau
+   racine de ByerApp pour rester visible sur TOUS les écrans (y compris
+   les écrans secondaires qui replacent le Shell). Shell ne contient
+   donc plus que le scroll wrapper. */
+function Shell({ children, hideNav }) {
   const scrollStyle = hideNav ? {...S.scroll, paddingBottom: 0} : S.scroll;
   return (
     <div style={S.shell}>
       <style>{BYER_CSS}</style>
       <div style={scrollStyle}>{children}</div>
-      {!hideNav && (
-        <nav style={S.nav}>
-          {nav.map(n => {
-            const on = tab===n.id;
-            return (
-              <button key={n.id} style={S.navBtn} onClick={()=>setTab(n.id)}>
-                <Icon name={on&&n.id==="saved"?"heartF":n.icon} size={21} color={on?C.coral:C.light} stroke={on?2:1.7}/>
-                <span style={{...S.navLabel,color:on?C.coral:C.light}}>{n.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-      )}
     </div>
+  );
+}
+
+/* ─── BOTTOM NAV BAR (fixed, always visible) ─────
+   Rendue au niveau racine de ByerApp. position:fixed dans S.nav
+   garantit la visibilité sur tous les écrans. Cliquer sur un onglet
+   ferme automatiquement tout écran secondaire ouvert (via setTab
+   qui appelle closeAll). */
+function BottomNavBar({ tab, setTab }) {
+  const nav = [
+    {id:"home",icon:"home",label:"Accueil"},{id:"saved",icon:"heart",label:"Favoris"},
+    {id:"trips",icon:"trips",label:"Voyages"},{id:"messages",icon:"message",label:"Messages"},
+    {id:"profile",icon:"user",label:"Profil"},
+  ];
+  return (
+    <nav style={S.nav}>
+      {nav.map(n => {
+        const on = tab===n.id;
+        return (
+          <button key={n.id} style={S.navBtn} onClick={()=>setTab(n.id)}>
+            <Icon name={on&&n.id==="saved"?"heartF":n.icon} size={21} color={on?C.coral:C.light} stroke={on?2:1.7}/>
+            <span style={{...S.navLabel,color:on?C.coral:C.light}}>{n.label}</span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }

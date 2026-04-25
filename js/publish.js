@@ -37,9 +37,12 @@ const ROOM_FIELDS = [
 ];
 
 /* Compo par défaut selon le sous-type d'unité.
-   La valeur 0 n'affiche pas le compteur "à 0" mais permet à l'utilisateur
-   de l'augmenter ; elle ne sera pas comptabilisée dans les pièces totales. */
-const DEFAULT_ROOMS = (subType) => {
+   Chaque pièce est un objet { count, instances } :
+   - count : nombre total de cette pièce
+   - instances : null par défaut (toutes identiques) → liste {id, amenities}
+                 quand l'utilisateur clique "Configurer individuellement"
+                 (permet ex. chambre 1 avec douche privée + clim, chambre 2 nue) */
+const DEFAULT_ROOMS_FLAT = (subType) => {
   if (subType === "chambre") return { chambre:1, douche:1, sejour:0, cuisine:0, magasin:0, buanderie:0, garage:0, piscine:0, gym:0, terrasse:0 };
   if (subType === "studio")  return { sejour:1, chambre:0, cuisine:1, douche:1, magasin:0, buanderie:0, garage:0, piscine:0, gym:0, terrasse:0 };
   if (subType === "villa" || subType === "maison")
@@ -47,6 +50,50 @@ const DEFAULT_ROOMS = (subType) => {
   /* appartement par défaut */
   return { sejour:1, chambre:2, cuisine:1, douche:1, magasin:0, buanderie:0, garage:0, piscine:0, gym:0, terrasse:0 };
 };
+
+/* Wrap chaque count dans un objet {count, instances:null} pour permettre la
+   configuration pièce-par-pièce ultérieurement. */
+const DEFAULT_ROOMS = (subType) => {
+  const flat = DEFAULT_ROOMS_FLAT(subType);
+  const out = {};
+  Object.keys(flat).forEach(k => { out[k] = { count: flat[k], instances: null }; });
+  return out;
+};
+
+/* Équipements suggérés PAR PIÈCE — proposés quand l'utilisateur configure
+   chaque pièce individuellement. La liste est curée pour chaque type de
+   pièce (une chambre n'a pas les mêmes options qu'une cuisine). */
+const ROOM_AMENITIES = {
+  sejour:    ["Smart TV","Climatisé","Canapé-lit","Vue mer","Cheminée","Home cinéma"],
+  chambre:   ["Lit double","Lit simple","Lits superposés","Douche privée","WC privé","Climatisé","Balcon","Vue mer","Smart TV","Coffre-fort","Bureau","Dressing"],
+  cuisine:   ["Équipée","Électroménager","Micro-ondes","Lave-vaisselle","Frigo","Cafetière","Bouilloire","Four","Plaque induction"],
+  douche:    ["Baignoire","Douche italienne","Eau chaude","Sèche-cheveux","Jacuzzi","WC séparé"],
+  magasin:   ["Sécurisé","Climatisé","Étagères","Volet roulant"],
+  buanderie: ["Lave-linge","Sèche-linge","Étendoir","Fer à repasser","Évier"],
+  garage:    ["Couvert","Sécurisé","Porte automatique","Recharge VE","Plusieurs places"],
+  piscine:   ["Chauffée","À débordement","Couverte","Pour enfants","Éclairage nocturne"],
+  gym:       ["Cardio","Musculation","Tapis","Sauna","Hammam","Vestiaire"],
+  terrasse:  ["Couverte","Vue mer","Mobilier extérieur","BBQ","Pergola","Éclairage"],
+};
+
+/* Équipements communs suggérés par TYPE D'ENTITÉ (bâtiment).
+   Chaque type de bâtiment a ses caractéristiques typiques — affichées en
+   étape 3 comme suggestions par défaut. L'utilisateur les coche/décoche
+   selon la réalité. */
+const BUILDING_AMENITIES_BY_TYPE = {
+  maison:   ["Jardin","Garage","Dépendance","Piscine privée","Portail automatique","Barrière sécurisée","Citerne d'eau","Panneaux solaires","Cour intérieure","Atelier"],
+  villa:    ["Piscine privée","Jardin paysager","Garage","Vue mer","BBQ","Terrasse panoramique","Maison du gardien","Cuisine d'été","Pool house","Court de tennis"],
+  immeuble: ["Ascenseur","Gardien 24/7","Parking sécurisé","Vidéosurveillance","Local poubelles","Local vélos","Hall d'entrée","Interphone","Groupe électrogène","Forage d'eau"],
+  hotel:    ["Réception 24/7","Restaurant","Bar","Piscine","Salle de sport","Spa","Salle de conférence","Parking","Ascenseur","Room service","Navette aéroport","Blanchisserie"],
+  motel:    ["Réception","Parking gratuit","Vidéosurveillance","WiFi gratuit","Distributeur","Petit-déj inclus","Accès 24/7"],
+  auberge:  ["Réception","Cuisine commune","Salon commun","WiFi gratuit","Casiers","Buanderie","Terrasse","Petit-déj inclus","Vélos en location"],
+};
+
+/* IDs uniques pour les instances de pièces (clé React stable) */
+let _roomInstanceCounter = 1;
+const newRoomInstanceId = () => `r${Date.now().toString(36)}-${_roomInstanceCounter++}`;
+const buildRoomInstances = (count) =>
+  Array.from({length: count}, () => ({ id: newRoomInstanceId(), amenities: [] }));
 
 /* ID unique pour chaque variante (ne dépend pas de l'ordre — stable même
    après suppression/ajout). Suffit pour les keys React et le tracking. */
@@ -159,15 +206,65 @@ function PublishScreen({ onBack, initialSegment }) {
       return { ...p, unitsConfig: { ...p.unitsConfig, [subId]: { ...sub, variants: newVariants } } };
     });
   };
-  /* Maj du nombre d'une pièce pour une variante donnée */
+  /* Maj du nombre d'une pièce pour une variante donnée.
+     Si la pièce est en mode "individuel" (instances != null), on synchronise
+     la longueur du tableau d'instances avec le nouveau count :
+     - count up : ajoute des instances vides à la fin
+     - count down : tronque depuis la fin */
   const setVariantRoom = (subId, variantId, roomKey, delta) => {
     setForm(p => {
       const sub = p.unitsConfig[subId];
       if (!sub) return p;
       const newVariants = sub.variants.map(v => {
         if (v.id !== variantId) return v;
-        const newVal = Math.max(0, Math.min(20, (v.rooms[roomKey] || 0) + delta));
-        return { ...v, rooms: { ...v.rooms, [roomKey]: newVal } };
+        const cur = v.rooms[roomKey] || { count: 0, instances: null };
+        const newCount = Math.max(0, Math.min(20, cur.count + delta));
+        let newInstances = cur.instances;
+        if (cur.instances) {
+          if (newCount > cur.instances.length) {
+            newInstances = [...cur.instances, ...buildRoomInstances(newCount - cur.instances.length)];
+          } else if (newCount < cur.instances.length) {
+            newInstances = cur.instances.slice(0, newCount);
+          }
+        }
+        return { ...v, rooms: { ...v.rooms, [roomKey]: { count: newCount, instances: newInstances } } };
+      });
+      return { ...p, unitsConfig: { ...p.unitsConfig, [subId]: { ...sub, variants: newVariants } } };
+    });
+  };
+  /* Bascule mode "configuration individuelle" pour une pièce d'une variante.
+     - off→on : crée N instances vides (N = count actuel)
+     - on→off : supprime les instances (toutes les pièces redeviennent identiques) */
+  const toggleRoomDetailed = (subId, variantId, roomKey) => {
+    setForm(p => {
+      const sub = p.unitsConfig[subId];
+      if (!sub) return p;
+      const newVariants = sub.variants.map(v => {
+        if (v.id !== variantId) return v;
+        const cur = v.rooms[roomKey] || { count: 0, instances: null };
+        if (cur.count === 0) return v;
+        const newInstances = cur.instances === null ? buildRoomInstances(cur.count) : null;
+        return { ...v, rooms: { ...v.rooms, [roomKey]: { ...cur, instances: newInstances } } };
+      });
+      return { ...p, unitsConfig: { ...p.unitsConfig, [subId]: { ...sub, variants: newVariants } } };
+    });
+  };
+  /* Toggle équipement pour UNE instance précise d'une pièce */
+  const toggleRoomInstanceAmenity = (subId, variantId, roomKey, instanceIdx, amenity) => {
+    setForm(p => {
+      const sub = p.unitsConfig[subId];
+      if (!sub) return p;
+      const newVariants = sub.variants.map(v => {
+        if (v.id !== variantId) return v;
+        const cur = v.rooms[roomKey];
+        if (!cur || !cur.instances) return v;
+        const newInst = cur.instances.map((inst, idx) => {
+          if (idx !== instanceIdx) return inst;
+          const has = (inst.amenities || []).includes(amenity);
+          const newAmens = has ? inst.amenities.filter(x => x !== amenity) : [...(inst.amenities || []), amenity];
+          return { ...inst, amenities: newAmens };
+        });
+        return { ...v, rooms: { ...v.rooms, [roomKey]: { ...cur, instances: newInst } } };
       });
       return { ...p, unitsConfig: { ...p.unitsConfig, [subId]: { ...sub, variants: newVariants } } };
     });
@@ -177,7 +274,7 @@ function PublishScreen({ onBack, initialSegment }) {
     setForm(p => {
       const sub = p.unitsConfig[subId];
       if (!sub) return p;
-      const newVar = { id: newVariantId(), count: 1, rooms: DEFAULT_ROOMS(subId) };
+      const newVar = { id: newVariantId(), count: 1, rooms: DEFAULT_ROOMS(subId), amenities: [] };
       return { ...p, unitsConfig: { ...p.unitsConfig, [subId]: { ...sub, variants: [...sub.variants, newVar] } } };
     });
   };
@@ -349,8 +446,10 @@ function PublishScreen({ onBack, initialSegment }) {
             const sub = form.unitsConfig[u.id];
             if (!sub) return;
             sub.variants.forEach(v => {
-              beds  += (v.rooms.chambre || 0) * v.count;
-              baths += (v.rooms.douche  || 0) * v.count;
+              const ch = v.rooms.chambre ? (v.rooms.chambre.count || 0) : 0;
+              const dc = v.rooms.douche  ? (v.rooms.douche.count  || 0) : 0;
+              beds  += ch * v.count;
+              baths += dc * v.count;
             });
           });
           aggBeds   = beds  || null;
@@ -383,10 +482,20 @@ function PublishScreen({ onBack, initialSegment }) {
         amenities:    isVehicle
                         ? (Array.isArray(form.amenities) ? form.amenities : [])
                         : (() => {
+                            /* Agrège tous les niveaux : bâtiment + variante + chaque instance
+                               de pièce (granularité maximale). Dédoublonné via Set pour rester
+                               compatible avec le filtrage legacy par mots-clés. */
                             const set = new Set(form.buildingAmenities || []);
                             Object.values(form.unitsConfig || {}).forEach(sub => {
                               (sub.variants || []).forEach(v => {
                                 (v.amenities || []).forEach(a => set.add(a));
+                                Object.values(v.rooms || {}).forEach(room => {
+                                  if (room && Array.isArray(room.instances)) {
+                                    room.instances.forEach(inst => {
+                                      (inst.amenities || []).forEach(a => set.add(a));
+                                    });
+                                  }
+                                });
                               });
                             });
                             return Array.from(set);
@@ -676,43 +785,106 @@ function PublishScreen({ onBack, initialSegment }) {
                                 </div>
                               </div>
 
-                              {/* Pièces par unité — visible uniquement si count >= 1 */}
+                              {/* Pièces par unité — visible uniquement si count >= 1
+                                  Chaque pièce affiche : compteur +/- ET un toggle
+                                  "⚙️ Détailler" qui révèle N cartes individuelles
+                                  (une par instance de pièce) avec leurs amenities propres.
+                                  Permet ex. dans une maison : 2 chambres dont 1 avec
+                                  douche privée, l'autre sans. */}
                               {vrt.count > 0 && (
                                 <>
                                   <p style={{fontSize:10,fontWeight:600,color:C.mid,marginBottom:6,textTransform:"uppercase",letterSpacing:.4}}>
                                     Pièces par unité
                                   </p>
-                                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:10}}>
+                                  <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
                                     {ROOM_FIELDS.map(r => {
-                                      const v = vrt.rooms[r.k] || 0;
+                                      const room = vrt.rooms[r.k] || { count:0, instances:null };
+                                      const isDetailed = room.instances !== null;
+                                      const amensCatalog = ROOM_AMENITIES[r.k] || [];
                                       return (
                                         <div key={r.k} style={{
-                                          display:"flex",alignItems:"center",justifyContent:"space-between",
-                                          padding:"5px 9px",background:C.bg,borderRadius:8,
+                                          background:C.bg,borderRadius:8,padding:"6px 9px",
                                         }}>
-                                          <span style={{fontSize:11,color:C.dark,display:"flex",alignItems:"center",gap:4,flex:1,minWidth:0}}>
-                                            <span style={{fontSize:12}}>{r.emoji}</span>
-                                            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</span>
-                                          </span>
-                                          <div style={{display:"flex",alignItems:"center",gap:4}}>
-                                            <button
-                                              onClick={() => setVariantRoom(u.id, vrt.id, r.k, -1)}
-                                              style={{width:20,height:20,borderRadius:10,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:C.dark,padding:0}}
-                                            >−</button>
-                                            <span style={{fontSize:11,fontWeight:700,color:C.black,minWidth:12,textAlign:"center"}}>{v}</span>
-                                            <button
-                                              onClick={() => setVariantRoom(u.id, vrt.id, r.k, +1)}
-                                              style={{width:20,height:20,borderRadius:10,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:C.dark,padding:0}}
-                                            >+</button>
+                                          {/* Ligne principale : compteur + toggle détail */}
+                                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+                                            <span style={{fontSize:11,color:C.dark,display:"flex",alignItems:"center",gap:5,flex:1,minWidth:0}}>
+                                              <span style={{fontSize:13}}>{r.emoji}</span>
+                                              <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</span>
+                                            </span>
+                                            <div style={{display:"flex",alignItems:"center",gap:5}}>
+                                              {/* Toggle "Détailler chaque pièce" — visible si count >= 1 */}
+                                              {room.count > 0 && amensCatalog.length > 0 && (
+                                                <button
+                                                  onClick={() => toggleRoomDetailed(u.id, vrt.id, r.k)}
+                                                  title={isDetailed ? "Tout identique" : "Configurer chaque pièce"}
+                                                  style={{
+                                                    fontSize:9,fontWeight:700,padding:"2px 7px",
+                                                    borderRadius:8,cursor:"pointer",
+                                                    border: isDetailed ? `1px solid ${C.coral}` : `1px solid ${C.border}`,
+                                                    background: isDetailed ? "#FFF5F5" : C.white,
+                                                    color: isDetailed ? C.coral : C.mid,
+                                                    fontFamily:"'DM Sans',sans-serif",
+                                                  }}
+                                                >
+                                                  {isDetailed ? "Détaillé ✓" : "⚙️ Détailler"}
+                                                </button>
+                                              )}
+                                              <button
+                                                onClick={() => setVariantRoom(u.id, vrt.id, r.k, -1)}
+                                                style={{width:20,height:20,borderRadius:10,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:C.dark,padding:0}}
+                                              >−</button>
+                                              <span style={{fontSize:11,fontWeight:700,color:C.black,minWidth:12,textAlign:"center"}}>{room.count}</span>
+                                              <button
+                                                onClick={() => setVariantRoom(u.id, vrt.id, r.k, +1)}
+                                                style={{width:20,height:20,borderRadius:10,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:C.dark,padding:0}}
+                                              >+</button>
+                                            </div>
                                           </div>
+
+                                          {/* Mode détaillé : carte par instance de pièce */}
+                                          {isDetailed && room.instances && room.instances.length > 0 && (
+                                            <div style={{marginTop:8,paddingTop:8,borderTop:`1px dashed ${C.border}`,display:"flex",flexDirection:"column",gap:6}}>
+                                              {room.instances.map((inst, instIdx) => (
+                                                <div key={inst.id} style={{
+                                                  background:C.white,border:`1px solid ${C.border}`,
+                                                  borderRadius:8,padding:"7px 9px",
+                                                }}>
+                                                  <p style={{fontSize:10,fontWeight:700,color:C.coral,marginBottom:5,textTransform:"uppercase",letterSpacing:.4}}>
+                                                    {r.emoji} {r.label} {instIdx + 1}
+                                                  </p>
+                                                  <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                                                    {amensCatalog.map(a => {
+                                                      const on = (inst.amenities || []).includes(a);
+                                                      return (
+                                                        <button key={a}
+                                                          onClick={() => toggleRoomInstanceAmenity(u.id, vrt.id, r.k, instIdx, a)}
+                                                          style={{
+                                                            padding:"3px 7px",borderRadius:12,cursor:"pointer",
+                                                            border: on ? `1px solid ${C.coral}` : `1px solid ${C.border}`,
+                                                            background: on ? "#FFF5F5" : C.bg,
+                                                            fontSize:9,fontWeight:600,fontFamily:"'DM Sans',sans-serif",
+                                                            color: on ? C.coral : C.mid,
+                                                            display:"inline-flex",alignItems:"center",gap:2,
+                                                          }}
+                                                        >
+                                                          {on && <Icon name="check" size={8} color={C.coral} stroke={2.5}/>}
+                                                          {a}
+                                                        </button>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
                                         </div>
                                       );
                                     })}
                                   </div>
 
-                                  {/* Équipements PAR UNITÉ (spécifiques à cette variante) */}
+                                  {/* Équipements PAR UNITÉ (à toute l'unité, distinct des amenities par pièce) */}
                                   <p style={{fontSize:10,fontWeight:600,color:C.mid,marginBottom:6,textTransform:"uppercase",letterSpacing:.4}}>
-                                    Équipements de cette unité
+                                    Équipements de cette unité (toutes pièces)
                                   </p>
                                   <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
                                     {UNIT_AMENITY_OPTIONS.map(a => {
@@ -843,38 +1015,87 @@ function PublishScreen({ onBack, initialSegment }) {
               </div>
 
               {/* Amenities — split en 2 niveaux pour les logements,
-                  liste unique pour les véhicules */}
-              {form.segment === "property" ? (
-                <>
-                  <p style={{fontSize:13,fontWeight:700,color:C.dark,marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
-                    <span>🏗️</span> Équipements communs au bâtiment
-                  </p>
-                  <p style={{fontSize:11,color:C.light,marginBottom:10,lineHeight:1.5}}>
-                    Partagés par toutes les unités (piscine commune, ascenseur, gardien, parking…). Les équipements propres à chaque unité (WiFi, clim…) ont été définis à l'étape précédente.
-                  </p>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:24}}>
-                    {BUILDING_AMENITY_OPTIONS.map(a => {
-                      const on = form.buildingAmenities.includes(a);
-                      return (
-                        <button key={a}
-                          onClick={() => toggleBuildingAmenity(a)}
-                          style={{
-                            padding:"7px 13px",borderRadius:20,cursor:"pointer",
-                            border: on ? `1.5px solid ${C.coral}` : `1.5px solid ${C.border}`,
-                            background: on ? "#FFF5F5" : C.white,
-                            fontSize:12,fontWeight:600,fontFamily:"'DM Sans',sans-serif",
-                            color: on ? C.coral : C.mid,
-                            display:"flex",alignItems:"center",gap:4,
-                          }}
-                        >
-                          {on && <Icon name="check" size={12} color={C.coral} stroke={2.5}/>}
-                          {a}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              ) : (
+                  liste unique pour les véhicules.
+                  Le catalogue d'équipements bâtiment est CONTEXTUEL au type :
+                  une maison propose Jardin/Dépendance/Garage, un hôtel propose
+                  Réception/Restaurant/Bar/Spa, etc.
+                  L'utilisateur peut aussi ajouter ses propres équipements via
+                  un champ libre — utile pour ce qui n'est pas dans le catalogue. */}
+              {form.segment === "property" ? (() => {
+                const bt = BUILDING_TYPES.find(b => b.id === form.buildingType);
+                const btLabel = bt ? bt.label.toLowerCase() : "bâtiment";
+                /* Suggestions par type + équipements custom déjà ajoutés (évite doublons) */
+                const baseSuggestions = BUILDING_AMENITIES_BY_TYPE[form.buildingType] || BUILDING_AMENITY_OPTIONS;
+                const customAdded = form.buildingAmenities.filter(a => !baseSuggestions.includes(a));
+                const allChips = [...baseSuggestions, ...customAdded];
+                return (
+                  <>
+                    <p style={{fontSize:13,fontWeight:700,color:C.dark,marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+                      <span>{bt ? bt.emoji : "🏗️"}</span> Équipements de votre {btLabel}
+                    </p>
+                    <p style={{fontSize:11,color:C.light,marginBottom:10,lineHeight:1.5}}>
+                      Caractéristiques au niveau du <strong>{btLabel}</strong> (partagées par toutes les unités). Les équipements propres à chaque unité ou pièce ont été définis à l'étape précédente.
+                    </p>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:10}}>
+                      {allChips.map(a => {
+                        const on = form.buildingAmenities.includes(a);
+                        return (
+                          <button key={a}
+                            onClick={() => toggleBuildingAmenity(a)}
+                            style={{
+                              padding:"7px 13px",borderRadius:20,cursor:"pointer",
+                              border: on ? `1.5px solid ${C.coral}` : `1.5px solid ${C.border}`,
+                              background: on ? "#FFF5F5" : C.white,
+                              fontSize:12,fontWeight:600,fontFamily:"'DM Sans',sans-serif",
+                              color: on ? C.coral : C.mid,
+                              display:"flex",alignItems:"center",gap:4,
+                            }}
+                          >
+                            {on && <Icon name="check" size={12} color={C.coral} stroke={2.5}/>}
+                            {a}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Ajout libre */}
+                    <div style={{display:"flex",gap:6,marginBottom:24}}>
+                      <input
+                        id="byer-custom-amenity"
+                        placeholder="Ajouter un équipement personnalisé…"
+                        style={{
+                          flex:1,padding:"8px 12px",borderRadius:12,
+                          border:`1.5px solid ${C.border}`,fontSize:12,
+                          fontFamily:"'DM Sans',sans-serif",color:C.dark,
+                          outline:"none",background:C.white,
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const v = (e.target.value || "").trim();
+                            if (v && !form.buildingAmenities.includes(v)) toggleBuildingAmenity(v);
+                            e.target.value = "";
+                            e.preventDefault();
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          const inp = document.getElementById("byer-custom-amenity");
+                          if (!inp) return;
+                          const v = (inp.value || "").trim();
+                          if (v && !form.buildingAmenities.includes(v)) toggleBuildingAmenity(v);
+                          inp.value = "";
+                        }}
+                        style={{
+                          padding:"8px 14px",borderRadius:12,border:"none",
+                          background:C.coral,color:C.white,fontSize:12,fontWeight:700,
+                          cursor:"pointer",fontFamily:"'DM Sans',sans-serif",
+                        }}
+                      >+ Ajouter</button>
+                    </div>
+                  </>
+                );
+              })() : (
                 <>
                   <p style={{fontSize:13,fontWeight:600,color:C.dark,marginBottom:8}}>Caractéristiques</p>
                   <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:24}}>
@@ -1063,12 +1284,22 @@ function PublishScreen({ onBack, initialSegment }) {
                           <p style={{fontSize:11,fontWeight:700,color:C.coral,marginBottom:4}}>{u.label} ({subTotal})</p>
                           {sub.variants.filter(v => v.count > 0).map((vrt, i) => {
                             const roomSummary = ROOM_FIELDS
-                              .filter(r => (vrt.rooms[r.k] || 0) > 0)
-                              .map(r => `${vrt.rooms[r.k]} ${r.label.toLowerCase()}`)
+                              .filter(r => {
+                                const room = vrt.rooms[r.k];
+                                return room && (room.count || 0) > 0;
+                              })
+                              .map(r => `${vrt.rooms[r.k].count} ${r.label.toLowerCase()}`)
                               .join(" · ") || "Aucune pièce détaillée";
                             const amens = (vrt.amenities || []);
+                            /* Pièces avec config individuelle (chaque instance a ses
+                               propres amenities) — affichées séparément pour montrer
+                               la granularité au-delà du résumé compact. */
+                            const detailedRooms = ROOM_FIELDS.filter(r => {
+                              const room = vrt.rooms[r.k];
+                              return room && room.instances && room.instances.length > 0;
+                            });
                             return (
-                              <div key={vrt.id} style={{marginBottom:4}}>
+                              <div key={vrt.id} style={{marginBottom:6}}>
                                 <p style={{fontSize:11,color:C.mid,lineHeight:1.5}}>
                                   <strong>×{vrt.count}</strong> — {roomSummary}
                                 </p>
@@ -1077,6 +1308,19 @@ function PublishScreen({ onBack, initialSegment }) {
                                     🔧 {amens.join(" · ")}
                                   </p>
                                 )}
+                                {detailedRooms.map(r => (
+                                  <div key={r.k} style={{paddingLeft:14,marginTop:3}}>
+                                    {vrt.rooms[r.k].instances.map((inst, idx) => {
+                                      const a = (inst.amenities || []);
+                                      if (a.length === 0) return null;
+                                      return (
+                                        <p key={inst.id} style={{fontSize:10,color:C.light,lineHeight:1.4}}>
+                                          {r.emoji} {r.label} {idx+1} → {a.join(" · ")}
+                                        </p>
+                                      );
+                                    })}
+                                  </div>
+                                ))}
                               </div>
                             );
                           })}

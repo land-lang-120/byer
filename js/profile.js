@@ -1,7 +1,7 @@
 /* Byer — Profile Screens */
 
 /* ─── PROFILE ───────────────────────────────────── */
-function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs, onOpenPros, onOpenPublish, onOpenSettings, onOpenEditProfile, onOpenReviews, onOpenHistory }) {
+function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs, onOpenPros, onOpenPublish, onOpenSettings, onOpenEditProfile, onOpenReviews, onOpenHistory, onLogout }) {
   const urgentCount = LOYERS_LOCATAIRE.filter(l => l.statut==="en_attente" && l.rappelActif).length
                     + LOYERS_BAILLEUR.filter(l  => l.statut==="en_attente" && l.joursRestants<=7).length;
 
@@ -69,7 +69,9 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
   // "Informations personnelles" est désormais dans le menu 3-points du header
   // (Pino : "pour éviter la redondance"). On la retire de la liste des rows.
   const rows=[
-    {icon:"trips",   l:"Historique des réservations",action:onOpenHistory},
+    /* L'icône "history" (horloge avec flèche de retour) reflète mieux
+       la sémantique "historique" qu'un pin/marker (ancien icon "trips"). */
+    {icon:"history", l:"Historique des réservations",action:onOpenHistory},
     {icon:"message", l:"Avis reçus",                  action:onOpenReviews},
     {icon:"home",    l:"Publier une annonce",         action:onOpenPublish},
     {icon:"gear",    l:"Paramètres du compte",        action:onOpenSettings},
@@ -142,18 +144,27 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
         )}
       </div>
 
-      {/* Avatar card (sans crayon — l'édition se fait via le menu 3-points) */}
+      {/* Avatar card — l'édition se fait via le menu 3-points du header.
+          Le tier Bronze/Argent/Or apparaît AVANT le nom de l'utilisateur
+          (juste à côté de l'avatar) pour donner immédiatement le contexte
+          de fidélité — le menu 3-points dans le header au-dessus le
+          surplombe naturellement (cf. demande utilisateur). */}
       <div style={{margin:"0 16px 12px",background:C.white,borderRadius:16,padding:"18px 16px",display:"flex",alignItems:"center",gap:14,boxShadow:`0 1px 8px rgba(0,0,0,.05)`}}>
         <FaceAvatar photo={USER.photo} avatar={USER.avatar} bg={USER.bg} size={56} radius={28}/>
         <div style={{flex:1,minWidth:0}}>
-          <p style={{fontSize:16,fontWeight:700,color:C.black}}>{USER.name}</p>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
+            <span style={{
+              fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:8,
+              background:tierBg,color:tierColor,flexShrink:0,
+              fontFamily:"'DM Sans',sans-serif",
+              display:"inline-flex",alignItems:"center",gap:3,
+            }}>
+              <span style={{fontSize:10,lineHeight:1}}>★</span>{rewardsTier}
+            </span>
+            <p style={{fontSize:16,fontWeight:700,color:C.black,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{USER.name}</p>
+          </div>
           <p style={{fontSize:12,color:C.light,marginTop:2}}>{USER.city} · Membre {USER.since}</p>
         </div>
-        <span style={{
-          fontSize:10,fontWeight:700,padding:"4px 9px",borderRadius:10,
-          background:tierBg,color:tierColor,
-          fontFamily:"'DM Sans',sans-serif",
-        }}>{rewardsTier}</span>
       </div>
 
       {/* Invite friends + Rewards : 2 cards row */}
@@ -258,7 +269,7 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
       </button>
 
       {/* Other rows */}
-      <div style={{padding:"0 16px 32px"}}>
+      <div style={{padding:"0 16px 12px"}}>
         {rows.map(row=>(
           <button key={row.l} style={{display:"flex",alignItems:"center",gap:14,padding:"15px 0",background:"none",border:"none",width:"100%",cursor:"pointer",borderBottom:`1px solid ${C.border}`}} onClick={row.action||undefined}>
             <Icon name={row.icon} size={20} color={C.dark} stroke={1.8}/>
@@ -266,6 +277,30 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
             <Icon name="chevron" size={16} color={C.light} stroke={2}/>
           </button>
         ))}
+      </div>
+
+      {/* Bouton Déconnexion — au tout fond du profil (avant le padding nav).
+          Style distinct (rouge clair, icône logout) pour être identifié comme
+          action de fin / sortie. Demande explicite Pino : visibilité directe
+          sans devoir entrer dans Paramètres. */}
+      <div style={{padding:"4px 16px 28px"}}>
+        <button
+          onClick={() => {
+            if (typeof onLogout === "function") onLogout();
+          }}
+          style={{
+            width:"100%",
+            display:"flex",alignItems:"center",justifyContent:"center",gap:10,
+            padding:"14px",background:"#FEF2F2",
+            border:`1.5px solid #FECACA`,borderRadius:14,
+            cursor:"pointer",
+            fontSize:14,fontWeight:700,color:"#B91C1C",
+            fontFamily:"'DM Sans',sans-serif",
+          }}
+        >
+          <Icon name="logout" size={18} color="#B91C1C" stroke={2}/>
+          Déconnexion
+        </button>
       </div>
 
       {/* Invite modal */}

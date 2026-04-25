@@ -218,11 +218,15 @@ function QRInfoDialog({ onClose, onScan }) {
   );
 }
 
-/* ── QR Scanner Floating Button ── */
+/* ── QR Scanner Floating Button ──
+   ICÔNE = un VRAI scanner (viseur avec coins en équerre + ligne de scan
+   horizontale au centre) — pour ne PAS confondre avec l'icône QR-code
+   du bouton MyQRCodeButton juste au-dessus. */
 function QRScanButton({ onClick }) {
   return (
     <button
       onClick={onClick}
+      title="Scanner un QR code"
       style={{
         position: "fixed",
         bottom: 90,
@@ -241,15 +245,14 @@ function QRScanButton({ onClick }) {
         transition: "transform .18s",
       }}
     >
-      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="2" width="8" height="8" rx="1"/>
-        <rect x="14" y="2" width="8" height="8" rx="1"/>
-        <rect x="2" y="14" width="8" height="8" rx="1"/>
-        <path d="M14 14h2v2h-2z" fill="white" stroke="none"/>
-        <path d="M20 14h2v2h-2z" fill="white" stroke="none"/>
-        <path d="M14 20h2v2h-2z" fill="white" stroke="none"/>
-        <path d="M20 20h2v2h-2z" fill="white" stroke="none"/>
-        <path d="M17 17h2v2h-2z" fill="white" stroke="none"/>
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        {/* 4 coins en équerre — viseur de scanner */}
+        <path d="M3 8V5a2 2 0 0 1 2-2h3"/>
+        <path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
+        <path d="M3 16v3a2 2 0 0 0 2 2h3"/>
+        <path d="M21 16v3a2 2 0 0 1-2 2h-3"/>
+        {/* Ligne de scan horizontale rouge/blanche au centre */}
+        <line x1="6" y1="12" x2="18" y2="12"/>
       </svg>
     </button>
   );

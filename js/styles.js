@@ -42,7 +42,12 @@ const Os = {
 const S = {
   shell:    {display:"flex",flexDirection:"column",height:"100vh",width:"100%",background:C.bg,overflow:"hidden",position:"relative"},
   scroll:   {flex:1,overflowY:"auto",overflowX:"hidden",paddingBottom:80},
-  nav:      {display:"flex",background:C.white,borderTop:`1px solid ${C.border}`,padding:"8px 0 18px",flexShrink:0,position:"absolute",bottom:0,left:0,right:0,zIndex:100,boxShadow:"0 -2px 8px rgba(0,0,0,0.04)"},
+  /* Nav bar : position FIXED pour rester visible sur TOUS les écrans
+     (y compris les écrans secondaires qui replacent le Shell : Publish,
+     Settings, Dashboard, BuildingDetail, ListAll…). z-index élevé pour
+     passer au-dessus du contenu. Les écrans doivent garder ~80px de
+     paddingBottom (déjà appliqué via S.scroll). */
+  nav:      {display:"flex",background:C.white,borderTop:`1px solid ${C.border}`,padding:"8px 0 18px",flexShrink:0,position:"fixed",bottom:0,left:0,right:0,zIndex:200,boxShadow:"0 -2px 8px rgba(0,0,0,0.04)"},
   navBtn:   {flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"none",border:"none",cursor:"pointer",padding:"4px 0"},
   navLabel: {fontSize:10,fontWeight:500},
 

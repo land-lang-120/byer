@@ -3015,17 +3015,22 @@ const S = {
     overflowX: "hidden",
     paddingBottom: 80
   },
+  /* Nav bar : position FIXED pour rester visible sur TOUS les écrans
+     (y compris les écrans secondaires qui replacent le Shell : Publish,
+     Settings, Dashboard, BuildingDetail, ListAll…). z-index élevé pour
+     passer au-dessus du contenu. Les écrans doivent garder ~80px de
+     paddingBottom (déjà appliqué via S.scroll). */
   nav: {
     display: "flex",
     background: C.white,
     borderTop: `1px solid ${C.border}`,
     padding: "8px 0 18px",
     flexShrink: 0,
-    position: "absolute",
+    position: "fixed",
     bottom: 0,
     left: 0,
     right: 0,
-    zIndex: 100,
+    zIndex: 200,
     boxShadow: "0 -2px 8px rgba(0,0,0,0.04)"
   },
   navBtn: {
@@ -4799,6 +4804,25 @@ const Icon = ({
       y1: "6",
       x2: "18",
       y2: "18"
+    })),
+    /* history : horloge avec flèche de retour — dédié à "Historique des réservations" */
+    history: /*#__PURE__*/React.createElement("svg", p, /*#__PURE__*/React.createElement("path", {
+      d: "M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.4 2.6L3 8"
+    }), /*#__PURE__*/React.createElement("polyline", {
+      points: "3 3 3 8 8 8"
+    }), /*#__PURE__*/React.createElement("polyline", {
+      points: "12 7 12 12 15.5 14"
+    })),
+    /* logout : flèche sortante hors d'une porte */
+    logout: /*#__PURE__*/React.createElement("svg", p, /*#__PURE__*/React.createElement("path", {
+      d: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"
+    }), /*#__PURE__*/React.createElement("polyline", {
+      points: "16 17 21 12 16 7"
+    }), /*#__PURE__*/React.createElement("line", {
+      x1: "21",
+      y1: "12",
+      x2: "9",
+      y2: "12"
     })),
     // Property type icons
     villa: /*#__PURE__*/React.createElement("svg", p, /*#__PURE__*/React.createElement("path", {
@@ -11350,7 +11374,8 @@ function ProfileScreen({
   onOpenSettings,
   onOpenEditProfile,
   onOpenReviews,
-  onOpenHistory
+  onOpenHistory,
+  onLogout
 }) {
   const urgentCount = LOYERS_LOCATAIRE.filter(l => l.statut === "en_attente" && l.rappelActif).length + LOYERS_BAILLEUR.filter(l => l.statut === "en_attente" && l.joursRestants <= 7).length;
 
@@ -11418,8 +11443,11 @@ function ProfileScreen({
 
   // "Informations personnelles" est désormais dans le menu 3-points du header
   // (Pino : "pour éviter la redondance"). On la retire de la liste des rows.
-  const rows = [{
-    icon: "trips",
+  const rows = [
+  /* L'icône "history" (horloge avec flèche de retour) reflète mieux
+     la sémantique "historique" qu'un pin/marker (ancien icon "trips"). */
+  {
+    icon: "history",
     l: "Historique des réservations",
     action: onOpenHistory
   }, {
@@ -11563,29 +11591,48 @@ function ProfileScreen({
       flex: 1,
       minWidth: 0
     }
-  }, /*#__PURE__*/React.createElement("p", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 2
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      fontWeight: 700,
+      padding: "3px 8px",
+      borderRadius: 8,
+      background: tierBg,
+      color: tierColor,
+      flexShrink: 0,
+      fontFamily: "'DM Sans',sans-serif",
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 3
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      lineHeight: 1
+    }
+  }, "\u2605"), rewardsTier), /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 16,
       fontWeight: 700,
-      color: C.black
+      color: C.black,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
     }
-  }, USER.name), /*#__PURE__*/React.createElement("p", {
+  }, USER.name)), /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 12,
       color: C.light,
       marginTop: 2
     }
-  }, USER.city, " \xB7 Membre ", USER.since)), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 10,
-      fontWeight: 700,
-      padding: "4px 9px",
-      borderRadius: 10,
-      background: tierBg,
-      color: tierColor,
-      fontFamily: "'DM Sans',sans-serif"
-    }
-  }, rewardsTier)), /*#__PURE__*/React.createElement("div", {
+  }, USER.city, " \xB7 Membre ", USER.since))), /*#__PURE__*/React.createElement("div", {
     style: {
       margin: "0 16px 14px",
       display: "flex",
@@ -11849,7 +11896,7 @@ function ProfileScreen({
     stroke: 2
   })), /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: "0 16px 32px"
+      padding: "0 16px 12px"
     }
   }, rows.map(row => /*#__PURE__*/React.createElement("button", {
     key: row.l,
@@ -11883,7 +11930,36 @@ function ProfileScreen({
     size: 16,
     color: C.light,
     stroke: 2
-  })))), inviteOpen && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  })))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "4px 16px 28px"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      if (typeof onLogout === "function") onLogout();
+    },
+    style: {
+      width: "100%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 10,
+      padding: "14px",
+      background: "#FEF2F2",
+      border: `1.5px solid #FECACA`,
+      borderRadius: 14,
+      cursor: "pointer",
+      fontSize: 14,
+      fontWeight: 700,
+      color: "#B91C1C",
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "logout",
+    size: 18,
+    color: "#B91C1C",
+    stroke: 2
+  }), "D\xE9connexion")), inviteOpen && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       inset: 0,
@@ -14698,12 +14774,16 @@ function QRInfoDialog({
   }, "Fermer"))));
 }
 
-/* ── QR Scanner Floating Button ── */
+/* ── QR Scanner Floating Button ──
+   ICÔNE = un VRAI scanner (viseur avec coins en équerre + ligne de scan
+   horizontale au centre) — pour ne PAS confondre avec l'icône QR-code
+   du bouton MyQRCodeButton juste au-dessus. */
 function QRScanButton({
   onClick
 }) {
   return /*#__PURE__*/React.createElement("button", {
     onClick: onClick,
+    title: "Scanner un QR code",
     style: {
       position: "fixed",
       bottom: 90,
@@ -14722,52 +14802,27 @@ function QRScanButton({
       transition: "transform .18s"
     }
   }, /*#__PURE__*/React.createElement("svg", {
-    width: "26",
-    height: "26",
+    width: "28",
+    height: "28",
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "white",
-    strokeWidth: "2",
+    strokeWidth: "2.2",
     strokeLinecap: "round",
     strokeLinejoin: "round"
-  }, /*#__PURE__*/React.createElement("rect", {
-    x: "2",
-    y: "2",
-    width: "8",
-    height: "8",
-    rx: "1"
-  }), /*#__PURE__*/React.createElement("rect", {
-    x: "14",
-    y: "2",
-    width: "8",
-    height: "8",
-    rx: "1"
-  }), /*#__PURE__*/React.createElement("rect", {
-    x: "2",
-    y: "14",
-    width: "8",
-    height: "8",
-    rx: "1"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M3 8V5a2 2 0 0 1 2-2h3"
   }), /*#__PURE__*/React.createElement("path", {
-    d: "M14 14h2v2h-2z",
-    fill: "white",
-    stroke: "none"
+    d: "M21 8V5a2 2 0 0 0-2-2h-3"
   }), /*#__PURE__*/React.createElement("path", {
-    d: "M20 14h2v2h-2z",
-    fill: "white",
-    stroke: "none"
+    d: "M3 16v3a2 2 0 0 0 2 2h3"
   }), /*#__PURE__*/React.createElement("path", {
-    d: "M14 20h2v2h-2z",
-    fill: "white",
-    stroke: "none"
-  }), /*#__PURE__*/React.createElement("path", {
-    d: "M20 20h2v2h-2z",
-    fill: "white",
-    stroke: "none"
-  }), /*#__PURE__*/React.createElement("path", {
-    d: "M17 17h2v2h-2z",
-    fill: "white",
-    stroke: "none"
+    d: "M21 16v3a2 2 0 0 1-2 2h-3"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "6",
+    y1: "12",
+    x2: "18",
+    y2: "12"
   })));
 }
 
@@ -22641,9 +22696,12 @@ const ROOM_FIELDS = [{
 }];
 
 /* Compo par défaut selon le sous-type d'unité.
-   La valeur 0 n'affiche pas le compteur "à 0" mais permet à l'utilisateur
-   de l'augmenter ; elle ne sera pas comptabilisée dans les pièces totales. */
-const DEFAULT_ROOMS = subType => {
+   Chaque pièce est un objet { count, instances } :
+   - count : nombre total de cette pièce
+   - instances : null par défaut (toutes identiques) → liste {id, amenities}
+                 quand l'utilisateur clique "Configurer individuellement"
+                 (permet ex. chambre 1 avec douche privée + clim, chambre 2 nue) */
+const DEFAULT_ROOMS_FLAT = subType => {
   if (subType === "chambre") return {
     chambre: 1,
     douche: 1,
@@ -22694,6 +22752,59 @@ const DEFAULT_ROOMS = subType => {
     terrasse: 0
   };
 };
+
+/* Wrap chaque count dans un objet {count, instances:null} pour permettre la
+   configuration pièce-par-pièce ultérieurement. */
+const DEFAULT_ROOMS = subType => {
+  const flat = DEFAULT_ROOMS_FLAT(subType);
+  const out = {};
+  Object.keys(flat).forEach(k => {
+    out[k] = {
+      count: flat[k],
+      instances: null
+    };
+  });
+  return out;
+};
+
+/* Équipements suggérés PAR PIÈCE — proposés quand l'utilisateur configure
+   chaque pièce individuellement. La liste est curée pour chaque type de
+   pièce (une chambre n'a pas les mêmes options qu'une cuisine). */
+const ROOM_AMENITIES = {
+  sejour: ["Smart TV", "Climatisé", "Canapé-lit", "Vue mer", "Cheminée", "Home cinéma"],
+  chambre: ["Lit double", "Lit simple", "Lits superposés", "Douche privée", "WC privé", "Climatisé", "Balcon", "Vue mer", "Smart TV", "Coffre-fort", "Bureau", "Dressing"],
+  cuisine: ["Équipée", "Électroménager", "Micro-ondes", "Lave-vaisselle", "Frigo", "Cafetière", "Bouilloire", "Four", "Plaque induction"],
+  douche: ["Baignoire", "Douche italienne", "Eau chaude", "Sèche-cheveux", "Jacuzzi", "WC séparé"],
+  magasin: ["Sécurisé", "Climatisé", "Étagères", "Volet roulant"],
+  buanderie: ["Lave-linge", "Sèche-linge", "Étendoir", "Fer à repasser", "Évier"],
+  garage: ["Couvert", "Sécurisé", "Porte automatique", "Recharge VE", "Plusieurs places"],
+  piscine: ["Chauffée", "À débordement", "Couverte", "Pour enfants", "Éclairage nocturne"],
+  gym: ["Cardio", "Musculation", "Tapis", "Sauna", "Hammam", "Vestiaire"],
+  terrasse: ["Couverte", "Vue mer", "Mobilier extérieur", "BBQ", "Pergola", "Éclairage"]
+};
+
+/* Équipements communs suggérés par TYPE D'ENTITÉ (bâtiment).
+   Chaque type de bâtiment a ses caractéristiques typiques — affichées en
+   étape 3 comme suggestions par défaut. L'utilisateur les coche/décoche
+   selon la réalité. */
+const BUILDING_AMENITIES_BY_TYPE = {
+  maison: ["Jardin", "Garage", "Dépendance", "Piscine privée", "Portail automatique", "Barrière sécurisée", "Citerne d'eau", "Panneaux solaires", "Cour intérieure", "Atelier"],
+  villa: ["Piscine privée", "Jardin paysager", "Garage", "Vue mer", "BBQ", "Terrasse panoramique", "Maison du gardien", "Cuisine d'été", "Pool house", "Court de tennis"],
+  immeuble: ["Ascenseur", "Gardien 24/7", "Parking sécurisé", "Vidéosurveillance", "Local poubelles", "Local vélos", "Hall d'entrée", "Interphone", "Groupe électrogène", "Forage d'eau"],
+  hotel: ["Réception 24/7", "Restaurant", "Bar", "Piscine", "Salle de sport", "Spa", "Salle de conférence", "Parking", "Ascenseur", "Room service", "Navette aéroport", "Blanchisserie"],
+  motel: ["Réception", "Parking gratuit", "Vidéosurveillance", "WiFi gratuit", "Distributeur", "Petit-déj inclus", "Accès 24/7"],
+  auberge: ["Réception", "Cuisine commune", "Salon commun", "WiFi gratuit", "Casiers", "Buanderie", "Terrasse", "Petit-déj inclus", "Vélos en location"]
+};
+
+/* IDs uniques pour les instances de pièces (clé React stable) */
+let _roomInstanceCounter = 1;
+const newRoomInstanceId = () => `r${Date.now().toString(36)}-${_roomInstanceCounter++}`;
+const buildRoomInstances = count => Array.from({
+  length: count
+}, () => ({
+  id: newRoomInstanceId(),
+  amenities: []
+}));
 
 /* ID unique pour chaque variante (ne dépend pas de l'ordre — stable même
    après suppression/ajout). Suffit pour les keys React et le tracking. */
@@ -22817,19 +22928,117 @@ function PublishScreen({
       };
     });
   };
-  /* Maj du nombre d'une pièce pour une variante donnée */
+  /* Maj du nombre d'une pièce pour une variante donnée.
+     Si la pièce est en mode "individuel" (instances != null), on synchronise
+     la longueur du tableau d'instances avec le nouveau count :
+     - count up : ajoute des instances vides à la fin
+     - count down : tronque depuis la fin */
   const setVariantRoom = (subId, variantId, roomKey, delta) => {
     setForm(p => {
       const sub = p.unitsConfig[subId];
       if (!sub) return p;
       const newVariants = sub.variants.map(v => {
         if (v.id !== variantId) return v;
-        const newVal = Math.max(0, Math.min(20, (v.rooms[roomKey] || 0) + delta));
+        const cur = v.rooms[roomKey] || {
+          count: 0,
+          instances: null
+        };
+        const newCount = Math.max(0, Math.min(20, cur.count + delta));
+        let newInstances = cur.instances;
+        if (cur.instances) {
+          if (newCount > cur.instances.length) {
+            newInstances = [...cur.instances, ...buildRoomInstances(newCount - cur.instances.length)];
+          } else if (newCount < cur.instances.length) {
+            newInstances = cur.instances.slice(0, newCount);
+          }
+        }
         return {
           ...v,
           rooms: {
             ...v.rooms,
-            [roomKey]: newVal
+            [roomKey]: {
+              count: newCount,
+              instances: newInstances
+            }
+          }
+        };
+      });
+      return {
+        ...p,
+        unitsConfig: {
+          ...p.unitsConfig,
+          [subId]: {
+            ...sub,
+            variants: newVariants
+          }
+        }
+      };
+    });
+  };
+  /* Bascule mode "configuration individuelle" pour une pièce d'une variante.
+     - off→on : crée N instances vides (N = count actuel)
+     - on→off : supprime les instances (toutes les pièces redeviennent identiques) */
+  const toggleRoomDetailed = (subId, variantId, roomKey) => {
+    setForm(p => {
+      const sub = p.unitsConfig[subId];
+      if (!sub) return p;
+      const newVariants = sub.variants.map(v => {
+        if (v.id !== variantId) return v;
+        const cur = v.rooms[roomKey] || {
+          count: 0,
+          instances: null
+        };
+        if (cur.count === 0) return v;
+        const newInstances = cur.instances === null ? buildRoomInstances(cur.count) : null;
+        return {
+          ...v,
+          rooms: {
+            ...v.rooms,
+            [roomKey]: {
+              ...cur,
+              instances: newInstances
+            }
+          }
+        };
+      });
+      return {
+        ...p,
+        unitsConfig: {
+          ...p.unitsConfig,
+          [subId]: {
+            ...sub,
+            variants: newVariants
+          }
+        }
+      };
+    });
+  };
+  /* Toggle équipement pour UNE instance précise d'une pièce */
+  const toggleRoomInstanceAmenity = (subId, variantId, roomKey, instanceIdx, amenity) => {
+    setForm(p => {
+      const sub = p.unitsConfig[subId];
+      if (!sub) return p;
+      const newVariants = sub.variants.map(v => {
+        if (v.id !== variantId) return v;
+        const cur = v.rooms[roomKey];
+        if (!cur || !cur.instances) return v;
+        const newInst = cur.instances.map((inst, idx) => {
+          if (idx !== instanceIdx) return inst;
+          const has = (inst.amenities || []).includes(amenity);
+          const newAmens = has ? inst.amenities.filter(x => x !== amenity) : [...(inst.amenities || []), amenity];
+          return {
+            ...inst,
+            amenities: newAmens
+          };
+        });
+        return {
+          ...v,
+          rooms: {
+            ...v.rooms,
+            [roomKey]: {
+              ...cur,
+              instances: newInst
+            }
           }
         };
       });
@@ -22853,7 +23062,8 @@ function PublishScreen({
       const newVar = {
         id: newVariantId(),
         count: 1,
-        rooms: DEFAULT_ROOMS(subId)
+        rooms: DEFAULT_ROOMS(subId),
+        amenities: []
       };
       return {
         ...p,
@@ -23064,8 +23274,10 @@ function PublishScreen({
             const sub = form.unitsConfig[u.id];
             if (!sub) return;
             sub.variants.forEach(v => {
-              beds += (v.rooms.chambre || 0) * v.count;
-              baths += (v.rooms.douche || 0) * v.count;
+              const ch = v.rooms.chambre ? v.rooms.chambre.count || 0 : 0;
+              const dc = v.rooms.douche ? v.rooms.douche.count || 0 : 0;
+              beds += ch * v.count;
+              baths += dc * v.count;
             });
           });
           aggBeds = beds || null;
@@ -23096,10 +23308,20 @@ function PublishScreen({
            legacy de filtrage; la granularité est conservée dans units_config
            et building_amenities. */
         amenities: isVehicle ? Array.isArray(form.amenities) ? form.amenities : [] : (() => {
+          /* Agrège tous les niveaux : bâtiment + variante + chaque instance
+             de pièce (granularité maximale). Dédoublonné via Set pour rester
+             compatible avec le filtrage legacy par mots-clés. */
           const set = new Set(form.buildingAmenities || []);
           Object.values(form.unitsConfig || {}).forEach(sub => {
             (sub.variants || []).forEach(v => {
               (v.amenities || []).forEach(a => set.add(a));
+              Object.values(v.rooms || {}).forEach(room => {
+                if (room && Array.isArray(room.instances)) {
+                  room.instances.forEach(inst => {
+                    (inst.amenities || []).forEach(a => set.add(a));
+                  });
+                }
+              });
             });
           });
           return Array.from(set);
@@ -23621,22 +23843,31 @@ function PublishScreen({
         }
       }, "Pi\xE8ces par unit\xE9"), /*#__PURE__*/React.createElement("div", {
         style: {
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 5,
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
           marginBottom: 10
         }
       }, ROOM_FIELDS.map(r => {
-        const v = vrt.rooms[r.k] || 0;
+        const room = vrt.rooms[r.k] || {
+          count: 0,
+          instances: null
+        };
+        const isDetailed = room.instances !== null;
+        const amensCatalog = ROOM_AMENITIES[r.k] || [];
         return /*#__PURE__*/React.createElement("div", {
           key: r.k,
+          style: {
+            background: C.bg,
+            borderRadius: 8,
+            padding: "6px 9px"
+          }
+        }, /*#__PURE__*/React.createElement("div", {
           style: {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "5px 9px",
-            background: C.bg,
-            borderRadius: 8
+            gap: 6
           }
         }, /*#__PURE__*/React.createElement("span", {
           style: {
@@ -23644,13 +23875,13 @@ function PublishScreen({
             color: C.dark,
             display: "flex",
             alignItems: "center",
-            gap: 4,
+            gap: 5,
             flex: 1,
             minWidth: 0
           }
         }, /*#__PURE__*/React.createElement("span", {
           style: {
-            fontSize: 12
+            fontSize: 13
           }
         }, r.emoji), /*#__PURE__*/React.createElement("span", {
           style: {
@@ -23662,9 +23893,23 @@ function PublishScreen({
           style: {
             display: "flex",
             alignItems: "center",
-            gap: 4
+            gap: 5
           }
-        }, /*#__PURE__*/React.createElement("button", {
+        }, room.count > 0 && amensCatalog.length > 0 && /*#__PURE__*/React.createElement("button", {
+          onClick: () => toggleRoomDetailed(u.id, vrt.id, r.k),
+          title: isDetailed ? "Tout identique" : "Configurer chaque pièce",
+          style: {
+            fontSize: 9,
+            fontWeight: 700,
+            padding: "2px 7px",
+            borderRadius: 8,
+            cursor: "pointer",
+            border: isDetailed ? `1px solid ${C.coral}` : `1px solid ${C.border}`,
+            background: isDetailed ? "#FFF5F5" : C.white,
+            color: isDetailed ? C.coral : C.mid,
+            fontFamily: "'DM Sans',sans-serif"
+          }
+        }, isDetailed ? "Détaillé ✓" : "⚙️ Détailler"), /*#__PURE__*/React.createElement("button", {
           onClick: () => setVariantRoom(u.id, vrt.id, r.k, -1),
           style: {
             width: 20,
@@ -23688,7 +23933,7 @@ function PublishScreen({
             minWidth: 12,
             textAlign: "center"
           }
-        }, v), /*#__PURE__*/React.createElement("button", {
+        }, room.count), /*#__PURE__*/React.createElement("button", {
           onClick: () => setVariantRoom(u.id, vrt.id, r.k, +1),
           style: {
             width: 20,
@@ -23704,7 +23949,64 @@ function PublishScreen({
             color: C.dark,
             padding: 0
           }
-        }, "+")));
+        }, "+"))), isDetailed && room.instances && room.instances.length > 0 && /*#__PURE__*/React.createElement("div", {
+          style: {
+            marginTop: 8,
+            paddingTop: 8,
+            borderTop: `1px dashed ${C.border}`,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6
+          }
+        }, room.instances.map((inst, instIdx) => /*#__PURE__*/React.createElement("div", {
+          key: inst.id,
+          style: {
+            background: C.white,
+            border: `1px solid ${C.border}`,
+            borderRadius: 8,
+            padding: "7px 9px"
+          }
+        }, /*#__PURE__*/React.createElement("p", {
+          style: {
+            fontSize: 10,
+            fontWeight: 700,
+            color: C.coral,
+            marginBottom: 5,
+            textTransform: "uppercase",
+            letterSpacing: .4
+          }
+        }, r.emoji, " ", r.label, " ", instIdx + 1), /*#__PURE__*/React.createElement("div", {
+          style: {
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 4
+          }
+        }, amensCatalog.map(a => {
+          const on = (inst.amenities || []).includes(a);
+          return /*#__PURE__*/React.createElement("button", {
+            key: a,
+            onClick: () => toggleRoomInstanceAmenity(u.id, vrt.id, r.k, instIdx, a),
+            style: {
+              padding: "3px 7px",
+              borderRadius: 12,
+              cursor: "pointer",
+              border: on ? `1px solid ${C.coral}` : `1px solid ${C.border}`,
+              background: on ? "#FFF5F5" : C.bg,
+              fontSize: 9,
+              fontWeight: 600,
+              fontFamily: "'DM Sans',sans-serif",
+              color: on ? C.coral : C.mid,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 2
+            }
+          }, on && /*#__PURE__*/React.createElement(Icon, {
+            name: "check",
+            size: 8,
+            color: C.coral,
+            stroke: 2.5
+          }), a);
+        }))))));
       })), /*#__PURE__*/React.createElement("p", {
         style: {
           fontSize: 10,
@@ -23714,7 +24016,7 @@ function PublishScreen({
           textTransform: "uppercase",
           letterSpacing: .4
         }
-      }, "\xC9quipements de cette unit\xE9"), /*#__PURE__*/React.createElement("div", {
+      }, "\xC9quipements de cette unit\xE9 (toutes pi\xE8ces)"), /*#__PURE__*/React.createElement("div", {
         style: {
           display: "flex",
           flexWrap: "wrap",
@@ -23901,56 +24203,111 @@ function PublishScreen({
       color: C.light,
       marginTop: 3
     }
-  }, "Laisser vide si non disponible au mois"))), form.segment === "property" ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
-    style: {
-      fontSize: 13,
-      fontWeight: 700,
-      color: C.dark,
-      marginBottom: 4,
-      display: "flex",
-      alignItems: "center",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("span", null, "\uD83C\uDFD7\uFE0F"), " \xC9quipements communs au b\xE2timent"), /*#__PURE__*/React.createElement("p", {
-    style: {
-      fontSize: 11,
-      color: C.light,
-      marginBottom: 10,
-      lineHeight: 1.5
-    }
-  }, "Partag\xE9s par toutes les unit\xE9s (piscine commune, ascenseur, gardien, parking\u2026). Les \xE9quipements propres \xE0 chaque unit\xE9 (WiFi, clim\u2026) ont \xE9t\xE9 d\xE9finis \xE0 l'\xE9tape pr\xE9c\xE9dente."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 8,
-      marginBottom: 24
-    }
-  }, BUILDING_AMENITY_OPTIONS.map(a => {
-    const on = form.buildingAmenities.includes(a);
-    return /*#__PURE__*/React.createElement("button", {
-      key: a,
-      onClick: () => toggleBuildingAmenity(a),
+  }, "Laisser vide si non disponible au mois"))), form.segment === "property" ? (() => {
+    const bt = BUILDING_TYPES.find(b => b.id === form.buildingType);
+    const btLabel = bt ? bt.label.toLowerCase() : "bâtiment";
+    /* Suggestions par type + équipements custom déjà ajoutés (évite doublons) */
+    const baseSuggestions = BUILDING_AMENITIES_BY_TYPE[form.buildingType] || BUILDING_AMENITY_OPTIONS;
+    const customAdded = form.buildingAmenities.filter(a => !baseSuggestions.includes(a));
+    const allChips = [...baseSuggestions, ...customAdded];
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
       style: {
-        padding: "7px 13px",
-        borderRadius: 20,
-        cursor: "pointer",
-        border: on ? `1.5px solid ${C.coral}` : `1.5px solid ${C.border}`,
-        background: on ? "#FFF5F5" : C.white,
-        fontSize: 12,
-        fontWeight: 600,
-        fontFamily: "'DM Sans',sans-serif",
-        color: on ? C.coral : C.mid,
+        fontSize: 13,
+        fontWeight: 700,
+        color: C.dark,
+        marginBottom: 4,
         display: "flex",
         alignItems: "center",
-        gap: 4
+        gap: 6
       }
-    }, on && /*#__PURE__*/React.createElement(Icon, {
-      name: "check",
-      size: 12,
-      color: C.coral,
-      stroke: 2.5
-    }), a);
-  }))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
+    }, /*#__PURE__*/React.createElement("span", null, bt ? bt.emoji : "🏗️"), " \xC9quipements de votre ", btLabel), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        color: C.light,
+        marginBottom: 10,
+        lineHeight: 1.5
+      }
+    }, "Caract\xE9ristiques au niveau du ", /*#__PURE__*/React.createElement("strong", null, btLabel), " (partag\xE9es par toutes les unit\xE9s). Les \xE9quipements propres \xE0 chaque unit\xE9 ou pi\xE8ce ont \xE9t\xE9 d\xE9finis \xE0 l'\xE9tape pr\xE9c\xE9dente."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 8,
+        marginBottom: 10
+      }
+    }, allChips.map(a => {
+      const on = form.buildingAmenities.includes(a);
+      return /*#__PURE__*/React.createElement("button", {
+        key: a,
+        onClick: () => toggleBuildingAmenity(a),
+        style: {
+          padding: "7px 13px",
+          borderRadius: 20,
+          cursor: "pointer",
+          border: on ? `1.5px solid ${C.coral}` : `1.5px solid ${C.border}`,
+          background: on ? "#FFF5F5" : C.white,
+          fontSize: 12,
+          fontWeight: 600,
+          fontFamily: "'DM Sans',sans-serif",
+          color: on ? C.coral : C.mid,
+          display: "flex",
+          alignItems: "center",
+          gap: 4
+        }
+      }, on && /*#__PURE__*/React.createElement(Icon, {
+        name: "check",
+        size: 12,
+        color: C.coral,
+        stroke: 2.5
+      }), a);
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        marginBottom: 24
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      id: "byer-custom-amenity",
+      placeholder: "Ajouter un \xE9quipement personnalis\xE9\u2026",
+      style: {
+        flex: 1,
+        padding: "8px 12px",
+        borderRadius: 12,
+        border: `1.5px solid ${C.border}`,
+        fontSize: 12,
+        fontFamily: "'DM Sans',sans-serif",
+        color: C.dark,
+        outline: "none",
+        background: C.white
+      },
+      onKeyDown: e => {
+        if (e.key === "Enter") {
+          const v = (e.target.value || "").trim();
+          if (v && !form.buildingAmenities.includes(v)) toggleBuildingAmenity(v);
+          e.target.value = "";
+          e.preventDefault();
+        }
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        const inp = document.getElementById("byer-custom-amenity");
+        if (!inp) return;
+        const v = (inp.value || "").trim();
+        if (v && !form.buildingAmenities.includes(v)) toggleBuildingAmenity(v);
+        inp.value = "";
+      },
+      style: {
+        padding: "8px 14px",
+        borderRadius: 12,
+        border: "none",
+        background: C.coral,
+        color: C.white,
+        fontSize: 12,
+        fontWeight: 700,
+        cursor: "pointer",
+        fontFamily: "'DM Sans',sans-serif"
+      }
+    }, "+ Ajouter")));
+  })() : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 13,
       fontWeight: 600,
@@ -24267,12 +24624,22 @@ function PublishScreen({
           marginBottom: 4
         }
       }, u.label, " (", subTotal, ")"), sub.variants.filter(v => v.count > 0).map((vrt, i) => {
-        const roomSummary = ROOM_FIELDS.filter(r => (vrt.rooms[r.k] || 0) > 0).map(r => `${vrt.rooms[r.k]} ${r.label.toLowerCase()}`).join(" · ") || "Aucune pièce détaillée";
+        const roomSummary = ROOM_FIELDS.filter(r => {
+          const room = vrt.rooms[r.k];
+          return room && (room.count || 0) > 0;
+        }).map(r => `${vrt.rooms[r.k].count} ${r.label.toLowerCase()}`).join(" · ") || "Aucune pièce détaillée";
         const amens = vrt.amenities || [];
+        /* Pièces avec config individuelle (chaque instance a ses
+           propres amenities) — affichées séparément pour montrer
+           la granularité au-delà du résumé compact. */
+        const detailedRooms = ROOM_FIELDS.filter(r => {
+          const room = vrt.rooms[r.k];
+          return room && room.instances && room.instances.length > 0;
+        });
         return /*#__PURE__*/React.createElement("div", {
           key: vrt.id,
           style: {
-            marginBottom: 4
+            marginBottom: 6
           }
         }, /*#__PURE__*/React.createElement("p", {
           style: {
@@ -24288,7 +24655,24 @@ function PublishScreen({
             marginTop: 1,
             paddingLeft: 14
           }
-        }, "\uD83D\uDD27 ", amens.join(" · ")));
+        }, "\uD83D\uDD27 ", amens.join(" · ")), detailedRooms.map(r => /*#__PURE__*/React.createElement("div", {
+          key: r.k,
+          style: {
+            paddingLeft: 14,
+            marginTop: 3
+          }
+        }, vrt.rooms[r.k].instances.map((inst, idx) => {
+          const a = inst.amenities || [];
+          if (a.length === 0) return null;
+          return /*#__PURE__*/React.createElement("p", {
+            key: inst.id,
+            style: {
+              fontSize: 10,
+              color: C.light,
+              lineHeight: 1.4
+            }
+          }, r.emoji, " ", r.label, " ", idx + 1, " \u2192 ", a.join(" · "));
+        }))));
       }));
     }), form.buildingAmenities.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
@@ -28461,325 +28845,424 @@ function ByerApp({
     const q = search.toLowerCase();
     return !q || i.title.toLowerCase().includes(q) || i.city.toLowerCase().includes(q);
   });
-  if (gallery) return /*#__PURE__*/React.createElement(GalleryScreen, {
-    item: gallery.item,
-    startIdx: gallery.idx,
-    onBack: () => setGallery(null),
-    onOpenDetail: () => {
-      setDetail(gallery.item);
-      setGallery(null);
-    }
-  });
-  if (detail) return /*#__PURE__*/React.createElement(DetailScreen, {
-    item: detail,
-    saved: saved,
-    toggleSave: toggleSave,
-    onBack: () => setDetail(null),
-    openGallery: (idx, e) => openGallery(detail, idx, e),
-    duration: duration,
-    onViewOwner: name => setOwnerProfile(name),
-    onBook: localDur => {
-      if (localDur) setDuration(localDur);
-      setBookingItem(detail);
-      setDetail(null);
-    },
-    onOpenAllReviews: it => setAllReviewsItem(it)
-  });
-  if (allReviewsItem) return /*#__PURE__*/React.createElement(AllReviewsScreen, {
-    item: allReviewsItem,
-    onBack: () => setAllReviewsItem(null)
-  });
-  if (rentOpen) return /*#__PURE__*/React.createElement(RentScreen, {
-    onBack: () => setRentOpen(false)
-  });
-  if (ownerProfile) return /*#__PURE__*/React.createElement(OwnerProfileScreen, {
-    ownerName: ownerProfile,
-    onBack: () => setOwnerProfile(null)
-  });
-
-  /* New feature screens */
-  if (buildingDetail) return /*#__PURE__*/React.createElement(BuildingDetailScreen, {
-    building: buildingDetail,
-    onBack: () => {
-      setBuildingDetail(null);
-      if (returnToDashboard) {
-        setDashboardOpen(true);
-        setReturnToDashboard(false);
-      }
-    }
-  });
-  if (dashboardOpen) return /*#__PURE__*/React.createElement(OwnerDashboardScreen, {
-    onBack: () => setDashboardOpen(false),
-    onViewBuilding: b => {
-      setDashboardOpen(false);
-      setBuildingDetail(b);
-      setReturnToDashboard(true);
-    },
-    onManageTechs: () => {
-      setDashboardOpen(false);
-      setTechsRole("bailleur");
-      setTechsOpen(true);
-      setReturnToDashboard(true);
-    },
-    onManagePros: () => {
-      setDashboardOpen(false);
-      setProsRole("bailleur");
-      setProsOpen(true);
-      setReturnToDashboard(true);
-    },
-    onBoost: () => {
-      setDashboardOpen(false);
-      setBoostOpen(true);
-      setReturnToDashboard(true);
-    },
-    onAddListing: seg => {
-      setDashboardOpen(false);
-      setPublishSegment(seg);
-      setPublishOpen(true);
-      setReturnToDashboard(true);
-    },
-    onViewAll: filter => {
-      setDashboardOpen(false);
-      setListAllFilter(filter);
-      setReturnToDashboard(true);
-    }
-  });
-  if (listAllFilter) return /*#__PURE__*/React.createElement(OwnerListAllScreen, {
-    filter: listAllFilter,
-    onBack: () => {
-      setListAllFilter(null);
-      if (returnToDashboard) {
-        setDashboardOpen(true);
-        setReturnToDashboard(false);
-      }
-    },
-    onViewBuilding: b => {
-      setListAllFilter(null);
-      setBuildingDetail(b);
-      setReturnToDashboard(true);
-    }
-  });
-  if (techsOpen) return /*#__PURE__*/React.createElement(TechniciansScreen, {
-    onBack: () => closeAndMaybeReturnToDashboard(setTechsOpen),
-    role: techsRole
-  });
-  if (prosOpen) return /*#__PURE__*/React.createElement(ProfessionalsScreen, {
-    onBack: () => closeAndMaybeReturnToDashboard(setProsOpen),
-    role: prosRole
-  });
-  if (boostOpen) return /*#__PURE__*/React.createElement(BoostScreen, {
-    onBack: () => closeAndMaybeReturnToDashboard(setBoostOpen)
-  });
-  if (notifsOpen) return /*#__PURE__*/React.createElement(NotificationsScreen, {
-    onBack: () => setNotifsOpen(false),
-    onOpenBookings: () => {
-      setNotifsOpen(false);
-      setTab("trips");
-    },
-    onOpenMessages: () => {
-      setNotifsOpen(false);
-      setTab("messages");
-    },
-    onOpenRent: () => {
-      setNotifsOpen(false);
-      setRentOpen(true);
-    },
-    onOpenBoost: () => {
-      setNotifsOpen(false);
-      setBoostOpen(true);
-    },
-    onOpenTechs: () => {
-      setNotifsOpen(false);
-      setTechsOpen(true);
-    },
-    onOpenReviews: () => {
-      setNotifsOpen(false);
-      setReviewsOpen(true);
-    }
-  });
-  if (publishOpen) return /*#__PURE__*/React.createElement(PublishScreen, {
-    onBack: () => {
-      setPublishOpen(false);
-      setPublishSegment(null);
-      if (returnToDashboard) {
-        setDashboardOpen(true);
-        setReturnToDashboard(false);
-      }
-    },
-    initialSegment: publishSegment
-  });
-  if (settingsOpen) return /*#__PURE__*/React.createElement(SettingsScreen, {
-    onBack: () => setSettingsOpen(false),
-    onOpenTerms: () => setTermsOpen(true),
-    onOpenPrivacy: () => setPrivacyOpen(true),
-    onOpenForgotPassword: () => setForgotOpen(true),
-    onOpenSupport: () => setSupportOpen(true),
-    onLogout: () => {
-      setSettingsOpen(false);
-      onLogout?.();
-    },
-    onDeleteAccount: () => {
-      setSettingsOpen(false);
-      onLogout?.();
-    }
-  });
-  if (termsOpen) return /*#__PURE__*/React.createElement(TermsScreen, {
-    onBack: () => setTermsOpen(false)
-  });
-  if (privacyOpen) return /*#__PURE__*/React.createElement(PrivacyScreen, {
-    onBack: () => setPrivacyOpen(false)
-  });
-  if (forgotOpen) return /*#__PURE__*/React.createElement(ForgotPasswordScreen, {
-    onBack: () => setForgotOpen(false)
-  });
-  if (supportOpen) return /*#__PURE__*/React.createElement(SupportScreen, {
-    onBack: () => setSupportOpen(false)
-  });
-  if (editProfileOpen) return /*#__PURE__*/React.createElement(EditProfileScreen, {
-    onBack: () => setEditProfileOpen(false)
-  });
-  if (bookingItem) return /*#__PURE__*/React.createElement(BookingScreen, {
-    item: bookingItem,
-    duration: duration,
-    onBack: () => setBookingItem(null),
-    onComplete: () => {
-      setBookingItem(null);
-      setTab("trips");
-    },
-    onCreateBooking: b => setUserBookings(prev => [b, ...prev])
-  });
-  if (reviewsOpen) return /*#__PURE__*/React.createElement(ReviewsScreen, {
-    onBack: () => setReviewsOpen(false)
-  });
-  if (historyOpen) return /*#__PURE__*/React.createElement(BookingHistoryScreen, {
-    onBack: () => setHistoryOpen(false)
-  });
 
   // Le bouton "Mon QR Code" affiche le QR de la réservation utilisateur
   // la plus récente (ou la première booking mock si aucune userBooking).
   const myQrBooking = userBookings[0] || BOOKINGS[0];
-  return /*#__PURE__*/React.createElement(Shell, {
+
+  /* closeAllOverlays : ferme tous les écrans secondaires en un seul appel.
+     Sert quand on clique sur un onglet de la nav bar globale alors qu'un
+     écran secondaire est ouvert : on veut basculer vers l'onglet demandé
+     et donc fermer ce qui était ouvert par-dessus. */
+  const closeAllOverlays = () => {
+    setGallery(null);
+    setDetail(null);
+    setAllReviewsItem(null);
+    setRentOpen(false);
+    setOwnerProfile(null);
+    setBuildingDetail(null);
+    setDashboardOpen(false);
+    setListAllFilter(null);
+    setTechsOpen(false);
+    setProsOpen(false);
+    setBoostOpen(false);
+    setNotifsOpen(false);
+    setPublishOpen(false);
+    setPublishSegment(null);
+    setSettingsOpen(false);
+    setTermsOpen(false);
+    setPrivacyOpen(false);
+    setForgotOpen(false);
+    setSupportOpen(false);
+    setEditProfileOpen(false);
+    setBookingItem(null);
+    setReviewsOpen(false);
+    setHistoryOpen(false);
+    setReturnToDashboard(false);
+  };
+
+  /* switchTab : helper passé à BottomNavBar pour fermer tout écran
+     secondaire AVANT de changer d'onglet. */
+  const switchTab = newTab => {
+    closeAllOverlays();
+    setTab(newTab);
+  };
+
+  /* Hide nav bar dans certains contextes immersifs :
+     - Conversation chat (UX plein écran)
+     - Galerie photo plein écran
+     - Scanner QR overlay (caméra plein écran) */
+  const hideGlobalNav = chatActive || !!gallery || qrScanOpen;
+
+  /* renderScreen : sélectionne l'écran courant. Une seule sortie pour
+     que le nav bar soit toujours rendu en dessous (au niveau racine). */
+  let screenContent;
+  if (detail) {
+    screenContent = /*#__PURE__*/React.createElement(DetailScreen, {
+      item: detail,
+      saved: saved,
+      toggleSave: toggleSave,
+      onBack: () => setDetail(null),
+      openGallery: (idx, e) => openGallery(detail, idx, e),
+      duration: duration,
+      onViewOwner: name => setOwnerProfile(name),
+      onBook: localDur => {
+        if (localDur) setDuration(localDur);
+        setBookingItem(detail);
+        setDetail(null);
+      },
+      onOpenAllReviews: it => setAllReviewsItem(it)
+    });
+  } else if (gallery) {
+    screenContent = /*#__PURE__*/React.createElement(GalleryScreen, {
+      item: gallery.item,
+      startIdx: gallery.idx,
+      onBack: () => setGallery(null),
+      onOpenDetail: () => {
+        setDetail(gallery.item);
+        setGallery(null);
+      }
+    });
+  } else if (allReviewsItem) {
+    screenContent = /*#__PURE__*/React.createElement(AllReviewsScreen, {
+      item: allReviewsItem,
+      onBack: () => setAllReviewsItem(null)
+    });
+  } else if (rentOpen) {
+    screenContent = /*#__PURE__*/React.createElement(RentScreen, {
+      onBack: () => setRentOpen(false)
+    });
+  } else if (ownerProfile) {
+    screenContent = /*#__PURE__*/React.createElement(OwnerProfileScreen, {
+      ownerName: ownerProfile,
+      onBack: () => setOwnerProfile(null)
+    });
+  } else if (buildingDetail) {
+    screenContent = /*#__PURE__*/React.createElement(BuildingDetailScreen, {
+      building: buildingDetail,
+      onBack: () => {
+        setBuildingDetail(null);
+        if (returnToDashboard) {
+          setDashboardOpen(true);
+          setReturnToDashboard(false);
+        }
+      }
+    });
+  } else if (dashboardOpen) {
+    screenContent = /*#__PURE__*/React.createElement(OwnerDashboardScreen, {
+      onBack: () => setDashboardOpen(false),
+      onViewBuilding: b => {
+        setDashboardOpen(false);
+        setBuildingDetail(b);
+        setReturnToDashboard(true);
+      },
+      onManageTechs: () => {
+        setDashboardOpen(false);
+        setTechsRole("bailleur");
+        setTechsOpen(true);
+        setReturnToDashboard(true);
+      },
+      onManagePros: () => {
+        setDashboardOpen(false);
+        setProsRole("bailleur");
+        setProsOpen(true);
+        setReturnToDashboard(true);
+      },
+      onBoost: () => {
+        setDashboardOpen(false);
+        setBoostOpen(true);
+        setReturnToDashboard(true);
+      },
+      onAddListing: seg => {
+        setDashboardOpen(false);
+        setPublishSegment(seg);
+        setPublishOpen(true);
+        setReturnToDashboard(true);
+      },
+      onViewAll: filter => {
+        setDashboardOpen(false);
+        setListAllFilter(filter);
+        setReturnToDashboard(true);
+      }
+    });
+  } else if (listAllFilter) {
+    screenContent = /*#__PURE__*/React.createElement(OwnerListAllScreen, {
+      filter: listAllFilter,
+      onBack: () => {
+        setListAllFilter(null);
+        if (returnToDashboard) {
+          setDashboardOpen(true);
+          setReturnToDashboard(false);
+        }
+      },
+      onViewBuilding: b => {
+        setListAllFilter(null);
+        setBuildingDetail(b);
+        setReturnToDashboard(true);
+      }
+    });
+  } else if (techsOpen) {
+    screenContent = /*#__PURE__*/React.createElement(TechniciansScreen, {
+      onBack: () => closeAndMaybeReturnToDashboard(setTechsOpen),
+      role: techsRole
+    });
+  } else if (prosOpen) {
+    screenContent = /*#__PURE__*/React.createElement(ProfessionalsScreen, {
+      onBack: () => closeAndMaybeReturnToDashboard(setProsOpen),
+      role: prosRole
+    });
+  } else if (boostOpen) {
+    screenContent = /*#__PURE__*/React.createElement(BoostScreen, {
+      onBack: () => closeAndMaybeReturnToDashboard(setBoostOpen)
+    });
+  } else if (notifsOpen) {
+    screenContent = /*#__PURE__*/React.createElement(NotificationsScreen, {
+      onBack: () => setNotifsOpen(false),
+      onOpenBookings: () => {
+        setNotifsOpen(false);
+        setTab("trips");
+      },
+      onOpenMessages: () => {
+        setNotifsOpen(false);
+        setTab("messages");
+      },
+      onOpenRent: () => {
+        setNotifsOpen(false);
+        setRentOpen(true);
+      },
+      onOpenBoost: () => {
+        setNotifsOpen(false);
+        setBoostOpen(true);
+      },
+      onOpenTechs: () => {
+        setNotifsOpen(false);
+        setTechsOpen(true);
+      },
+      onOpenReviews: () => {
+        setNotifsOpen(false);
+        setReviewsOpen(true);
+      }
+    });
+  } else if (publishOpen) {
+    screenContent = /*#__PURE__*/React.createElement(PublishScreen, {
+      onBack: () => {
+        setPublishOpen(false);
+        setPublishSegment(null);
+        if (returnToDashboard) {
+          setDashboardOpen(true);
+          setReturnToDashboard(false);
+        }
+      },
+      initialSegment: publishSegment
+    });
+  } else if (settingsOpen) {
+    screenContent = /*#__PURE__*/React.createElement(SettingsScreen, {
+      onBack: () => setSettingsOpen(false),
+      onOpenTerms: () => setTermsOpen(true),
+      onOpenPrivacy: () => setPrivacyOpen(true),
+      onOpenForgotPassword: () => setForgotOpen(true),
+      onOpenSupport: () => setSupportOpen(true),
+      onLogout: () => {
+        setSettingsOpen(false);
+        onLogout?.();
+      },
+      onDeleteAccount: () => {
+        setSettingsOpen(false);
+        onLogout?.();
+      }
+    });
+  } else if (termsOpen) {
+    screenContent = /*#__PURE__*/React.createElement(TermsScreen, {
+      onBack: () => setTermsOpen(false)
+    });
+  } else if (privacyOpen) {
+    screenContent = /*#__PURE__*/React.createElement(PrivacyScreen, {
+      onBack: () => setPrivacyOpen(false)
+    });
+  } else if (forgotOpen) {
+    screenContent = /*#__PURE__*/React.createElement(ForgotPasswordScreen, {
+      onBack: () => setForgotOpen(false)
+    });
+  } else if (supportOpen) {
+    screenContent = /*#__PURE__*/React.createElement(SupportScreen, {
+      onBack: () => setSupportOpen(false)
+    });
+  } else if (editProfileOpen) {
+    screenContent = /*#__PURE__*/React.createElement(EditProfileScreen, {
+      onBack: () => setEditProfileOpen(false)
+    });
+  } else if (bookingItem) {
+    screenContent = /*#__PURE__*/React.createElement(BookingScreen, {
+      item: bookingItem,
+      duration: duration,
+      onBack: () => setBookingItem(null),
+      onComplete: () => {
+        setBookingItem(null);
+        setTab("trips");
+      },
+      onCreateBooking: b => setUserBookings(prev => [b, ...prev])
+    });
+  } else if (reviewsOpen) {
+    screenContent = /*#__PURE__*/React.createElement(ReviewsScreen, {
+      onBack: () => setReviewsOpen(false)
+    });
+  } else if (historyOpen) {
+    screenContent = /*#__PURE__*/React.createElement(BookingHistoryScreen, {
+      onBack: () => setHistoryOpen(false)
+    });
+  } else {
+    /* Onglets principaux dans le Shell */
+    screenContent = /*#__PURE__*/React.createElement(Shell, {
+      hideNav: chatActive
+    }, locOpen && /*#__PURE__*/React.createElement(LocationSheet, {
+      location: location,
+      onSelect: loc => {
+        setLocation(loc);
+        setLocOpen(false);
+      },
+      onClose: () => setLocOpen(false)
+    }), filterOpen && /*#__PURE__*/React.createElement(FilterSheet, {
+      filters: filters,
+      segment: segment,
+      onApply: newFilters => {
+        setFilters(newFilters);
+        setFilterOpen(false);
+      },
+      onClose: () => setFilterOpen(false)
+    }), tab === "home" && /*#__PURE__*/React.createElement(HomeScreen, {
+      role: role,
+      setRole: setRole,
+      segment: segment,
+      setSegment: switchSegment,
+      propType: propType,
+      setPropType: setPropType,
+      duration: duration,
+      setDuration: setDuration,
+      location: location,
+      onOpenLocPicker: () => setLocOpen(true),
+      search: search,
+      setSearch: setSearch,
+      activeFilterCount: activeFilterCount,
+      onOpenFilter: () => setFilterOpen(true),
+      items: items,
+      saved: saved,
+      toggleSave: toggleSave,
+      openDetail: setDetail,
+      openGallery: openGallery,
+      onOpenNotifs: () => setNotifsOpen(true),
+      onOpenDashboard: () => setDashboardOpen(true),
+      onOpenPublish: seg => {
+        setPublishSegment(seg || null);
+        setPublishOpen(true);
+      },
+      onOpenPros: () => {
+        setProsRole("bailleur");
+        setProsOpen(true);
+      },
+      onOpenTechs: () => {
+        setTechsRole("bailleur");
+        setTechsOpen(true);
+      },
+      onOpenBoost: () => setBoostOpen(true)
+    }), tab === "saved" && /*#__PURE__*/React.createElement(SavedScreen, {
+      role: role,
+      items: [...PROPERTIES, ...VEHICLES].filter(i => saved[i.id]),
+      openDetail: setDetail,
+      toggleSave: toggleSave,
+      saved: saved,
+      openGallery: openGallery,
+      duration: duration
+    }), tab === "trips" && /*#__PURE__*/React.createElement(TripsScreen, {
+      role: role,
+      openDetail: setDetail,
+      userBookings: userBookings,
+      onCancelBooking: id => setUserBookings(prev => prev.filter(b => b.id !== id))
+    }), tab === "trips" && /*#__PURE__*/React.createElement(MyQRCodeButton, {
+      onClick: () => setMyQrOpen(true)
+    }), tab === "trips" && /*#__PURE__*/React.createElement(QRScanButton, {
+      onClick: () => setQrInfoOpen(true)
+    }), tab === "messages" && /*#__PURE__*/React.createElement(MessagesScreen, {
+      role: role,
+      onChatActiveChange: setChatActive
+    }), tab === "profile" && /*#__PURE__*/React.createElement(ProfileScreen, {
+      role: role,
+      setRole: setRole,
+      onOpenRent: () => setRentOpen(true),
+      onOpenDashboard: () => setDashboardOpen(true),
+      onOpenTechs: () => {
+        setTechsRole(role);
+        setTechsOpen(true);
+      },
+      onOpenPros: () => {
+        setProsRole(role);
+        setProsOpen(true);
+      },
+      onOpenPublish: () => {
+        setPublishSegment(null);
+        setPublishOpen(true);
+      },
+      onOpenSettings: () => setSettingsOpen(true),
+      onOpenEditProfile: () => setEditProfileOpen(true),
+      onOpenReviews: () => setReviewsOpen(true),
+      onOpenHistory: () => setHistoryOpen(true),
+      onLogout: onLogout
+    }), myQrOpen && /*#__PURE__*/React.createElement(MyQRCodeDialog, {
+      booking: myQrBooking,
+      onClose: () => setMyQrOpen(false)
+    }), qrInfoOpen && /*#__PURE__*/React.createElement(QRInfoDialog, {
+      onClose: () => setQrInfoOpen(false),
+      onScan: () => {
+        setQrInfoOpen(false);
+        setQrScanOpen(true);
+      }
+    }), qrScanOpen && /*#__PURE__*/React.createElement(QRScannerOverlay, {
+      onClose: () => setQrScanOpen(false),
+      onScan: code => {
+        setQrScanOpen(false);
+        setQrResult(code);
+      }
+    }), qrResult && /*#__PURE__*/React.createElement(GuestVerificationSheet, {
+      code: qrResult,
+      onClose: () => setQrResult(null)
+    }));
+  }
+
+  /* Render final : l'écran courant + la nav bar globale toujours visible
+     (sauf en mode immersif chat/galerie/scanner). */
+  return /*#__PURE__*/React.createElement(React.Fragment, null, screenContent, !hideGlobalNav && /*#__PURE__*/React.createElement(BottomNavBar, {
     tab: tab,
-    setTab: setTab,
-    hideNav: chatActive
-  }, locOpen && /*#__PURE__*/React.createElement(LocationSheet, {
-    location: location,
-    onSelect: loc => {
-      setLocation(loc);
-      setLocOpen(false);
-    },
-    onClose: () => setLocOpen(false)
-  }), filterOpen && /*#__PURE__*/React.createElement(FilterSheet, {
-    filters: filters,
-    segment: segment,
-    onApply: newFilters => {
-      setFilters(newFilters);
-      setFilterOpen(false);
-    },
-    onClose: () => setFilterOpen(false)
-  }), tab === "home" && /*#__PURE__*/React.createElement(HomeScreen, {
-    role: role,
-    setRole: setRole,
-    segment: segment,
-    setSegment: switchSegment,
-    propType: propType,
-    setPropType: setPropType,
-    duration: duration,
-    setDuration: setDuration,
-    location: location,
-    onOpenLocPicker: () => setLocOpen(true),
-    search: search,
-    setSearch: setSearch,
-    activeFilterCount: activeFilterCount,
-    onOpenFilter: () => setFilterOpen(true),
-    items: items,
-    saved: saved,
-    toggleSave: toggleSave,
-    openDetail: setDetail,
-    openGallery: openGallery,
-    onOpenNotifs: () => setNotifsOpen(true),
-    onOpenDashboard: () => setDashboardOpen(true),
-    onOpenPublish: seg => {
-      setPublishSegment(seg || null);
-      setPublishOpen(true);
-    },
-    onOpenPros: () => {
-      setProsRole("bailleur");
-      setProsOpen(true);
-    },
-    onOpenTechs: () => {
-      setTechsRole("bailleur");
-      setTechsOpen(true);
-    },
-    onOpenBoost: () => setBoostOpen(true)
-  }), tab === "saved" && /*#__PURE__*/React.createElement(SavedScreen, {
-    role: role,
-    items: [...PROPERTIES, ...VEHICLES].filter(i => saved[i.id]),
-    openDetail: setDetail,
-    toggleSave: toggleSave,
-    saved: saved,
-    openGallery: openGallery,
-    duration: duration
-  }), tab === "trips" && /*#__PURE__*/React.createElement(TripsScreen, {
-    role: role,
-    openDetail: setDetail,
-    userBookings: userBookings,
-    onCancelBooking: id => setUserBookings(prev => prev.filter(b => b.id !== id))
-  }), tab === "trips" && /*#__PURE__*/React.createElement(MyQRCodeButton, {
-    onClick: () => setMyQrOpen(true)
-  }), tab === "trips" && /*#__PURE__*/React.createElement(QRScanButton, {
-    onClick: () => setQrInfoOpen(true)
-  }), tab === "messages" && /*#__PURE__*/React.createElement(MessagesScreen, {
-    role: role,
-    onChatActiveChange: setChatActive
-  }), tab === "profile" && /*#__PURE__*/React.createElement(ProfileScreen, {
-    role: role,
-    setRole: setRole,
-    onOpenRent: () => setRentOpen(true),
-    onOpenDashboard: () => setDashboardOpen(true),
-    onOpenTechs: () => {
-      setTechsRole(role);
-      setTechsOpen(true);
-    },
-    onOpenPros: () => {
-      setProsRole(role);
-      setProsOpen(true);
-    },
-    onOpenPublish: () => {
-      setPublishSegment(null);
-      setPublishOpen(true);
-    },
-    onOpenSettings: () => setSettingsOpen(true),
-    onOpenEditProfile: () => setEditProfileOpen(true),
-    onOpenReviews: () => setReviewsOpen(true),
-    onOpenHistory: () => setHistoryOpen(true)
-  }), myQrOpen && /*#__PURE__*/React.createElement(MyQRCodeDialog, {
-    booking: myQrBooking,
-    onClose: () => setMyQrOpen(false)
-  }), qrInfoOpen && /*#__PURE__*/React.createElement(QRInfoDialog, {
-    onClose: () => setQrInfoOpen(false),
-    onScan: () => {
-      setQrInfoOpen(false);
-      setQrScanOpen(true);
-    }
-  }), qrScanOpen && /*#__PURE__*/React.createElement(QRScannerOverlay, {
-    onClose: () => setQrScanOpen(false),
-    onScan: code => {
-      setQrScanOpen(false);
-      setQrResult(code);
-    }
-  }), qrResult && /*#__PURE__*/React.createElement(GuestVerificationSheet, {
-    code: qrResult,
-    onClose: () => setQrResult(null)
+    setTab: switchTab
   }));
 }
 
 /* ─── SHELL ─────────────────────────────────────── */
+/* La nav bar est désormais rendue séparément (BottomNavBar) au niveau
+   racine de ByerApp pour rester visible sur TOUS les écrans (y compris
+   les écrans secondaires qui replacent le Shell). Shell ne contient
+   donc plus que le scroll wrapper. */
 function Shell({
   children,
-  tab,
-  setTab,
   hideNav
+}) {
+  const scrollStyle = hideNav ? {
+    ...S.scroll,
+    paddingBottom: 0
+  } : S.scroll;
+  return /*#__PURE__*/React.createElement("div", {
+    style: S.shell
+  }, /*#__PURE__*/React.createElement("style", null, BYER_CSS), /*#__PURE__*/React.createElement("div", {
+    style: scrollStyle
+  }, children));
+}
+
+/* ─── BOTTOM NAV BAR (fixed, always visible) ─────
+   Rendue au niveau racine de ByerApp. position:fixed dans S.nav
+   garantit la visibilité sur tous les écrans. Cliquer sur un onglet
+   ferme automatiquement tout écran secondaire ouvert (via setTab
+   qui appelle closeAll). */
+function BottomNavBar({
+  tab,
+  setTab
 }) {
   const nav = [{
     id: "home",
@@ -28802,18 +29285,7 @@ function Shell({
     icon: "user",
     label: "Profil"
   }];
-  // Quand on est dans une conversation (hideNav=true), on retire la nav bar
-  // ET on supprime le paddingBottom du scroll pour que la barre de saisie
-  // colle bien au bas de l'écran (UX chat full-screen).
-  const scrollStyle = hideNav ? {
-    ...S.scroll,
-    paddingBottom: 0
-  } : S.scroll;
-  return /*#__PURE__*/React.createElement("div", {
-    style: S.shell
-  }, /*#__PURE__*/React.createElement("style", null, BYER_CSS), /*#__PURE__*/React.createElement("div", {
-    style: scrollStyle
-  }, children), !hideNav && /*#__PURE__*/React.createElement("nav", {
+  return /*#__PURE__*/React.createElement("nav", {
     style: S.nav
   }, nav.map(n => {
     const on = tab === n.id;
@@ -28832,7 +29304,7 @@ function Shell({
         color: on ? C.coral : C.light
       }
     }, n.label));
-  })));
+  }));
 }
 
 /* ═══ js/main.js ═══ */
