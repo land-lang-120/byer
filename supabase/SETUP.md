@@ -18,7 +18,7 @@
 
 ---
 
-## 2️⃣ Exécuter les 6 migrations SQL
+## 2️⃣ Exécuter les 7 migrations SQL
 
 Dès que le projet est prêt :
 
@@ -39,6 +39,9 @@ Dès que le projet est prêt :
 8. **Migration 6** : nouveau **"New query"** → colle `0006_bookings_optimizations.sql` → **Run**
    - ✅ `Success. No rows returned`
    - 🛏️ Cette migration ajoute : extension `btree_gist`, **contrainte EXCLUDE qui empêche les doubles réservations** sur la même annonce aux dates qui se chevauchent, décomposition prix (`price_base`/`service`/`dossier`/`taxes`/`caution`), `rental_mode` (night/day/week/month), QR token UUID inviolable + `qr_validated_at`, politique d'annulation (flexible/moderate/strict) + remboursement auto, payout host (commission, montant net), audit paiement (téléphone MoMo/OM, ref transaction), RPC `is_listing_available`, `get_blocked_dates`, `cancel_booking`, `verify_booking_qr`, `validate_arrival`, `auto_complete_bookings`, triggers notifications auto guest/host.
+9. **Migration 7** : nouveau **"New query"** → colle `0007_reviews_rewards_notifications.sql` → **Run**
+   - ✅ `Success. No rows returned`
+   - ⭐ Cette migration finalise les 4 modules transverses : **REVIEWS** alignées sur les 8 critères de l'UI (proprete, confort, accessibilite, convivialite, emplacement, securite, equipement, qualite_prix) + auto-moyenne + validation que seul le guest d'un booking `completed` peut noter ; **RÉCOMPENSES** avec table `rewards_catalog` (6 récompenses seedées) + RPC atomique `redeem_reward` (vérif points + tier + débit + création coupon) + RPC `apply_coupon` ; **ANTI-TRICHE** verrou RLS sur `profiles.rewards_points` (impossible à modifier directement, doit passer par RPC) ; **POINTS AUTO** trigger qui crédite +2 pts au guest et +5 pts au host à chaque booking `completed` (idempotent) ; **NOTIFICATIONS** triggers auto sur nouvelle review, réponse host, nouveau message ; **CHAT** RPC `mark_conversation_read`, `block_conversation`, `unblock_conversation`, `get_unread_count` ; trigger `enforce_message_not_blocked` ; utilitaire `cleanup_expired_coupons` pour pg_cron.
 
 > Si une migration échoue : copie-colle le message d'erreur dans le chat et je te corrige ça en 30 secondes.
 
