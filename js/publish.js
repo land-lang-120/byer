@@ -386,9 +386,12 @@ function PublishScreen({ onBack, initialSegment }) {
     setUploadError("");
     const files = Array.from(fileList || []);
     if (files.length === 0) return;
-    const remaining = 10 - form.photos.length;
+    /* Limite = somme des slots prédéfinis (façade + chambres + …), plafond 10.
+       Une fois atteinte → upload bloqué, il faut supprimer une photo pour
+       libérer un slot. */
+    const remaining = photosMaxAllowed - form.photos.length;
     if (remaining <= 0) {
-      setUploadError("Maximum 10 photos atteint.");
+      setUploadError(`Maximum ${photosMaxAllowed} photos atteint. Supprimez une photo pour en ajouter une autre.`);
       return;
     }
     const toProcess = files.slice(0, remaining);
@@ -420,7 +423,7 @@ function PublishScreen({ onBack, initialSegment }) {
         }));
         return { ...p, photos: [...p.photos, ...tagged] };
       });
-      if (skipped > 0) setUploadError(`${skipped} photo(s) ignorée(s) — limite de 10 atteinte.`);
+      if (skipped > 0) setUploadError(`${skipped} photo(s) ignorée(s) — limite de ${photosMaxAllowed} atteinte.`);
       /* Ouvre AUTOMATIQUEMENT le picker d'étiquette pour la 1ère nouvelle
          photo non-déjà-étiquetée. Si c'est la toute 1ère photo de l'annonce
          (startIdx === 0), elle reçoit "exterior" auto → on saute à la 2ème. */
@@ -519,6 +522,17 @@ function PublishScreen({ onBack, initialSegment }) {
   };
   const PHOTO_TAG_TYPES = computePhotoTagTypes();
   const tagTypeMeta = (typeId) => PHOTO_TAG_TYPES.find(t => t.id === typeId);
+
+  /* MAX TOTAL de photos autorisées pour cette annonce :
+     somme des maxCount de TOUS les types disponibles (façade + chambres +
+     cuisine + … pour property, ou les 5 vues pour vehicle), plafonné à 10.
+     Une fois ce total atteint, l'utilisateur ne peut PLUS uploader de
+     nouvelle photo — il peut seulement modifier l'étiquette ou supprimer
+     une photo existante pour libérer un slot. */
+  const photosMaxAllowed = Math.min(
+    10,
+    PHOTO_TAG_TYPES.reduce((s, t) => s + t.maxCount, 0) || 10,
+  );
 
   /* Calcule le LABEL affiché d'une photo, avec numéro automatique.
      - Pas de tag → null
@@ -700,7 +714,10 @@ function PublishScreen({ onBack, initialSegment }) {
     }
   };
 
-  const totalSteps = 5;
+  /* 6 étapes : 1=type, 2=infos, 3=prix, 4=photos, 5=règlement, 6=récap.
+     Le step 5 (règlement) a été ajouté en v41 — la barre/compteur de
+     progression doit refléter ces 6 étapes pour éviter "6 sur 5". */
+  const totalSteps = 6;
 
   return (
     <div style={S.shell}>
@@ -1205,7 +1222,7 @@ function PublishScreen({ onBack, initialSegment }) {
             <div>
               <p style={{fontSize:20,fontWeight:800,color:C.black,marginBottom:6}}>Photos</p>
               <p style={{fontSize:13,color:C.mid,marginBottom:14}}>
-                Ajoutez au moins 3 photos pour attirer les locataires. ({form.photos.length}/10)
+                Ajoutez au moins 3 photos pour attirer les locataires. ({form.photos.length}/{photosMaxAllowed})
               </p>
 
               <input
@@ -1306,7 +1323,11 @@ function PublishScreen({ onBack, initialSegment }) {
                   );
                 })}
 
-                {form.photos.length < 10 && (
+                {/* Tuile d'upload — masquée dès que tous les slots prédéfinis
+                    sont occupés (ex : 1 façade + 3 chambres + 1 cuisine = 5 max).
+                    Une fois pleine, l'utilisateur ne peut QUE modifier ou
+                    supprimer une photo existante (pas en ajouter de nouvelle). */}
+                {form.photos.length < photosMaxAllowed && (
                   <label htmlFor="byer-photo-input" style={{
                     minHeight:140,borderRadius:16,
                     border:`2px dashed ${form.photos.length === 0 ? C.coral : C.border}`,
@@ -1323,6 +1344,20 @@ function PublishScreen({ onBack, initialSegment }) {
                   </label>
                 )}
               </div>
+
+              {/* Bandeau "tous les slots remplis" — feedback explicite quand
+                  l'utilisateur a atteint le nombre exact de photos prévues
+                  par sa composition. Indique clairement comment libérer un slot. */}
+              {form.photos.length >= photosMaxAllowed && (
+                <div style={{
+                  background:"#E8F5E9",border:"1px solid #A5D6A7",borderRadius:12,
+                  padding:"10px 12px",marginBottom:14,
+                }}>
+                  <p style={{fontSize:11,color:"#1B5E20",lineHeight:1.5,fontFamily:"'DM Sans',sans-serif"}}>
+                    ✅ <strong>Tous les emplacements ({photosMaxAllowed}) sont remplis.</strong> Vous ne pouvez plus ajouter de nouvelle photo. Pour en remplacer une, supprimez-la d'abord (×) puis uploadez la nouvelle. Pour changer son étiquette, cliquez simplement dessus.
+                  </p>
+                </div>
+              )}
 
               {uploadError && (
                 <div style={{background:"#FEF2F2",border:`1px solid #FEC8C8`,borderRadius:10,padding:"10px 12px",marginBottom:14}}>

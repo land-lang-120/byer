@@ -24849,9 +24849,12 @@ function PublishScreen({
     setUploadError("");
     const files = Array.from(fileList || []);
     if (files.length === 0) return;
-    const remaining = 10 - form.photos.length;
+    /* Limite = somme des slots prédéfinis (façade + chambres + …), plafond 10.
+       Une fois atteinte → upload bloqué, il faut supprimer une photo pour
+       libérer un slot. */
+    const remaining = photosMaxAllowed - form.photos.length;
     if (remaining <= 0) {
-      setUploadError("Maximum 10 photos atteint.");
+      setUploadError(`Maximum ${photosMaxAllowed} photos atteint. Supprimez une photo pour en ajouter une autre.`);
       return;
     }
     const toProcess = files.slice(0, remaining);
@@ -24889,7 +24892,7 @@ function PublishScreen({
           photos: [...p.photos, ...tagged]
         };
       });
-      if (skipped > 0) setUploadError(`${skipped} photo(s) ignorée(s) — limite de 10 atteinte.`);
+      if (skipped > 0) setUploadError(`${skipped} photo(s) ignorée(s) — limite de ${photosMaxAllowed} atteinte.`);
       /* Ouvre AUTOMATIQUEMENT le picker d'étiquette pour la 1ère nouvelle
          photo non-déjà-étiquetée. Si c'est la toute 1ère photo de l'annonce
          (startIdx === 0), elle reçoit "exterior" auto → on saute à la 2ème. */
@@ -25019,6 +25022,14 @@ function PublishScreen({
   };
   const PHOTO_TAG_TYPES = computePhotoTagTypes();
   const tagTypeMeta = typeId => PHOTO_TAG_TYPES.find(t => t.id === typeId);
+
+  /* MAX TOTAL de photos autorisées pour cette annonce :
+     somme des maxCount de TOUS les types disponibles (façade + chambres +
+     cuisine + … pour property, ou les 5 vues pour vehicle), plafonné à 10.
+     Une fois ce total atteint, l'utilisateur ne peut PLUS uploader de
+     nouvelle photo — il peut seulement modifier l'étiquette ou supprimer
+     une photo existante pour libérer un slot. */
+  const photosMaxAllowed = Math.min(10, PHOTO_TAG_TYPES.reduce((s, t) => s + t.maxCount, 0) || 10);
 
   /* Calcule le LABEL affiché d'une photo, avec numéro automatique.
      - Pas de tag → null
@@ -25199,7 +25210,11 @@ function PublishScreen({
       setSubmitError("Erreur réseau. Vérifiez votre connexion et réessayez.");
     }
   };
-  const totalSteps = 5;
+
+  /* 6 étapes : 1=type, 2=infos, 3=prix, 4=photos, 5=règlement, 6=récap.
+     Le step 5 (règlement) a été ajouté en v41 — la barre/compteur de
+     progression doit refléter ces 6 étapes pour éviter "6 sur 5". */
+  const totalSteps = 6;
   return /*#__PURE__*/React.createElement("div", {
     style: S.shell
   }, /*#__PURE__*/React.createElement("style", null, BYER_CSS), /*#__PURE__*/React.createElement("div", {
@@ -26039,7 +26054,7 @@ function PublishScreen({
       color: C.mid,
       marginBottom: 14
     }
-  }, "Ajoutez au moins 3 photos pour attirer les locataires. (", form.photos.length, "/10)"), /*#__PURE__*/React.createElement("input", {
+  }, "Ajoutez au moins 3 photos pour attirer les locataires. (", form.photos.length, "/", photosMaxAllowed, ")"), /*#__PURE__*/React.createElement("input", {
     id: "byer-photo-input",
     type: "file",
     accept: "image/*",
@@ -26178,7 +26193,7 @@ function PublishScreen({
         lineHeight: 1.3
       }
     }, tag && autoLabel ? autoLabel : "📍 Étiqueter cette photo"));
-  }), form.photos.length < 10 && /*#__PURE__*/React.createElement("label", {
+  }), form.photos.length < photosMaxAllowed && /*#__PURE__*/React.createElement("label", {
     htmlFor: "byer-photo-input",
     style: {
       minHeight: 140,
@@ -26219,7 +26234,22 @@ function PublishScreen({
       color: form.photos.length === 0 ? C.coral : C.mid,
       fontFamily: "'DM Sans',sans-serif"
     }
-  }, form.photos.length === 0 ? "Ajouter la 1ʳᵉ photo" : "+ Ajouter"))), uploadError && /*#__PURE__*/React.createElement("div", {
+  }, form.photos.length === 0 ? "Ajouter la 1ʳᵉ photo" : "+ Ajouter"))), form.photos.length >= photosMaxAllowed && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#E8F5E9",
+      border: "1px solid #A5D6A7",
+      borderRadius: 12,
+      padding: "10px 12px",
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: "#1B5E20",
+      lineHeight: 1.5,
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, "\u2705 ", /*#__PURE__*/React.createElement("strong", null, "Tous les emplacements (", photosMaxAllowed, ") sont remplis."), " Vous ne pouvez plus ajouter de nouvelle photo. Pour en remplacer une, supprimez-la d'abord (\xD7) puis uploadez la nouvelle. Pour changer son \xE9tiquette, cliquez simplement dessus.")), uploadError && /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#FEF2F2",
       border: `1px solid #FEC8C8`,
