@@ -22532,6 +22532,195 @@ function NotificationsScreen({
    Formulaire pour publier une annonce (logement ou véhicule)
    ═══════════════════════════════════════════════════ */
 
+/* ─── BUILDING TYPES ───────────────────────────────
+   Types de logements de niveau "bâtiment" et leurs sous-catégories
+   d'unités locables typiques. Sert à structurer l'annonce :
+   un immeuble peut contenir plusieurs appartements/studios/chambres,
+   un hôtel/motel/auberge contient uniquement des chambres,
+   une maison ou villa est elle-même l'unité unique.
+─────────────────────────────────────────────────── */
+const BUILDING_TYPES = [{
+  id: "maison",
+  label: "Maison",
+  emoji: "🏡",
+  units: [{
+    id: "maison",
+    label: "La maison"
+  }]
+}, {
+  id: "villa",
+  label: "Villa",
+  emoji: "🏖️",
+  units: [{
+    id: "villa",
+    label: "La villa"
+  }]
+}, {
+  id: "immeuble",
+  label: "Immeuble",
+  emoji: "🏢",
+  units: [{
+    id: "appartement",
+    label: "Appartements"
+  }, {
+    id: "studio",
+    label: "Studios"
+  }, {
+    id: "chambre",
+    label: "Chambres"
+  }]
+}, {
+  id: "hotel",
+  label: "Hôtel",
+  emoji: "🏨",
+  units: [{
+    id: "chambre",
+    label: "Chambres"
+  }]
+}, {
+  id: "motel",
+  label: "Motel",
+  emoji: "🛏️",
+  units: [{
+    id: "chambre",
+    label: "Chambres"
+  }]
+}, {
+  id: "auberge",
+  label: "Auberge",
+  emoji: "🛌",
+  units: [{
+    id: "chambre",
+    label: "Chambres"
+  }]
+}];
+
+/* Pièces définissables par unité locable (par sous-catégorie). */
+const ROOM_FIELDS = [{
+  k: "sejour",
+  label: "Séjour",
+  emoji: "🛋️"
+}, {
+  k: "chambre",
+  label: "Chambre",
+  emoji: "🛏️"
+}, {
+  k: "cuisine",
+  label: "Cuisine",
+  emoji: "🍳"
+}, {
+  k: "douche",
+  label: "Douche/SdB",
+  emoji: "🚿"
+}, {
+  k: "magasin",
+  label: "Magasin",
+  emoji: "📦"
+}, {
+  k: "buanderie",
+  label: "Buanderie",
+  emoji: "🧺"
+}, {
+  k: "garage",
+  label: "Garage",
+  emoji: "🚙"
+}, {
+  k: "piscine",
+  label: "Piscine",
+  emoji: "🏊"
+}, {
+  k: "gym",
+  label: "Salle de sport",
+  emoji: "🏋️"
+}, {
+  k: "terrasse",
+  label: "Terrasse",
+  emoji: "🌅"
+}];
+
+/* Compo par défaut selon le sous-type d'unité.
+   La valeur 0 n'affiche pas le compteur "à 0" mais permet à l'utilisateur
+   de l'augmenter ; elle ne sera pas comptabilisée dans les pièces totales. */
+const DEFAULT_ROOMS = subType => {
+  if (subType === "chambre") return {
+    chambre: 1,
+    douche: 1,
+    sejour: 0,
+    cuisine: 0,
+    magasin: 0,
+    buanderie: 0,
+    garage: 0,
+    piscine: 0,
+    gym: 0,
+    terrasse: 0
+  };
+  if (subType === "studio") return {
+    sejour: 1,
+    chambre: 0,
+    cuisine: 1,
+    douche: 1,
+    magasin: 0,
+    buanderie: 0,
+    garage: 0,
+    piscine: 0,
+    gym: 0,
+    terrasse: 0
+  };
+  if (subType === "villa" || subType === "maison") return {
+    sejour: 1,
+    chambre: 3,
+    cuisine: 1,
+    douche: 2,
+    magasin: 0,
+    buanderie: 1,
+    garage: 1,
+    piscine: 0,
+    gym: 0,
+    terrasse: 1
+  };
+  /* appartement par défaut */
+  return {
+    sejour: 1,
+    chambre: 2,
+    cuisine: 1,
+    douche: 1,
+    magasin: 0,
+    buanderie: 0,
+    garage: 0,
+    piscine: 0,
+    gym: 0,
+    terrasse: 0
+  };
+};
+
+/* ID unique pour chaque variante (ne dépend pas de l'ordre — stable même
+   après suppression/ajout). Suffit pour les keys React et le tracking. */
+let _variantIdCounter = 1;
+const newVariantId = () => `v${Date.now().toString(36)}-${_variantIdCounter++}`;
+
+/* Construction de l'état initial unitsConfig pour un buildingType.
+   Chaque sous-catégorie démarre avec UNE variante (count=1) configurée
+   par défaut. L'utilisateur peut ensuite :
+   - augmenter le count si toutes les unités sont identiques (duplication)
+   - ajouter d'autres variantes si certaines unités ont une compo différente
+   - supprimer une variante */
+const buildUnitsConfig = buildingType => {
+  const bt = BUILDING_TYPES.find(b => b.id === buildingType);
+  if (!bt) return {};
+  const cfg = {};
+  bt.units.forEach(u => {
+    cfg[u.id] = {
+      label: u.label,
+      variants: [{
+        id: newVariantId(),
+        count: 1,
+        rooms: DEFAULT_ROOMS(u.id)
+      }]
+    };
+  });
+  return cfg;
+};
+
 /* ─── PUBLISH SCREEN ─────────────────────────────── */
 function PublishScreen({
   onBack,
@@ -22546,14 +22735,17 @@ function PublishScreen({
   const [form, setForm] = useState({
     segment: initialSegment || "property",
     // property | vehicle
-    propType: "appartement",
-    // type de bien
+    buildingType: "maison",
+    // maison | villa | immeuble | hotel | motel | auberge
+    /* unitsConfig : {[subTypeId]: {label, count, rooms:{sejour,chambre,...}}}
+       Initialisé selon le buildingType par défaut. Re-initialisé à chaque
+       changement de buildingType (fait dans setBuildingType).
+       Garde la trace par sous-catégorie pour préserver les saisies si
+       l'utilisateur re-bascule sur un type qu'il avait déjà rempli. */
+    unitsConfig: buildUnitsConfig("maison"),
     title: "",
     city: "Douala",
     zone: "",
-    beds: 1,
-    baths: 1,
-    guests: 2,
     amenities: [],
     nightPrice: "",
     monthPrice: "",
@@ -22570,6 +22762,106 @@ function PublishScreen({
     ...p,
     [k]: v
   }));
+
+  /* Helpers pour gérer la composition des unités locables (variantes) */
+  const setBuildingType = bt => {
+    setForm(p => ({
+      ...p,
+      buildingType: bt,
+      // Reset unitsConfig pour ce nouveau type (pas de mémoire entre types)
+      unitsConfig: buildUnitsConfig(bt)
+    }));
+  };
+  /* Maj count d'une variante donnée. Si count tombe à 0, on garde la variante
+     (l'utilisateur peut ré-incrémenter sans perdre sa compo). Pour supprimer,
+     utiliser removeVariant. */
+  const setVariantCount = (subId, variantId, delta) => {
+    setForm(p => {
+      const sub = p.unitsConfig[subId];
+      if (!sub) return p;
+      const newVariants = sub.variants.map(v => v.id === variantId ? {
+        ...v,
+        count: Math.max(0, Math.min(99, v.count + delta))
+      } : v);
+      return {
+        ...p,
+        unitsConfig: {
+          ...p.unitsConfig,
+          [subId]: {
+            ...sub,
+            variants: newVariants
+          }
+        }
+      };
+    });
+  };
+  /* Maj du nombre d'une pièce pour une variante donnée */
+  const setVariantRoom = (subId, variantId, roomKey, delta) => {
+    setForm(p => {
+      const sub = p.unitsConfig[subId];
+      if (!sub) return p;
+      const newVariants = sub.variants.map(v => {
+        if (v.id !== variantId) return v;
+        const newVal = Math.max(0, Math.min(20, (v.rooms[roomKey] || 0) + delta));
+        return {
+          ...v,
+          rooms: {
+            ...v.rooms,
+            [roomKey]: newVal
+          }
+        };
+      });
+      return {
+        ...p,
+        unitsConfig: {
+          ...p.unitsConfig,
+          [subId]: {
+            ...sub,
+            variants: newVariants
+          }
+        }
+      };
+    });
+  };
+  /* Ajoute une nouvelle variante (config différente) à une sous-catégorie */
+  const addVariant = subId => {
+    setForm(p => {
+      const sub = p.unitsConfig[subId];
+      if (!sub) return p;
+      const newVar = {
+        id: newVariantId(),
+        count: 1,
+        rooms: DEFAULT_ROOMS(subId)
+      };
+      return {
+        ...p,
+        unitsConfig: {
+          ...p.unitsConfig,
+          [subId]: {
+            ...sub,
+            variants: [...sub.variants, newVar]
+          }
+        }
+      };
+    });
+  };
+  /* Supprime une variante (uniquement si plus d'une) */
+  const removeVariant = (subId, variantId) => {
+    setForm(p => {
+      const sub = p.unitsConfig[subId];
+      if (!sub || sub.variants.length <= 1) return p;
+      return {
+        ...p,
+        unitsConfig: {
+          ...p.unitsConfig,
+          [subId]: {
+            ...sub,
+            variants: sub.variants.filter(v => v.id !== variantId)
+          }
+        }
+      };
+    });
+  };
 
   /* Compresser une image avant stockage (resize max 1200px, JPEG 0.8) */
   const compressImage = file => new Promise((resolve, reject) => {
@@ -22697,23 +22989,51 @@ function PublishScreen({
 
       // 2) Construire le payload listings selon le segment
       const isVehicle = form.segment === "vehicle";
+      /* Pour un logement, on calcule des agrégats à partir de la compo des
+         unités (somme pondérée par count). Sert à conserver les champs
+         legacy bedrooms/bathrooms/max_guests cohérents pour les requêtes. */
+      let aggBeds = null,
+        aggBaths = null,
+        aggGuests = null;
+      if (!isVehicle) {
+        const bt = BUILDING_TYPES.find(b => b.id === form.buildingType);
+        if (bt) {
+          let beds = 0,
+            baths = 0;
+          bt.units.forEach(u => {
+            const sub = form.unitsConfig[u.id];
+            if (!sub) return;
+            sub.variants.forEach(v => {
+              beds += (v.rooms.chambre || 0) * v.count;
+              baths += (v.rooms.douche || 0) * v.count;
+            });
+          });
+          aggBeds = beds || null;
+          aggBaths = baths || null;
+          aggGuests = beds ? beds * 2 : null; // estimation 2 personnes par chambre
+        }
+      }
       const payload = {
         owner_id: user.id,
         type: form.segment,
-        subtype: isVehicle ? null : form.propType,
+        subtype: isVehicle ? null : form.buildingType,
         title: (form.title || "").trim() || (isVehicle ? form.brand : "Sans titre"),
         description: (form.description || "").trim() || null,
         city: form.city,
         zone: (form.zone || "").trim() || null,
         price_night: form.nightPrice ? parseInt(form.nightPrice, 10) : null,
         price_month: form.monthPrice ? parseInt(form.monthPrice, 10) : null,
-        bedrooms: isVehicle ? null : Number(form.beds) || null,
-        bathrooms: isVehicle ? null : Number(form.baths) || null,
-        max_guests: isVehicle ? Number(form.seats) : Number(form.guests) || null,
+        bedrooms: aggBeds,
+        bathrooms: aggBaths,
+        max_guests: isVehicle ? Number(form.seats) : aggGuests,
         brand: isVehicle ? (form.brand || "").trim() || null : null,
         fuel: isVehicle ? form.fuel : null,
         transmission: isVehicle ? form.trans : null,
         amenities: Array.isArray(form.amenities) ? form.amenities : [],
+        /* Compo détaillée par unité — stockée en JSON pour conserver la
+           granularité des variantes et pièces. Le backend peut l'ignorer
+           sans casser, ou la persister selon le schéma listings. */
+        units_config: isVehicle ? null : form.unitsConfig,
         is_active: true
       };
 
@@ -22918,26 +23238,47 @@ function PublishScreen({
     }
   }, "Type de logement"), /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "flex",
-      flexWrap: "wrap",
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr",
       gap: 8,
       marginBottom: 20
     }
-  }, PROP_TYPES.filter(t => t.id !== "all").map(t => /*#__PURE__*/React.createElement("button", {
-    key: t.id,
-    onClick: () => set("propType", t.id),
+  }, BUILDING_TYPES.map(t => {
+    const on = form.buildingType === t.id;
+    return /*#__PURE__*/React.createElement("button", {
+      key: t.id,
+      onClick: () => setBuildingType(t.id),
+      style: {
+        padding: "14px 8px",
+        borderRadius: 14,
+        cursor: "pointer",
+        border: on ? `2px solid ${C.coral}` : `1.5px solid ${C.border}`,
+        background: on ? "#FFF5F5" : C.white,
+        fontFamily: "'DM Sans',sans-serif",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 24
+      }
+    }, t.emoji), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12,
+        fontWeight: 700,
+        color: on ? C.coral : C.dark
+      }
+    }, t.label));
+  })), /*#__PURE__*/React.createElement("p", {
     style: {
-      padding: "8px 14px",
-      borderRadius: 12,
-      cursor: "pointer",
-      border: form.propType === t.id ? `1.5px solid ${C.coral}` : `1.5px solid ${C.border}`,
-      background: form.propType === t.id ? "#FFF5F5" : C.white,
-      fontSize: 13,
-      fontWeight: 600,
-      fontFamily: "'DM Sans',sans-serif",
-      color: form.propType === t.id ? C.coral : C.mid
+      fontSize: 11,
+      color: C.light,
+      marginBottom: 12,
+      lineHeight: 1.5
     }
-  }, t.label)))), /*#__PURE__*/React.createElement("button", {
+  }, "\uD83D\uDCA1 Vous pourrez d\xE9tailler les unit\xE9s locables (appartements, chambres\u2026) et leurs pi\xE8ces \xE0 l'\xE9tape suivante.")), /*#__PURE__*/React.createElement("button", {
     style: {
       ...S.payBtn,
       marginTop: 8
@@ -23007,83 +23348,289 @@ function PublishScreen({
     placeholder: "Ex: Bonamoussadi",
     value: form.zone,
     onChange: e => set("zone", e.target.value)
-  })))), form.segment === "property" && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 10,
-      marginBottom: 16
-    }
-  }, [{
-    k: "beds",
-    label: "Chambres",
-    min: 1,
-    max: 10
-  }, {
-    k: "baths",
-    label: "Sdb",
-    min: 1,
-    max: 5
-  }, {
-    k: "guests",
-    label: "Pers. max",
-    min: 1,
-    max: 20
-  }].map(f => /*#__PURE__*/React.createElement("div", {
-    key: f.k,
-    style: {
-      flex: 1
-    }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: Os.fieldLabel
-  }, f.label), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      background: C.bg,
-      borderRadius: 12,
-      padding: "8px"
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: () => set(f.k, Math.max(f.min, form[f.k] - 1)),
-    style: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
-      border: `1.5px solid ${C.border}`,
-      background: C.white,
-      cursor: "pointer",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: 16,
-      color: C.dark
-    }
-  }, "\u2212"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 16,
-      fontWeight: 700,
-      color: C.black,
-      minWidth: 20,
-      textAlign: "center"
-    }
-  }, form[f.k]), /*#__PURE__*/React.createElement("button", {
-    onClick: () => set(f.k, Math.min(f.max, form[f.k] + 1)),
-    style: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
-      border: `1.5px solid ${C.border}`,
-      background: C.white,
-      cursor: "pointer",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: 16,
-      color: C.dark
-    }
-  }, "+"))))), form.segment === "vehicle" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  })))), form.segment === "property" && (() => {
+    const bt = BUILDING_TYPES.find(b => b.id === form.buildingType);
+    if (!bt) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: 18
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 13,
+        fontWeight: 700,
+        color: C.dark,
+        marginBottom: 6,
+        display: "flex",
+        alignItems: "center",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 14
+      }
+    }, bt.emoji), " Sous-cat\xE9gories & pi\xE8ces"), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        color: C.light,
+        marginBottom: 12,
+        lineHeight: 1.5
+      }
+    }, "Pour chaque sous-cat\xE9gorie, d\xE9finissez le nombre d'unit\xE9s identiques (duplication) et leur composition. Vous pouvez aussi ", /*#__PURE__*/React.createElement("strong", null, "ajouter une variante"), " si certaines unit\xE9s ont une configuration diff\xE9rente."), bt.units.map(u => {
+      const sub = form.unitsConfig[u.id];
+      if (!sub) return null;
+      const totalUnits = sub.variants.reduce((s, v) => s + v.count, 0);
+      return /*#__PURE__*/React.createElement("div", {
+        key: u.id,
+        style: {
+          background: "#FAFAFA",
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 14,
+          padding: "12px",
+          marginBottom: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 10
+        }
+      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+        style: {
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.black
+        }
+      }, u.label), /*#__PURE__*/React.createElement("p", {
+        style: {
+          fontSize: 10,
+          color: C.light,
+          marginTop: 1
+        }
+      }, totalUnits, " unit\xE9", totalUnits > 1 ? "s" : "", " \xB7 ", sub.variants.length, " variante", sub.variants.length > 1 ? "s" : "")), /*#__PURE__*/React.createElement("button", {
+        onClick: () => addVariant(u.id),
+        style: {
+          background: C.white,
+          border: `1.5px dashed ${C.coral}`,
+          color: C.coral,
+          fontSize: 11,
+          fontWeight: 700,
+          borderRadius: 10,
+          padding: "6px 10px",
+          cursor: "pointer",
+          fontFamily: "'DM Sans',sans-serif"
+        }
+      }, "+ Ajouter variante")), sub.variants.map((vrt, vIdx) => /*#__PURE__*/React.createElement("div", {
+        key: vrt.id,
+        style: {
+          background: C.white,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "10px 12px",
+          marginBottom: 8
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: vrt.count > 0 ? 10 : 0,
+          gap: 8
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flex: 1,
+          minWidth: 0
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 10,
+          fontWeight: 700,
+          color: C.coral,
+          background: "#FFF5F5",
+          border: `1px solid #FFD6D7`,
+          borderRadius: 6,
+          padding: "2px 7px"
+        }
+      }, "Variante ", vIdx + 1), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 11,
+          color: C.mid,
+          fontFamily: "'DM Sans',sans-serif"
+        }
+      }, vrt.count, " \xD7 identique", vrt.count > 1 ? "s" : "")), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 6
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: C.bg,
+          borderRadius: 9,
+          padding: "3px 5px"
+        }
+      }, /*#__PURE__*/React.createElement("button", {
+        onClick: () => setVariantCount(u.id, vrt.id, -1),
+        style: {
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          border: `1px solid ${C.border}`,
+          background: C.white,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 13,
+          color: C.dark,
+          padding: 0
+        }
+      }, "\u2212"), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 13,
+          fontWeight: 800,
+          color: C.black,
+          minWidth: 18,
+          textAlign: "center"
+        }
+      }, vrt.count), /*#__PURE__*/React.createElement("button", {
+        onClick: () => setVariantCount(u.id, vrt.id, +1),
+        style: {
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          border: `1px solid ${C.border}`,
+          background: C.white,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 13,
+          color: C.dark,
+          padding: 0
+        }
+      }, "+")), sub.variants.length > 1 && /*#__PURE__*/React.createElement("button", {
+        onClick: () => removeVariant(u.id, vrt.id),
+        title: "Supprimer cette variante",
+        style: {
+          width: 26,
+          height: 26,
+          borderRadius: 8,
+          border: "none",
+          background: "#FEF2F2",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#B91C1C",
+          fontSize: 14,
+          padding: 0
+        }
+      }, "\xD7"))), vrt.count > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
+        style: {
+          fontSize: 10,
+          fontWeight: 600,
+          color: C.mid,
+          marginBottom: 6,
+          textTransform: "uppercase",
+          letterSpacing: .4
+        }
+      }, "Pi\xE8ces par unit\xE9"), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 5
+        }
+      }, ROOM_FIELDS.map(r => {
+        const v = vrt.rooms[r.k] || 0;
+        return /*#__PURE__*/React.createElement("div", {
+          key: r.k,
+          style: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "5px 9px",
+            background: C.bg,
+            borderRadius: 8
+          }
+        }, /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: 11,
+            color: C.dark,
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            flex: 1,
+            minWidth: 0
+          }
+        }, /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: 12
+          }
+        }, r.emoji), /*#__PURE__*/React.createElement("span", {
+          style: {
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap"
+          }
+        }, r.label)), /*#__PURE__*/React.createElement("div", {
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 4
+          }
+        }, /*#__PURE__*/React.createElement("button", {
+          onClick: () => setVariantRoom(u.id, vrt.id, r.k, -1),
+          style: {
+            width: 20,
+            height: 20,
+            borderRadius: 10,
+            border: `1px solid ${C.border}`,
+            background: C.white,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 11,
+            color: C.dark,
+            padding: 0
+          }
+        }, "\u2212"), /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: 11,
+            fontWeight: 700,
+            color: C.black,
+            minWidth: 12,
+            textAlign: "center"
+          }
+        }, v), /*#__PURE__*/React.createElement("button", {
+          onClick: () => setVariantRoom(u.id, vrt.id, r.k, +1),
+          style: {
+            width: 20,
+            height: 20,
+            borderRadius: 10,
+            border: `1px solid ${C.border}`,
+            background: C.white,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 11,
+            color: C.dark,
+            padding: 0
+          }
+        }, "+")));
+      }))))));
+    }));
+  })(), form.segment === "vehicle" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 16
     }
@@ -23508,7 +24055,65 @@ function PublishScreen({
       borderRadius: 10,
       fontFamily: "'DM Sans',sans-serif"
     }
-  }, "+", form.photos.length - 1, " photos")), /*#__PURE__*/React.createElement("div", {
+  }, "+", form.photos.length - 1, " photos")), form.segment === "property" && (() => {
+    const bt = BUILDING_TYPES.find(b => b.id === form.buildingType);
+    if (!bt) return null;
+    const totalUnits = bt.units.reduce((s, u) => {
+      const sub = form.unitsConfig[u.id];
+      if (!sub) return s;
+      return s + sub.variants.reduce((ss, v) => ss + v.count, 0);
+    }, 0);
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: C.white,
+        border: `1.5px solid ${C.border}`,
+        borderRadius: 14,
+        padding: "12px 14px",
+        marginBottom: 14
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 12,
+        fontWeight: 700,
+        color: C.dark,
+        marginBottom: 8,
+        display: "flex",
+        alignItems: "center",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("span", null, bt.emoji), " ", bt.label, " \xB7 ", totalUnits, " unit\xE9", totalUnits > 1 ? "s" : "", " au total"), bt.units.map(u => {
+      const sub = form.unitsConfig[u.id];
+      if (!sub) return null;
+      const subTotal = sub.variants.reduce((s, v) => s + v.count, 0);
+      if (subTotal === 0) return null;
+      return /*#__PURE__*/React.createElement("div", {
+        key: u.id,
+        style: {
+          paddingTop: 6,
+          paddingBottom: 6,
+          borderTop: `1px dashed ${C.border}`
+        }
+      }, /*#__PURE__*/React.createElement("p", {
+        style: {
+          fontSize: 11,
+          fontWeight: 700,
+          color: C.coral,
+          marginBottom: 4
+        }
+      }, u.label, " (", subTotal, ")"), sub.variants.filter(v => v.count > 0).map((vrt, i) => {
+        const roomSummary = ROOM_FIELDS.filter(r => (vrt.rooms[r.k] || 0) > 0).map(r => `${vrt.rooms[r.k]} ${r.label.toLowerCase()}`).join(" · ") || "Aucune pièce détaillée";
+        return /*#__PURE__*/React.createElement("p", {
+          key: vrt.id,
+          style: {
+            fontSize: 11,
+            color: C.mid,
+            lineHeight: 1.5,
+            marginBottom: 2
+          }
+        }, /*#__PURE__*/React.createElement("strong", null, "\xD7", vrt.count), " \u2014 ", roomSummary);
+      }));
+    }));
+  })(), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.bg,
       borderRadius: 16,
@@ -23517,7 +24122,7 @@ function PublishScreen({
     }
   }, [{
     l: "Type",
-    v: form.segment === "property" ? PROP_TYPES.find(t => t.id === form.propType)?.label || form.propType : "Véhicule"
+    v: form.segment === "property" ? BUILDING_TYPES.find(b => b.id === form.buildingType)?.label || form.buildingType : "Véhicule"
   }, {
     l: "Titre",
     v: form.title || "—"
@@ -23533,15 +24138,6 @@ function PublishScreen({
   }, ...(form.segment === "property" ? [{
     l: "Prix / mois",
     v: form.monthPrice ? fmt(parseInt(form.monthPrice)) : "Non disponible"
-  }, {
-    l: "Chambres",
-    v: form.beds
-  }, {
-    l: "Sdb",
-    v: form.baths
-  }, {
-    l: "Pers. max",
-    v: form.guests
   }] : [{
     l: "Marque",
     v: form.brand || "—"
