@@ -143,6 +143,8 @@ function ByerApp({ onLogout }) {
   // New feature screens
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [buildingDetail, setBuildingDetail]= useState(null);
+  /* listAllFilter : objet { kind:'property'|'vehicle', type, label } pour OwnerListAllScreen */
+  const [listAllFilter, setListAllFilter] = useState(null);
   const [techsOpen, setTechsOpen]         = useState(false);
   const [techsRole, setTechsRole]         = useState("locataire");
   const [prosOpen, setProsOpen]           = useState(false);
@@ -226,6 +228,12 @@ function ByerApp({ onLogout }) {
                                 onManagePros={()=>{setDashboardOpen(false);setProsRole("bailleur");setProsOpen(true);setReturnToDashboard(true);}}
                                 onBoost={()=>{setDashboardOpen(false);setBoostOpen(true);setReturnToDashboard(true);}}
                                 onAddListing={(seg)=>{setDashboardOpen(false);setPublishSegment(seg);setPublishOpen(true);setReturnToDashboard(true);}}
+                                onViewAll={(filter)=>{setDashboardOpen(false);setListAllFilter(filter);setReturnToDashboard(true);}}
+                              />;
+  if (listAllFilter)  return <OwnerListAllScreen
+                                filter={listAllFilter}
+                                onBack={()=>{ setListAllFilter(null); if (returnToDashboard) { setDashboardOpen(true); setReturnToDashboard(false); } }}
+                                onViewBuilding={b=>{ setListAllFilter(null); setBuildingDetail(b); setReturnToDashboard(true); }}
                               />;
   if (techsOpen)      return <TechniciansScreen onBack={()=>closeAndMaybeReturnToDashboard(setTechsOpen)} role={techsRole}/>;
   if (prosOpen)       return <ProfessionalsScreen onBack={()=>closeAndMaybeReturnToDashboard(setProsOpen)} role={prosRole}/>;

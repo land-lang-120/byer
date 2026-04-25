@@ -4,7 +4,7 @@
    ═══════════════════════════════════════════════════ */
 
 /* ─── OWNER DASHBOARD SCREEN ─────────────────────── */
-function OwnerDashboardScreen({ onBack, onViewBuilding, onManageTechs, onManagePros, onBoost, onAddListing }) {
+function OwnerDashboardScreen({ onBack, onViewBuilding, onManageTechs, onManagePros, onBoost, onAddListing, onViewAll }) {
   const [activeOwner] = useState("Ekwalla M.");
   const [chartPeriod, setChartPeriod] = useState("6m"); // 3m | 6m | 12m
   /* Filtre ville/région — "all" = tout Cameroun, sinon nom de la ville */
@@ -299,11 +299,12 @@ function OwnerDashboardScreen({ onBack, onViewBuilding, onManageTechs, onManageP
                 <p style={{fontSize:15,fontWeight:700,color:C.black}}>{typeLabels[type]||type}</p>
                 <span style={{fontSize:11,fontWeight:600,color:C.light,background:C.bg,padding:"2px 8px",borderRadius:10}}>{buildings.length}</span>
               </div>
-              {buildings.length>2 && (
-                <button style={{background:"none",border:"none",fontSize:12,fontWeight:600,color:C.coral,cursor:"pointer"}}>
-                  Voir tout →
-                </button>
-              )}
+              <button
+                onClick={()=>onViewAll?.({kind:"property", type, label:typeLabels[type]||type})}
+                style={{background:"none",border:"none",fontSize:12,fontWeight:600,color:C.coral,cursor:"pointer"}}
+              >
+                Voir tout →
+              </button>
             </div>
 
             {/* Horizontal scroll of building cards */}
@@ -399,10 +400,10 @@ function OwnerDashboardScreen({ onBack, onViewBuilding, onManageTechs, onManageP
                 <span style={{fontSize:11,fontWeight:600,color:C.light,background:C.bg,padding:"2px 8px",borderRadius:10}}>{filteredVehicles.length}</span>
               </div>
               <button
-                onClick={()=>onAddListing?.("vehicle")}
+                onClick={()=>onViewAll?.({kind:"vehicle", type:"vehicle", label:"Mes Véhicules"})}
                 style={{background:"none",border:"none",fontSize:12,fontWeight:600,color:"#2563EB",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
               >
-                + Ajouter
+                Voir tout →
               </button>
             </div>
 
@@ -636,6 +637,144 @@ function DelegationSheet({ building, delegatedIds, onAdd, onRemove, onClose }) {
         </div>
       </div>
     </>
+  );
+}
+
+/* ─── OWNER LIST-ALL SCREEN ────────────────────────
+   Page vue "Voir tout" depuis le Dashboard.
+   Affiche en liste verticale scrollable :
+   - kind="property" + type="immeuble"|"villa"|"hotel"|"motel" → tous les buildings de ce type
+   - kind="vehicle" → tous les véhicules
+─────────────────────────────────────────────────── */
+function OwnerListAllScreen({ filter, onBack, onViewBuilding }) {
+  const [activeOwner] = useState("Ekwalla M.");
+  const owner = OWNERS[activeOwner];
+  if (!owner || !filter) return null;
+
+  const isVehicle = filter.kind === "vehicle";
+  const items = isVehicle
+    ? (owner.vehicles || [])
+    : (owner.buildings || []).filter(b => b.type === filter.type);
+
+  return (
+    <div style={S.shell}>
+      <style>{BYER_CSS}</style>
+      <div style={{flex:1,overflowY:"auto"}}>
+
+        {/* Header */}
+        <div style={S.rentHeader}>
+          <button style={S.dBack2} onClick={onBack}>
+            <Icon name="back" size={20} color={C.dark} stroke={2.5}/>
+          </button>
+          <div style={{flex:1,textAlign:"center"}}>
+            <p style={{fontSize:17,fontWeight:700,color:C.black}}>{filter.label}</p>
+            <p style={{fontSize:11,color:C.light,marginTop:2}}>{items.length} {isVehicle ? "véhicule" : "bien"}{items.length>1?"s":""}</p>
+          </div>
+          <div style={{width:38}}/>
+        </div>
+
+        {items.length === 0 ? (
+          <div style={{padding:"60px 24px",textAlign:"center"}}>
+            <p style={{fontSize:36,marginBottom:10}}>{isVehicle ? "🚗" : "🏠"}</p>
+            <p style={{fontSize:14,color:C.mid}}>Aucun élément à afficher</p>
+          </div>
+        ) : (
+          <div style={{padding:"12px 16px"}}>
+            {isVehicle ? (
+              /* Liste verticale véhicules */
+              items.map(vehicle => (
+                <div key={vehicle.id}
+                  style={{background:C.white,borderRadius:16,overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,.06)",marginBottom:12}}
+                >
+                  <div style={{position:"relative",height:170,overflow:"hidden"}}>
+                    <img src={vehicle.img} alt={vehicle.brand} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                    <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,.55) 0%,transparent 50%)"}}/>
+                    <span style={{
+                      position:"absolute",top:10,right:10,
+                      fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:12,
+                      background: vehicle.available ? "rgba(22,163,74,.95)" : "rgba(239,68,68,.95)",
+                      color:"white",
+                    }}>
+                      {vehicle.available ? "Disponible" : "Loué"}
+                    </span>
+                    <div style={{position:"absolute",bottom:10,left:14,right:14}}>
+                      <p style={{fontSize:15,fontWeight:700,color:"white"}}>{vehicle.brand} {vehicle.model}</p>
+                      <p style={{fontSize:11,color:"rgba(255,255,255,.85)",marginTop:2}}>{vehicle.year} · {vehicle.plate}</p>
+                    </div>
+                  </div>
+                  <div style={{padding:"12px 14px"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                      <p style={{fontSize:12,color:C.light,display:"flex",alignItems:"center",gap:4}}>
+                        <ByerPin size={12}/> {vehicle.city}
+                      </p>
+                      <p style={{fontSize:14,fontWeight:700,color:C.black}}>
+                        {fmt(vehicle.nightPrice)} <span style={{fontSize:11,fontWeight:500,color:C.light}}>F/j</span>
+                      </p>
+                    </div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      <span style={{fontSize:11,fontWeight:500,padding:"3px 9px",borderRadius:9,background:C.bg,color:C.mid}}>
+                        {vehicle.fuel}
+                      </span>
+                      <span style={{fontSize:11,fontWeight:500,padding:"3px 9px",borderRadius:9,background:C.bg,color:C.mid}}>
+                        {vehicle.trans}
+                      </span>
+                      <span style={{fontSize:11,fontWeight:500,padding:"3px 9px",borderRadius:9,background:C.bg,color:C.mid}}>
+                        {vehicle.seats} pl.
+                      </span>
+                    </div>
+                    {!vehicle.available && vehicle.availableFrom && (
+                      <p style={{fontSize:11,color:C.coral,marginTop:8,fontWeight:600}}>
+                        Libre le {vehicle.availableFrom}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : (
+              /* Liste verticale buildings */
+              items.map(building => {
+                const availInB = building.units.filter(u=>u.available).length;
+                const totalInB = building.units.length;
+                return (
+                  <div key={building.id}
+                    onClick={()=>onViewBuilding?.(building)}
+                    style={{background:C.white,borderRadius:16,overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,.06)",marginBottom:12,cursor:"pointer"}}
+                  >
+                    <div style={{position:"relative",height:170,overflow:"hidden"}}>
+                      <img src={building.img} alt={building.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                      <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,.55) 0%,transparent 50%)"}}/>
+                      <div style={{position:"absolute",bottom:10,left:14,right:14,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+                        <p style={{fontSize:15,fontWeight:700,color:"white"}}>{building.name}</p>
+                        <span style={{fontSize:11,fontWeight:700,color:availInB>0?"#4ADE80":"#FCA5A5",background:"rgba(0,0,0,.4)",padding:"3px 9px",borderRadius:11}}>
+                          {availInB}/{totalInB}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{padding:"12px 14px"}}>
+                      <p style={{fontSize:12,color:C.light,display:"flex",alignItems:"center",gap:4}}>
+                        <ByerPin size={12}/> {building.address}
+                      </p>
+                      <div style={{display:"flex",gap:5,marginTop:8,flexWrap:"wrap"}}>
+                        {building.units.slice(0,4).map(u=>(
+                          <span key={u.id} style={{fontSize:11,fontWeight:500,padding:"3px 9px",borderRadius:9,background:u.available?"#F0FDF4":"#FEF2F2",color:u.available?"#16A34A":"#EF4444"}}>
+                            {u.label.split("·")[0].trim()}
+                          </span>
+                        ))}
+                        {building.units.length>4 && (
+                          <span style={{fontSize:11,fontWeight:500,padding:"3px 9px",borderRadius:9,background:C.bg,color:C.mid}}>+{building.units.length-4}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        <div style={{height:60}}/>
+      </div>
+    </div>
   );
 }
 

@@ -15777,7 +15777,8 @@ function OwnerDashboardScreen({
   onManageTechs,
   onManagePros,
   onBoost,
-  onAddListing
+  onAddListing,
+  onViewAll
 }) {
   const [activeOwner] = useState("Ekwalla M.");
   const [chartPeriod, setChartPeriod] = useState("6m"); // 3m | 6m | 12m
@@ -16425,7 +16426,12 @@ function OwnerDashboardScreen({
       padding: "2px 8px",
       borderRadius: 10
     }
-  }, buildings.length)), buildings.length > 2 && /*#__PURE__*/React.createElement("button", {
+  }, buildings.length)), /*#__PURE__*/React.createElement("button", {
+    onClick: () => onViewAll?.({
+      kind: "property",
+      type,
+      label: typeLabels[type] || type
+    }),
     style: {
       background: "none",
       border: "none",
@@ -16678,7 +16684,11 @@ function OwnerDashboardScreen({
       borderRadius: 10
     }
   }, filteredVehicles.length)), /*#__PURE__*/React.createElement("button", {
-    onClick: () => onAddListing?.("vehicle"),
+    onClick: () => onViewAll?.({
+      kind: "vehicle",
+      type: "vehicle",
+      label: "Mes Véhicules"
+    }),
     style: {
       background: "none",
       border: "none",
@@ -16690,7 +16700,7 @@ function OwnerDashboardScreen({
       alignItems: "center",
       gap: 4
     }
-  }, "+ Ajouter")), /*#__PURE__*/React.createElement("div", {
+  }, "Voir tout \u2192")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 12,
@@ -17219,6 +17229,321 @@ function DelegationSheet({
       }
     }, "+ Confier"));
   }))));
+}
+
+/* ─── OWNER LIST-ALL SCREEN ────────────────────────
+   Page vue "Voir tout" depuis le Dashboard.
+   Affiche en liste verticale scrollable :
+   - kind="property" + type="immeuble"|"villa"|"hotel"|"motel" → tous les buildings de ce type
+   - kind="vehicle" → tous les véhicules
+─────────────────────────────────────────────────── */
+function OwnerListAllScreen({
+  filter,
+  onBack,
+  onViewBuilding
+}) {
+  const [activeOwner] = useState("Ekwalla M.");
+  const owner = OWNERS[activeOwner];
+  if (!owner || !filter) return null;
+  const isVehicle = filter.kind === "vehicle";
+  const items = isVehicle ? owner.vehicles || [] : (owner.buildings || []).filter(b => b.type === filter.type);
+  return /*#__PURE__*/React.createElement("div", {
+    style: S.shell
+  }, /*#__PURE__*/React.createElement("style", null, BYER_CSS), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      overflowY: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: S.rentHeader
+  }, /*#__PURE__*/React.createElement("button", {
+    style: S.dBack2,
+    onClick: onBack
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "back",
+    size: 20,
+    color: C.dark,
+    stroke: 2.5
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 17,
+      fontWeight: 700,
+      color: C.black
+    }
+  }, filter.label), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: C.light,
+      marginTop: 2
+    }
+  }, items.length, " ", isVehicle ? "véhicule" : "bien", items.length > 1 ? "s" : "")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 38
+    }
+  })), items.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "60px 24px",
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 36,
+      marginBottom: 10
+    }
+  }, isVehicle ? "🚗" : "🏠"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      color: C.mid
+    }
+  }, "Aucun \xE9l\xE9ment \xE0 afficher")) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "12px 16px"
+    }
+  }, isVehicle ? (/* Liste verticale véhicules */
+  items.map(vehicle => /*#__PURE__*/React.createElement("div", {
+    key: vehicle.id,
+    style: {
+      background: C.white,
+      borderRadius: 16,
+      overflow: "hidden",
+      boxShadow: "0 2px 12px rgba(0,0,0,.06)",
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative",
+      height: 170,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("img", {
+    src: vehicle.img,
+    alt: vehicle.brand,
+    style: {
+      width: "100%",
+      height: "100%",
+      objectFit: "cover"
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      inset: 0,
+      background: "linear-gradient(to top,rgba(0,0,0,.55) 0%,transparent 50%)"
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      position: "absolute",
+      top: 10,
+      right: 10,
+      fontSize: 11,
+      fontWeight: 700,
+      padding: "4px 10px",
+      borderRadius: 12,
+      background: vehicle.available ? "rgba(22,163,74,.95)" : "rgba(239,68,68,.95)",
+      color: "white"
+    }
+  }, vehicle.available ? "Disponible" : "Loué"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      bottom: 10,
+      left: 14,
+      right: 14
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 15,
+      fontWeight: 700,
+      color: "white"
+    }
+  }, vehicle.brand, " ", vehicle.model), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: "rgba(255,255,255,.85)",
+      marginTop: 2
+    }
+  }, vehicle.year, " \xB7 ", vehicle.plate))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "12px 14px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: C.light,
+      display: "flex",
+      alignItems: "center",
+      gap: 4
+    }
+  }, /*#__PURE__*/React.createElement(ByerPin, {
+    size: 12
+  }), " ", vehicle.city), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      fontWeight: 700,
+      color: C.black
+    }
+  }, fmt(vehicle.nightPrice), " ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      fontWeight: 500,
+      color: C.light
+    }
+  }, "F/j"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      fontWeight: 500,
+      padding: "3px 9px",
+      borderRadius: 9,
+      background: C.bg,
+      color: C.mid
+    }
+  }, vehicle.fuel), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      fontWeight: 500,
+      padding: "3px 9px",
+      borderRadius: 9,
+      background: C.bg,
+      color: C.mid
+    }
+  }, vehicle.trans), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      fontWeight: 500,
+      padding: "3px 9px",
+      borderRadius: 9,
+      background: C.bg,
+      color: C.mid
+    }
+  }, vehicle.seats, " pl.")), !vehicle.available && vehicle.availableFrom && /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: C.coral,
+      marginTop: 8,
+      fontWeight: 600
+    }
+  }, "Libre le ", vehicle.availableFrom))))) : (/* Liste verticale buildings */
+  items.map(building => {
+    const availInB = building.units.filter(u => u.available).length;
+    const totalInB = building.units.length;
+    return /*#__PURE__*/React.createElement("div", {
+      key: building.id,
+      onClick: () => onViewBuilding?.(building),
+      style: {
+        background: C.white,
+        borderRadius: 16,
+        overflow: "hidden",
+        boxShadow: "0 2px 12px rgba(0,0,0,.06)",
+        marginBottom: 12,
+        cursor: "pointer"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "relative",
+        height: 170,
+        overflow: "hidden"
+      }
+    }, /*#__PURE__*/React.createElement("img", {
+      src: building.img,
+      alt: building.name,
+      style: {
+        width: "100%",
+        height: "100%",
+        objectFit: "cover"
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        inset: 0,
+        background: "linear-gradient(to top,rgba(0,0,0,.55) 0%,transparent 50%)"
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        bottom: 10,
+        left: 14,
+        right: 14,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-end"
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 15,
+        fontWeight: 700,
+        color: "white"
+      }
+    }, building.name), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: availInB > 0 ? "#4ADE80" : "#FCA5A5",
+        background: "rgba(0,0,0,.4)",
+        padding: "3px 9px",
+        borderRadius: 11
+      }
+    }, availInB, "/", totalInB))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "12px 14px"
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 12,
+        color: C.light,
+        display: "flex",
+        alignItems: "center",
+        gap: 4
+      }
+    }, /*#__PURE__*/React.createElement(ByerPin, {
+      size: 12
+    }), " ", building.address), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 5,
+        marginTop: 8,
+        flexWrap: "wrap"
+      }
+    }, building.units.slice(0, 4).map(u => /*#__PURE__*/React.createElement("span", {
+      key: u.id,
+      style: {
+        fontSize: 11,
+        fontWeight: 500,
+        padding: "3px 9px",
+        borderRadius: 9,
+        background: u.available ? "#F0FDF4" : "#FEF2F2",
+        color: u.available ? "#16A34A" : "#EF4444"
+      }
+    }, u.label.split("·")[0].trim())), building.units.length > 4 && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        fontWeight: 500,
+        padding: "3px 9px",
+        borderRadius: 9,
+        background: C.bg,
+        color: C.mid
+      }
+    }, "+", building.units.length - 4))));
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 60
+    }
+  })));
 }
 
 /* ─── BUILDING DETAIL SCREEN (Entité Mère → Filles) ── */
@@ -27259,6 +27584,8 @@ function ByerApp({
   // New feature screens
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [buildingDetail, setBuildingDetail] = useState(null);
+  /* listAllFilter : objet { kind:'property'|'vehicle', type, label } pour OwnerListAllScreen */
+  const [listAllFilter, setListAllFilter] = useState(null);
   const [techsOpen, setTechsOpen] = useState(false);
   const [techsRole, setTechsRole] = useState("locataire");
   const [prosOpen, setProsOpen] = useState(false);
@@ -27413,6 +27740,26 @@ function ByerApp({
       setDashboardOpen(false);
       setPublishSegment(seg);
       setPublishOpen(true);
+      setReturnToDashboard(true);
+    },
+    onViewAll: filter => {
+      setDashboardOpen(false);
+      setListAllFilter(filter);
+      setReturnToDashboard(true);
+    }
+  });
+  if (listAllFilter) return /*#__PURE__*/React.createElement(OwnerListAllScreen, {
+    filter: listAllFilter,
+    onBack: () => {
+      setListAllFilter(null);
+      if (returnToDashboard) {
+        setDashboardOpen(true);
+        setReturnToDashboard(false);
+      }
+    },
+    onViewBuilding: b => {
+      setListAllFilter(null);
+      setBuildingDetail(b);
       setReturnToDashboard(true);
     }
   });
