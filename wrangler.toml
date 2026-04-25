@@ -1,0 +1,10 @@
+# Cloudflare Workers config — sert byer.landonjouajosephpino.workers.dev
+# en mode "Static Assets" (pas de code serveur, juste des fichiers statiques).
+# https://developers.cloudflare.com/workers/static-assets/
+
+name = "byer"
+compatibility_date = "2024-09-01"
+
+[assets]
+directory = "./"
+not_found_handling = "single-page-application"
