@@ -4,7 +4,7 @@
    Cache-first pour les libs et icônes (rarement modifiés)
    ═══════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'byer-v32';
+const CACHE_NAME = 'byer-v33';
 
 // Chemins RELATIFS au scope du SW (compatible GitHub Pages sous-dossier /byer/)
 const ASSETS = [
