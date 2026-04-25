@@ -1,11 +1,38 @@
 /* Byer — Reviews & Booking History */
 
+/* Avis reçus — séparés par CATÉGORIE :
+   - "property"   : avis laissés par les locataires sur les logements
+   - "vehicle"    : avis laissés par les locataires sur les véhicules
+   - "technician" : avis laissés par les bailleurs/locataires sur les
+                    interventions des techniciens
+   Le champ `subject` remplace l'ancien `property` (générique : nom du logement,
+   du véhicule ou de la prestation technique). */
 const MOCK_REVIEWS = [
-  { id:1, author:"Jean M.", avatar:"J", bg:"#3B82F6", rating:5, date:"12 avril 2026", property:"Studio Akwa Palace", text:"Excellent séjour ! L'appartement était très propre et bien situé. Pino est un hôte très réactif." },
-  { id:2, author:"Marie N.", avatar:"M", bg:"#EC4899", rating:4, date:"3 avril 2026", property:"Villa Bonanjo", text:"Très bon logement, juste un petit souci avec l'eau chaude mais résolu rapidement." },
-  { id:3, author:"Paul K.", avatar:"P", bg:"#F59E0B", rating:5, date:"28 mars 2026", property:"Studio Akwa Palace", text:"Parfait pour un séjour d'affaires. Je recommande vivement !" },
-  { id:4, author:"Aïcha D.", avatar:"A", bg:"#8B5CF6", rating:3, date:"15 mars 2026", property:"Chambre Bonapriso", text:"Correct mais la climatisation faisait du bruit. Le quartier est bien par contre." },
-  { id:5, author:"Thomas E.", avatar:"T", bg:"#10B981", rating:5, date:"2 mars 2026", property:"Studio Akwa Palace", text:"Super expérience, comme à la maison ! Merci Pino." },
+  /* ─── IMMOBILIER ─── */
+  { id:1,  kind:"property",   author:"Jean M.",      avatar:"J", bg:"#3B82F6", rating:5, date:"12 avril 2026", subject:"Studio Akwa Palace",         text:"Excellent séjour ! L'appartement était très propre et bien situé. Pino est un hôte très réactif." },
+  { id:2,  kind:"property",   author:"Marie N.",     avatar:"M", bg:"#EC4899", rating:4, date:"3 avril 2026",  subject:"Villa Bonanjo",              text:"Très bon logement, juste un petit souci avec l'eau chaude mais résolu rapidement." },
+  { id:3,  kind:"property",   author:"Paul K.",      avatar:"P", bg:"#F59E0B", rating:5, date:"28 mars 2026",  subject:"Studio Akwa Palace",         text:"Parfait pour un séjour d'affaires. Je recommande vivement !" },
+  { id:4,  kind:"property",   author:"Aïcha D.",     avatar:"A", bg:"#8B5CF6", rating:3, date:"15 mars 2026",  subject:"Chambre Bonapriso",          text:"Correct mais la climatisation faisait du bruit. Le quartier est bien par contre." },
+  { id:5,  kind:"property",   author:"Thomas E.",    avatar:"T", bg:"#10B981", rating:5, date:"2 mars 2026",   subject:"Studio Akwa Palace",         text:"Super expérience, comme à la maison ! Merci Pino." },
+
+  /* ─── VÉHICULES ─── */
+  { id:6,  kind:"vehicle",    author:"Samuel B.",    avatar:"S", bg:"#10B981", rating:5, date:"18 avril 2026", subject:"Toyota Hilux 4×4",           text:"Voiture nickel, parfaite pour les pistes du Sud. Plein fait, propre, à l'heure." },
+  { id:7,  kind:"vehicle",    author:"Linda Y.",     avatar:"L", bg:"#EC4899", rating:4, date:"7 avril 2026",  subject:"Mercedes Classe E",          text:"Très bonne berline, intérieur impeccable. Juste un peu de retard à la livraison." },
+  { id:8,  kind:"vehicle",    author:"Marc D.",      avatar:"M", bg:"#F59E0B", rating:5, date:"24 mars 2026",  subject:"Hyundai Tucson SUV",         text:"GPS, climatisation, tout marche. Confort total pour un trip Douala-Kribi." },
+  { id:9,  kind:"vehicle",    author:"Estelle R.",   avatar:"E", bg:"#8B5CF6", rating:3, date:"14 mars 2026",  subject:"Toyota Corolla",             text:"Ça roule bien mais propreté intérieure pourrait être améliorée." },
+
+  /* ─── TECHNICIENS ─── */
+  { id:10, kind:"technician", author:"Pino L.",      avatar:"P", bg:"#8B5CF6", rating:5, date:"20 avril 2026", subject:"Plomberie · fuite cuisine",   text:"Très professionnel, intervention en 1h, propre, prix correct. Je recommande." },
+  { id:11, kind:"technician", author:"Adrien K.",    avatar:"A", bg:"#3B82F6", rating:4, date:"10 avril 2026", subject:"Climatisation · installation",text:"Bonne pose, ponctuel. Petit oubli sur la fixation murale, corrigé après appel." },
+  { id:12, kind:"technician", author:"Sandra M.",    avatar:"S", bg:"#EC4899", rating:5, date:"1 avril 2026",  subject:"Électricité · panne tableau", text:"Diagnostic ultra rapide, panne réparée le jour même. Top." },
+  { id:13, kind:"technician", author:"Joseph T.",    avatar:"J", bg:"#10B981", rating:4, date:"22 mars 2026",  subject:"Peinture · 2 chambres",       text:"Travail soigné. Aurait pu mieux protéger le sol mais résultat propre." },
+];
+
+/* Métadonnées segments — ordre, label, emoji */
+const REVIEW_SEGMENTS = [
+  { id:"property",   label:"Immobilier",  emoji:"🏠" },
+  { id:"vehicle",    label:"Véhicules",   emoji:"🚗" },
+  { id:"technician", label:"Techniciens", emoji:"🔧" },
 ];
 
 const MOCK_BOOKINGS_HIST = [
@@ -19,20 +46,49 @@ const MOCK_BOOKINGS_HIST = [
 
 /* ─── REVIEWS SCREEN ──────────────────────────────── */
 function ReviewsScreen({ onBack }) {
+  /* Segment actif : "property" | "vehicle" | "technician".
+     Chaque segment a sa propre moyenne, sa propre distribution et
+     sa propre liste d'avis — l'écran est cloisonné par catégorie. */
+  const [segment, setSegment] = useState("property");
   const [filter, setFilter] = useState("Tous");
   const [replyToast, setReplyToast] = useState("");
   const [replyTarget, setReplyTarget] = useState(null);
   const [replyText, setReplyText] = useState("");
   const flashReply = (msg) => { setReplyToast(msg); setTimeout(()=>setReplyToast(""), 2200); };
 
-  const avg = (MOCK_REVIEWS.reduce((s,r) => s+r.rating, 0) / MOCK_REVIEWS.length).toFixed(1);
-  const dist = [5,4,3,2,1].map(n => ({ star:n, count:MOCK_REVIEWS.filter(r=>r.rating===n).length }));
+  /* Avis du segment courant (déjà cloisonnés) */
+  const segmentReviews = MOCK_REVIEWS.filter(r => r.kind === segment);
 
+  /* Compteurs par segment pour les pastilles du toggle */
+  const counts = {
+    property:   MOCK_REVIEWS.filter(r => r.kind === "property").length,
+    vehicle:    MOCK_REVIEWS.filter(r => r.kind === "vehicle").length,
+    technician: MOCK_REVIEWS.filter(r => r.kind === "technician").length,
+  };
+
+  /* Stats du segment courant — moyenne, distribution 5★→1★ */
+  const avg = segmentReviews.length > 0
+    ? (segmentReviews.reduce((s,r) => s+r.rating, 0) / segmentReviews.length).toFixed(1)
+    : "0.0";
+  const dist = [5,4,3,2,1].map(n => ({
+    star:  n,
+    count: segmentReviews.filter(r => r.rating === n).length,
+  }));
+
+  /* Filtre étoile par-dessus le segment */
   const filtered = filter === "Tous"
-    ? MOCK_REVIEWS
-    : MOCK_REVIEWS.filter(r => r.rating === parseInt(filter));
+    ? segmentReviews
+    : segmentReviews.filter(r => r.rating === parseInt(filter));
 
   const filters = ["Tous","5★","4★","3★"];
+
+  /* Libellés contextuels selon le segment (singular/pluriel + sujet) */
+  const segMeta = REVIEW_SEGMENTS.find(s => s.id === segment) || REVIEW_SEGMENTS[0];
+  const subjectLabel = {
+    property:   "logement",
+    vehicle:    "véhicule",
+    technician: "intervention",
+  }[segment];
 
   return (
     <div style={S.shell}>
@@ -46,43 +102,105 @@ function ReviewsScreen({ onBack }) {
           <div style={{width:38}}/>
         </div>
 
-        {/* Summary card */}
+        {/* Toggle de segments — Immobilier / Véhicules / Techniciens
+            Pattern visuel identique à BookingHistoryScreen pour cohérence. */}
+        <div style={{padding:"4px 16px 14px"}}>
+          <div style={{
+            display:"flex", background:C.bg, borderRadius:14,
+            padding:4, gap:0, border:`1px solid ${C.border}`,
+          }}>
+            {REVIEW_SEGMENTS.map(s => {
+              const active = segment === s.id;
+              const c = counts[s.id];
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => { setSegment(s.id); setFilter("Tous"); }}
+                  style={{
+                    flex:1, padding:"10px 6px", border:"none",
+                    background: active ? C.white : "transparent",
+                    color:      active ? C.coral : C.mid,
+                    fontWeight: active ? 700 : 600,
+                    fontSize: 12,
+                    borderRadius: 10,
+                    cursor: "pointer",
+                    fontFamily: "'DM Sans',sans-serif",
+                    boxShadow: active ? "0 1px 3px rgba(0,0,0,.08)" : "none",
+                    transition: "all .2s",
+                    display:"flex",alignItems:"center",justifyContent:"center",gap:5,
+                  }}
+                >
+                  <span>{s.emoji}</span>
+                  <span>{s.label}</span>
+                  {c > 0 && (
+                    <span style={{
+                      fontSize:10, fontWeight:700,
+                      padding:"1px 6px", borderRadius:8,
+                      background: active ? C.coral : C.border,
+                      color: active ? C.white : C.dark,
+                      lineHeight:1.4,
+                    }}>{c}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Summary card — recalculée pour le segment courant */}
         <div style={{margin:"0 16px 16px",background:C.white,borderRadius:16,padding:20,boxShadow:"0 2px 10px rgba(0,0,0,.05)"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
             <div>
               <p style={{fontSize:42,fontWeight:800,color:C.black,lineHeight:1}}>{avg}</p>
-              <p style={{fontSize:12,color:C.mid,marginTop:4}}>{MOCK_REVIEWS.length} avis</p>
+              <p style={{fontSize:12,color:C.mid,marginTop:4}}>
+                {segmentReviews.length} avis · {segMeta.emoji} {segMeta.label}
+              </p>
             </div>
             <RatingStars score={parseFloat(avg)} size={16}/>
           </div>
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {dist.map(d => (
-              <div key={d.star} style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:11,color:C.mid,width:22}}>{d.star}★</span>
-                <div style={{flex:1,height:6,background:C.bg,borderRadius:3,overflow:"hidden"}}>
-                  <div style={{height:"100%",background:C.coral,borderRadius:3,width:`${(d.count/MOCK_REVIEWS.length)*100}%`,transition:"width .3s"}}/>
+          {segmentReviews.length > 0 ? (
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {dist.map(d => (
+                <div key={d.star} style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:11,color:C.mid,width:22}}>{d.star}★</span>
+                  <div style={{flex:1,height:6,background:C.bg,borderRadius:3,overflow:"hidden"}}>
+                    <div style={{height:"100%",background:C.coral,borderRadius:3,width:`${(d.count/segmentReviews.length)*100}%`,transition:"width .3s"}}/>
+                  </div>
+                  <span style={{fontSize:11,color:C.mid,width:18,textAlign:"right"}}>{d.count}</span>
                 </div>
-                <span style={{fontSize:11,color:C.mid,width:18,textAlign:"right"}}>{d.count}</span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{fontSize:12,color:C.light,fontStyle:"italic",textAlign:"center",padding:"4px 0"}}>
+              Aucun avis pour {segMeta.label.toLowerCase()} pour l'instant.
+            </p>
+          )}
         </div>
 
-        {/* Filter chips */}
-        <div style={{display:"flex",gap:8,padding:"0 16px",marginBottom:16,overflowX:"auto"}}>
-          {filters.map(f => (
-            <button key={f} onClick={() => setFilter(f)} style={{
-              padding:"7px 14px",borderRadius:20,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",
-              background:filter===f?C.coral:C.bg,
-              color:filter===f?C.white:C.dark,
-              transition:"all .2s"
-            }}>{f}</button>
-          ))}
-        </div>
+        {/* Filter chips — n'apparaissent que s'il y a des avis dans ce segment */}
+        {segmentReviews.length > 0 && (
+          <div style={{display:"flex",gap:8,padding:"0 16px",marginBottom:16,overflowX:"auto"}}>
+            {filters.map(f => (
+              <button key={f} onClick={() => setFilter(f)} style={{
+                padding:"7px 14px",borderRadius:20,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",
+                background:filter===f?C.coral:C.bg,
+                color:filter===f?C.white:C.dark,
+                transition:"all .2s"
+              }}>{f}</button>
+            ))}
+          </div>
+        )}
 
         {/* Reviews list */}
         <div style={{padding:"0 16px 100px",display:"flex",flexDirection:"column",gap:12}}>
-          {filtered.length === 0 && <EmptyState icon="star" text="Aucun avis avec ce filtre"/>}
+          {filtered.length === 0 && (
+            <EmptyState
+              icon="star"
+              text={segmentReviews.length === 0
+                ? `Aucun avis ${subjectLabel} reçu`
+                : "Aucun avis avec ce filtre"}
+            />
+          )}
           {filtered.map(r => (
             <div key={r.id} style={{background:C.white,borderRadius:16,padding:14,boxShadow:"0 2px 10px rgba(0,0,0,.05)"}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
@@ -91,9 +209,17 @@ function ReviewsScreen({ onBack }) {
                   <p style={{fontSize:13,fontWeight:600,color:C.dark}}>{r.author}</p>
                   <p style={{fontSize:11,color:C.light}}>{r.date}</p>
                 </div>
+                {/* Mini-pastille catégorie sur la carte (utile si l'utilisateur
+                    bascule rapidement entre segments — rappel visuel). */}
+                <span style={{
+                  fontSize:10,fontWeight:700,
+                  padding:"3px 8px",borderRadius:10,
+                  background:C.bg,color:C.mid,
+                  fontFamily:"'DM Sans',sans-serif",
+                }}>{segMeta.emoji}</span>
               </div>
               <div style={{marginBottom:6}}><RatingStars score={r.rating} size={13}/></div>
-              <p style={{fontSize:11,color:C.light,marginBottom:6}}>{r.property}</p>
+              <p style={{fontSize:11,color:C.light,marginBottom:6}}>{r.subject}</p>
               <p style={{fontSize:13,color:C.dark,lineHeight:1.6,marginBottom:8}}>{r.text}</p>
               <span onClick={()=>{ setReplyTarget(r); setReplyText(""); }} style={{fontSize:12,color:C.coral,fontWeight:600,cursor:"pointer"}}>Répondre</span>
             </div>
