@@ -18,7 +18,7 @@
 
 ---
 
-## 2️⃣ Exécuter les 3 migrations SQL
+## 2️⃣ Exécuter les 4 migrations SQL
 
 Dès que le projet est prêt :
 
@@ -30,6 +30,9 @@ Dès que le projet est prêt :
    - ✅ `Success. No rows returned`
 5. **Migration 3** : nouveau **"New query"** → colle `0003_storage_and_seed.sql` → **Run**
    - ✅ `Success. No rows returned`
+6. **Migration 4** : nouveau **"New query"** → colle `0004_auth_extensions.sql` → **Run**
+   - ✅ `Success. No rows returned`
+   - 🔐 Cette migration ajoute : champs first_name/last_name/bio, vérifications (email/phone/identité), 2FA, langue, préférences notifications, table `kyc_documents` (pièces d'identité), table `trusted_devices` (appareils de confiance), bucket privé `kyc-documents`, fonctions RPC `check_referral_code`, `apply_referral_code`, `delete_my_account_request`.
 
 > Si une migration échoue : copie-colle le message d'erreur dans le chat et je te corrige ça en 30 secondes.
 
