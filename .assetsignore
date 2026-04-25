@@ -1,0 +1,28 @@
+# Cloudflare Workers Static Assets — fichiers/dossiers exclus du déploiement.
+# Format identique à .gitignore. Évite l'upload de gros binaires et dépendances dev.
+
+# Dépendances Node (workerd dépasse 25 MiB)
+node_modules/
+
+# Métadonnées Git & CI
+.git/
+.github/
+
+# Scripts de build & dev (jamais servis au navigateur)
+build.js
+build-apk.bat
+setup-local.bat
+start-server.bat
+server.js
+package.json
+package-lock.json
+wrangler.toml
+.assetsignore
+
+# Documentation projet
+*.md
+
+# Sources annexes (Android, Supabase migrations)
+android-project/
+supabase/
+scripts/

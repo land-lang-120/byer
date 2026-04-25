@@ -149,6 +149,21 @@ messages/{conversationId}/messages/{msgId}
 - Numéro de téléphone validé par OTP avant 1ère réservation
 - Vérification du QR : signature côté Functions (jamais de code prédit côté client)
 
+### 4.5 Hébergement & Déploiement (en place depuis 2026-04-25)
+- **Hébergeur** : Cloudflare Workers Static Assets — URL prod `https://byer.landonjouajosephpino.workers.dev`
+- **Config** : `wrangler.toml` (`name = "byer"`, `[assets] directory = "./"`, SPA fallback `index.html`)
+- **Exclusions** : `.assetsignore` retire `node_modules/`, `.git/`, `.github/`, scripts batch, `*.md`, `android-project/`, `supabase/`, `scripts/` (sinon `node_modules/workerd/bin/workerd` à 122 MiB dépasse la limite de 25 MiB de Cloudflare)
+- **Auto-deploy CI/CD** : GitHub Actions (`.github/workflows/deploy.yml`) déclenché à chaque push sur `master`
+  - Job : checkout → Node 20 → `npm ci` → `node build.js` (Babel transpile JSX → bundle.js) → `cloudflare/wrangler-action@v3`
+  - Secrets stockés dans GitHub Repo Settings : `CLOUDFLARE_API_TOKEN` (token scopé Account-level, permissions Workers Scripts:Edit) + `CLOUDFLARE_ACCOUNT_ID`
+  - Workflow manuel aussi disponible via `workflow_dispatch`
+- **Cache busting** : à chaque release, `bundle.js?v=N` dans `index.html` + `CACHE_NAME = 'byer-vN'` dans `sw.js` doivent être bumpés manuellement (sinon le service worker garde l'ancien JS)
+- **Rollback** : `npx wrangler deployments list` puis `npx wrangler rollback <version-id>` (ou interface dash.cloudflare.com)
+- **Stratégie service worker** (`sw.js`) :
+  - Network-first pour HTML/JS/CSS (toujours fraîche en ligne, fallback cache hors-ligne)
+  - Cache-first pour libs locales (React, ReactDOM, Supabase) + icônes
+  - Auto-update : `controllerchange` listener déclenche un `window.location.reload()` quand un nouveau SW prend la main
+
 ## 5. Charte UI
 
 ### 5.1 Couleurs
