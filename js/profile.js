@@ -67,8 +67,7 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
     {icon:"user",    l:"Informations personnelles",  action:onOpenEditProfile},
     {icon:"trips",   l:"Historique des réservations",action:onOpenHistory},
     {icon:"message", l:"Avis reçus",                  action:onOpenReviews},
-    {icon:"home",    l:"Publier une annonce",           action:onOpenPublish},
-    {icon:"car",     l:"Mes véhicules",               action:() => onOpenPublish?.("vehicle")},
+    {icon:"home",    l:"Publier une annonce",         action:onOpenPublish},
     {icon:"gear",    l:"Paramètres du compte",        action:onOpenSettings},
   ];
   return (

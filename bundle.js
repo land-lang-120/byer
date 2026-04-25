@@ -11419,10 +11419,6 @@ function ProfileScreen({
     l: "Publier une annonce",
     action: onOpenPublish
   }, {
-    icon: "car",
-    l: "Mes véhicules",
-    action: () => onOpenPublish?.("vehicle")
-  }, {
     icon: "gear",
     l: "Paramètres du compte",
     action: onOpenSettings
