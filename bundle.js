@@ -24711,9 +24711,9 @@ function PublishScreen({
           continue;
         }
         const dataUrl = await compressImage(f);
-        /* Photo = objet {src, tag}.
-           Tag par défaut = "exterior" pour la 1ère photo (vue de face),
-           null pour les suivantes — l'utilisateur choisit ensuite */
+        /* Photo = objet {src, tag} où tag = juste le TYPE (ex "chambre").
+           Le NUMÉRO (Chambre 1, Chambre 2…) est ajouté automatiquement à
+           l'affichage selon la position parmi les photos de même type. */
         compressed.push({
           src: dataUrl,
           tag: null
@@ -24723,6 +24723,7 @@ function PublishScreen({
         const startIdx = p.photos.length;
         const tagged = compressed.map((ph, i) => ({
           ...ph,
+          /* La toute 1ère photo de l'annonce est auto-étiquetée "exterior" (façade) */
           tag: startIdx + i === 0 ? "exterior" : null
         }));
         return {
@@ -24754,76 +24755,107 @@ function PublishScreen({
     });
   };
 
-  /* Définit / change le tag d'une photo (vue ext, pièce, etc.) */
-  const setPhotoTag = (idx, tagId) => {
+  /* Définit / change le TYPE d'une photo (ex "chambre", "sejour"…).
+     Le numéro affiché (Chambre 1, Chambre 2…) est calculé automatiquement
+     selon la position parmi les photos de même type. */
+  const setPhotoTag = (idx, typeId) => {
     setForm(p => ({
       ...p,
       photos: p.photos.map((ph, i) => i === idx ? {
         ...ph,
-        tag: tagId || null
+        tag: typeId || null
       } : ph)
     }));
   };
 
-  /* Génère la liste des tags disponibles pour ce buildingType + composition.
-     Tag = identifiant unique + label lisible.
-     Logique :
-     - Toujours : "Vue extérieure / façade" (entité mère)
-     - Pour chaque entité fille avec count > 0 :
-       - count = 1 → un tag "[Entité]"
-       - count > 1 → N tags "[Entité] 1", "[Entité] 2", ...
-     - Pour les véhicules : intérieur, moteur, coffre, etc. */
-  const computePhotoTags = () => {
-    const tags = [];
+  /* Liste des TYPES disponibles pour ce buildingType (sans numéros).
+     Le système numérote automatiquement les photos qui partagent le
+     même type — par exemple "Chambre 1", "Chambre 2", … jusqu'à 300.
+     Pour les propriétés : vue ext + tous les types possibles d'entités
+     filles de la catégorie (peu importe le count configuré). */
+  const computePhotoTagTypes = () => {
+    const types = [];
     if (form.segment === "property") {
-      const cat = BUILDING_TYPES.find(b => b.id === form.buildingType);
-      tags.push({
+      types.push({
         id: "exterior",
-        label: `🏞️ Vue extérieure ${cat ? "(" + cat.label.toLowerCase() + ")" : ""}`.trim()
+        label: "Vue extérieure / façade",
+        emoji: "🏞️"
       });
       const ents = CHILD_ENTITIES_BY_TYPE[form.buildingType] || [];
       ents.forEach(meta => {
-        const ent = form.childEntities[meta.id];
-        if (!ent || ent.count === 0) return;
-        if (ent.count === 1) {
-          tags.push({
-            id: `${meta.id}-0`,
-            label: `${meta.emoji} ${meta.label}`
-          });
-        } else {
-          for (let i = 0; i < ent.count; i++) {
-            tags.push({
-              id: `${meta.id}-${i}`,
-              label: `${meta.emoji} ${meta.label} ${i + 1}`
-            });
-          }
-        }
+        types.push({
+          id: meta.id,
+          label: meta.label,
+          emoji: meta.emoji
+        });
       });
     } else {
-      tags.push({
+      types.push({
         id: "exterior",
-        label: "🚗 Vue extérieure"
+        label: "Vue extérieure",
+        emoji: "🚗"
       }, {
         id: "interior",
-        label: "🪑 Intérieur"
+        label: "Intérieur",
+        emoji: "🪑"
       }, {
         id: "dashboard",
-        label: "🎛️ Tableau de bord"
+        label: "Tableau de bord",
+        emoji: "🎛️"
       }, {
         id: "trunk",
-        label: "🧳 Coffre"
+        label: "Coffre",
+        emoji: "🧳"
       }, {
         id: "engine",
-        label: "⚙️ Moteur"
+        label: "Moteur",
+        emoji: "⚙️"
       });
     }
-    return tags;
+    return types;
   };
-  const PHOTO_TAGS = computePhotoTags();
-  const tagLabelOf = tagId => {
-    if (!tagId) return null;
-    const t = PHOTO_TAGS.find(x => x.id === tagId);
-    return t ? t.label : tagId;
+  const PHOTO_TAG_TYPES = computePhotoTagTypes();
+  const tagTypeMeta = typeId => PHOTO_TAG_TYPES.find(t => t.id === typeId);
+
+  /* Calcule le LABEL affiché d'une photo, avec numéro automatique.
+     - Pas de tag → null
+     - "exterior" (vue façade) → unique, sans numéro
+     - 1 seule photo de ce type → "Chambre" (sans numéro)
+     - Plusieurs → "Chambre 1", "Chambre 2"… selon position d'apparition (1-300) */
+  const computePhotoLabel = idx => {
+    const photo = form.photos[idx];
+    if (!photo || !photo.tag) return null;
+    const meta = tagTypeMeta(photo.tag);
+    if (!meta) return photo.tag;
+    if (photo.tag === "exterior") return `${meta.emoji} ${meta.label}`;
+    const sameTypeCount = form.photos.filter(p => p.tag === photo.tag).length;
+    if (sameTypeCount === 1) return `${meta.emoji} ${meta.label}`;
+    /* Position de la photo (1-based) parmi les photos de même type */
+    const position = form.photos.slice(0, idx + 1).filter(p => p.tag === photo.tag).length;
+    return `${meta.emoji} ${meta.label} ${Math.min(position, 300)}`;
+  };
+
+  /* Idem mais sans emoji (pour les récaps textuels) */
+  const computePhotoLabelShort = idx => {
+    const photo = form.photos[idx];
+    if (!photo || !photo.tag) return null;
+    const meta = tagTypeMeta(photo.tag);
+    if (!meta) return photo.tag;
+    if (photo.tag === "exterior") return meta.label;
+    const sameTypeCount = form.photos.filter(p => p.tag === photo.tag).length;
+    if (sameTypeCount === 1) return meta.label;
+    const position = form.photos.slice(0, idx + 1).filter(p => p.tag === photo.tag).length;
+    return `${meta.label} ${Math.min(position, 300)}`;
+  };
+
+  /* Tag stocké en base : "type-N" (N 0-based) ou "exterior" ou null.
+     Calculé automatiquement selon la position parmi les photos de même type. */
+  const buildPhotoTagForDB = idx => {
+    const photo = form.photos[idx];
+    if (!photo || !photo.tag) return null;
+    if (photo.tag === "exterior") return "exterior";
+    const position = form.photos.slice(0, idx + 1).filter(p => p.tag === photo.tag).length;
+    return `${photo.tag}-${Math.min(position, 300) - 1}`; // 0-based
   };
 
   /* Équipements véhicule */
@@ -24930,7 +24962,7 @@ function PublishScreen({
       if (form.photos && form.photos.length > 0) {
         const uploads = form.photos.map(async (photo, idx) => {
           const dataUrl = photo.src || photo; // compat anciennes données
-          const tag = photo.tag || null;
+          const tag = buildPhotoTagForDB(idx); // ex: "chambre-1", "exterior", "appartement-0"
           try {
             const file = await dataUrlToFile(dataUrl, `photo-${idx + 1}.jpg`);
             const {
@@ -24942,7 +24974,7 @@ function PublishScreen({
               listing_id: listing.id,
               url: up.url,
               position: idx,
-              tag: tag // ex: "chambre-2", "exterior", "appartement-0"
+              tag: tag // numéroté automatiquement (1 à 300 par type)
             });
             return up.url;
           } catch (err) {
@@ -25827,7 +25859,7 @@ function PublishScreen({
       lineHeight: 1.5,
       fontFamily: "'DM Sans',sans-serif"
     }
-  }, "\uD83D\uDCF8 ", /*#__PURE__*/React.createElement("strong", null, "Conseil :"), " commencez par une photo de la ", /*#__PURE__*/React.createElement("strong", null, "vue ext\xE9rieure"), " (fa\xE7ade), puis prenez une photo de chaque ", /*#__PURE__*/React.createElement("strong", null, "pi\xE8ce / unit\xE9"), " (", form.segment === "property" ? "séjour, chambres, douches…" : "intérieur, tableau de bord, coffre…", "). Pour chaque photo, \xE9tiquetez ci-dessous l'endroit montr\xE9.")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCF8 ", /*#__PURE__*/React.createElement("strong", null, "Conseil :"), " commencez par une photo de la ", /*#__PURE__*/React.createElement("strong", null, "vue ext\xE9rieure"), " (fa\xE7ade), puis pour chaque photo choisissez le ", /*#__PURE__*/React.createElement("strong", null, "type"), " (chambre, s\xE9jour\u2026). Le num\xE9ro est ajout\xE9 ", /*#__PURE__*/React.createElement("strong", null, "automatiquement"), " \u2014 par ex. 2 photos \xAB Chambre \xBB deviennent ", /*#__PURE__*/React.createElement("em", null, "Chambre 1"), " et ", /*#__PURE__*/React.createElement("em", null, "Chambre 2"), ".")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
@@ -25837,6 +25869,7 @@ function PublishScreen({
   }, form.photos.map((photo, i) => {
     const src = photo.src || photo; // compat si jamais string
     const tag = photo.tag || null;
+    const autoLabel = computePhotoLabel(i); // ex: "🛏️ Chambre 2"
     return /*#__PURE__*/React.createElement("div", {
       key: i,
       style: {
@@ -25919,14 +25952,25 @@ function PublishScreen({
         fontWeight: 700,
         lineHeight: 1
       }
-    }, "\xD7")), /*#__PURE__*/React.createElement("select", {
+    }, "\xD7")), tag && autoLabel && /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "5px 6px",
+        background: "#FFF5F5",
+        color: C.coral,
+        fontSize: 10,
+        fontWeight: 700,
+        textAlign: "center",
+        borderTop: `1px solid ${C.border}`,
+        fontFamily: "'DM Sans',sans-serif"
+      }
+    }, autoLabel), /*#__PURE__*/React.createElement("select", {
       value: tag || "",
       onChange: e => setPhotoTag(i, e.target.value),
       style: {
         border: "none",
         borderTop: `1px solid ${C.border}`,
-        background: tag ? "#FFF5F5" : C.bg,
-        color: tag ? C.coral : C.mid,
+        background: tag ? C.white : C.bg,
+        color: tag ? C.dark : C.mid,
         fontSize: 10,
         fontWeight: 600,
         padding: "6px 6px",
@@ -25939,10 +25983,10 @@ function PublishScreen({
       }
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "\uD83D\uDCCD \xC9tiqueter\u2026"), PHOTO_TAGS.map(t => /*#__PURE__*/React.createElement("option", {
+    }, "\uD83D\uDCCD Choisir le type\u2026"), PHOTO_TAG_TYPES.map(t => /*#__PURE__*/React.createElement("option", {
       key: t.id,
       value: t.id
-    }, t.label))));
+    }, t.emoji, " ", t.label))));
   }), form.photos.length < 10 && /*#__PURE__*/React.createElement("label", {
     htmlFor: "byer-photo-input",
     style: {
@@ -25999,9 +26043,9 @@ function PublishScreen({
       fontFamily: "'DM Sans',sans-serif"
     }
   }, uploadError)), form.segment === "property" && form.photos.length > 0 && (() => {
-    const taggedIds = new Set(form.photos.map(p => p.tag).filter(Boolean));
-    const missing = PHOTO_TAGS.filter(t => !taggedIds.has(t.id));
-    if (PHOTO_TAGS.length === 0) return null;
+    const taggedTypes = new Set(form.photos.map(p => p.tag).filter(Boolean));
+    const missing = PHOTO_TAG_TYPES.filter(t => !taggedTypes.has(t.id));
+    if (PHOTO_TAG_TYPES.length === 0) return null;
     return /*#__PURE__*/React.createElement("div", {
       style: {
         background: C.bg,
@@ -26024,7 +26068,15 @@ function PublishScreen({
         color: missing.length === 0 ? "#0A8754" : C.mid,
         lineHeight: 1.5
       }
-    }, missing.length === 0 ? "✓ Toutes les pièces / unités ont au moins une photo." : /*#__PURE__*/React.createElement(React.Fragment, null, "\uD83D\uDCF7 Encore \xE0 photographier : ", missing.slice(0, 5).map(t => t.label.replace(/^[^\s]+\s/, "")).join(" · "), missing.length > 5 ? ` +${missing.length - 5} autres` : "")));
+    }, missing.length === 0 ? "✓ Tous les types de pièces / unités ont au moins une photo." : /*#__PURE__*/React.createElement(React.Fragment, null, "\uD83D\uDCF7 Types sans photo : ", missing.slice(0, 5).map(t => `${t.emoji} ${t.label}`).join(" · "), missing.length > 5 ? ` +${missing.length - 5} autres` : "")), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 10,
+        color: C.light,
+        marginTop: 4,
+        fontStyle: "italic",
+        lineHeight: 1.4
+      }
+    }, "\uD83D\uDCA1 Vous pouvez r\xE9utiliser un m\xEAme type plusieurs fois \u2014 la num\xE9rotation (1 \xE0 300) est faite automatiquement."));
   })(), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.bg,
@@ -26088,7 +26140,7 @@ function PublishScreen({
       borderRadius: 10,
       fontFamily: "'DM Sans',sans-serif"
     }
-  }, "+", form.photos.length - 1, " photos"), form.photos[0].tag && tagLabelOf(form.photos[0].tag) && /*#__PURE__*/React.createElement("span", {
+  }, "+", form.photos.length - 1, " photos"), form.photos[0].tag && computePhotoLabel(0) && /*#__PURE__*/React.createElement("span", {
     style: {
       position: "absolute",
       top: 8,
@@ -26101,7 +26153,7 @@ function PublishScreen({
       borderRadius: 8,
       fontFamily: "'DM Sans',sans-serif"
     }
-  }, tagLabelOf(form.photos[0].tag))), form.photos.some(p => p.tag) && /*#__PURE__*/React.createElement("div", {
+  }, computePhotoLabel(0))), form.photos.some(p => p.tag) && /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.white,
       border: `1.5px solid ${C.border}`,
@@ -26135,7 +26187,7 @@ function PublishScreen({
       color: C.dark,
       fontFamily: "'DM Sans',sans-serif"
     }
-  }, "#", i + 1, " \u2192 ", tagLabelOf(p.tag)) : null)), form.photos.some(p => !p.tag) && /*#__PURE__*/React.createElement("p", {
+  }, "#", i + 1, " \u2192 ", computePhotoLabel(i)) : null)), form.photos.some(p => !p.tag) && /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 10,
       color: C.light,
