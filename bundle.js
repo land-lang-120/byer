@@ -24757,8 +24757,21 @@ function PublishScreen({
 
   /* Définit / change le TYPE d'une photo (ex "chambre", "sejour"…).
      Le numéro affiché (Chambre 1, Chambre 2…) est calculé automatiquement
-     selon la position parmi les photos de même type. */
+     selon la position parmi les photos de même type.
+     BLOQUE si la limite (maxCount) du type est déjà atteinte par d'autres
+     photos — la limite vient du nombre de pièces prédéfinies au step 2. */
   const setPhotoTag = (idx, typeId) => {
+    if (typeId) {
+      const meta = computePhotoTagTypes().find(t => t.id === typeId);
+      if (meta) {
+        const usedByOthers = form.photos.filter((p, j) => p.tag === typeId && j !== idx).length;
+        if (usedByOthers >= meta.maxCount) {
+          setUploadError(`Limite atteinte pour « ${meta.label} » (${meta.maxCount} photo${meta.maxCount > 1 ? "s" : ""} max). Modifiez la composition au step précédent pour en ajouter.`);
+          return;
+        }
+      }
+    }
+    setUploadError("");
     setForm(p => ({
       ...p,
       photos: p.photos.map((ph, i) => i === idx ? {
@@ -24768,48 +24781,60 @@ function PublishScreen({
     }));
   };
 
-  /* Liste des TYPES disponibles pour ce buildingType (sans numéros).
-     Le système numérote automatiquement les photos qui partagent le
-     même type — par exemple "Chambre 1", "Chambre 2", … jusqu'à 300.
-     Pour les propriétés : vue ext + tous les types possibles d'entités
-     filles de la catégorie (peu importe le count configuré). */
+  /* Liste des TYPES disponibles pour ce buildingType.
+     Chaque type a un MAXCOUNT = limite du nombre de photos étiquetables
+     pour ce type, pris depuis la composition prédéfinie au step 2.
+     - "exterior" : max 1 (façade unique)
+     - Chaque entité fille avec count > 0 : max = count configuré
+       (ex: 3 chambres configurées → max 3 photos "Chambre" → Chambre 1, 2, 3)
+     - Les types avec count = 0 ne sont PAS proposés.
+     Le numéro est automatique selon la position d'apparition. */
   const computePhotoTagTypes = () => {
     const types = [];
     if (form.segment === "property") {
       types.push({
         id: "exterior",
         label: "Vue extérieure / façade",
-        emoji: "🏞️"
+        emoji: "🏞️",
+        maxCount: 1
       });
       const ents = CHILD_ENTITIES_BY_TYPE[form.buildingType] || [];
       ents.forEach(meta => {
+        const ent = form.childEntities[meta.id];
+        if (!ent || ent.count === 0) return; // skip si non configuré
         types.push({
           id: meta.id,
           label: meta.label,
-          emoji: meta.emoji
+          emoji: meta.emoji,
+          maxCount: ent.count
         });
       });
     } else {
       types.push({
         id: "exterior",
         label: "Vue extérieure",
-        emoji: "🚗"
+        emoji: "🚗",
+        maxCount: 1
       }, {
         id: "interior",
         label: "Intérieur",
-        emoji: "🪑"
+        emoji: "🪑",
+        maxCount: 1
       }, {
         id: "dashboard",
         label: "Tableau de bord",
-        emoji: "🎛️"
+        emoji: "🎛️",
+        maxCount: 1
       }, {
         id: "trunk",
         label: "Coffre",
-        emoji: "🧳"
+        emoji: "🧳",
+        maxCount: 1
       }, {
         id: "engine",
         label: "Moteur",
-        emoji: "⚙️"
+        emoji: "⚙️",
+        maxCount: 1
       });
     }
     return types;
@@ -25859,7 +25884,7 @@ function PublishScreen({
       lineHeight: 1.5,
       fontFamily: "'DM Sans',sans-serif"
     }
-  }, "\uD83D\uDCF8 ", /*#__PURE__*/React.createElement("strong", null, "Conseil :"), " commencez par une photo de la ", /*#__PURE__*/React.createElement("strong", null, "vue ext\xE9rieure"), " (fa\xE7ade), puis pour chaque photo choisissez le ", /*#__PURE__*/React.createElement("strong", null, "type"), " (chambre, s\xE9jour\u2026). Le num\xE9ro est ajout\xE9 ", /*#__PURE__*/React.createElement("strong", null, "automatiquement"), " \u2014 par ex. 2 photos \xAB Chambre \xBB deviennent ", /*#__PURE__*/React.createElement("em", null, "Chambre 1"), " et ", /*#__PURE__*/React.createElement("em", null, "Chambre 2"), ".")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCF8 ", /*#__PURE__*/React.createElement("strong", null, "Conseil :"), " commencez par la ", /*#__PURE__*/React.createElement("strong", null, "vue ext\xE9rieure"), " (fa\xE7ade), puis choisissez le ", /*#__PURE__*/React.createElement("strong", null, "type"), " de pi\xE8ce pour chaque photo. Le num\xE9ro (Chambre 1, Chambre 2\u2026) est ajout\xE9 ", /*#__PURE__*/React.createElement("strong", null, "automatiquement"), ". La ", /*#__PURE__*/React.createElement("strong", null, "limite"), " par type vient du nombre de pi\xE8ces fix\xE9 au step pr\xE9c\xE9dent \u2014 ex : 3 chambres configur\xE9es \u2192 max 3 photos \xAB Chambre \xBB.")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
@@ -25983,10 +26008,17 @@ function PublishScreen({
       }
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "\uD83D\uDCCD Choisir le type\u2026"), PHOTO_TAG_TYPES.map(t => /*#__PURE__*/React.createElement("option", {
-      key: t.id,
-      value: t.id
-    }, t.emoji, " ", t.label))));
+    }, "\uD83D\uDCCD Choisir le type\u2026"), PHOTO_TAG_TYPES.map(t => {
+      const usedByOthers = form.photos.filter((p, j) => p.tag === t.id && j !== i).length;
+      const isCurrent = tag === t.id;
+      const isFull = usedByOthers >= t.maxCount;
+      const counter = t.maxCount > 1 ? ` (${usedByOthers + (isCurrent ? 1 : 0)}/${t.maxCount})` : "";
+      return /*#__PURE__*/React.createElement("option", {
+        key: t.id,
+        value: t.id,
+        disabled: isFull && !isCurrent
+      }, t.emoji, " ", t.label, counter, isFull && !isCurrent ? " — complet" : "");
+    })));
   }), form.photos.length < 10 && /*#__PURE__*/React.createElement("label", {
     htmlFor: "byer-photo-input",
     style: {
@@ -26042,10 +26074,14 @@ function PublishScreen({
       color: "#B91C1C",
       fontFamily: "'DM Sans',sans-serif"
     }
-  }, uploadError)), form.segment === "property" && form.photos.length > 0 && (() => {
-    const taggedTypes = new Set(form.photos.map(p => p.tag).filter(Boolean));
-    const missing = PHOTO_TAG_TYPES.filter(t => !taggedTypes.has(t.id));
-    if (PHOTO_TAG_TYPES.length === 0) return null;
+  }, uploadError)), form.segment === "property" && PHOTO_TAG_TYPES.length > 0 && (() => {
+    const stats = PHOTO_TAG_TYPES.map(t => ({
+      ...t,
+      used: form.photos.filter(p => p.tag === t.id).length
+    }));
+    const totalUsed = stats.reduce((s, x) => s + x.used, 0);
+    const totalMax = stats.reduce((s, x) => s + x.maxCount, 0);
+    const allDone = stats.every(s => s.used >= s.maxCount);
     return /*#__PURE__*/React.createElement("div", {
       style: {
         background: C.bg,
@@ -26058,25 +26094,41 @@ function PublishScreen({
         fontSize: 11,
         fontWeight: 700,
         color: C.mid,
-        marginBottom: 6,
+        marginBottom: 8,
         textTransform: "uppercase",
         letterSpacing: .4
       }
-    }, "Couverture"), /*#__PURE__*/React.createElement("p", {
+    }, "Couverture \xB7 ", totalUsed, "/", totalMax, " \xE9tiquet\xE9e(s)"), /*#__PURE__*/React.createElement("div", {
       style: {
-        fontSize: 11,
-        color: missing.length === 0 ? "#0A8754" : C.mid,
-        lineHeight: 1.5
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 5
       }
-    }, missing.length === 0 ? "✓ Tous les types de pièces / unités ont au moins une photo." : /*#__PURE__*/React.createElement(React.Fragment, null, "\uD83D\uDCF7 Types sans photo : ", missing.slice(0, 5).map(t => `${t.emoji} ${t.label}`).join(" · "), missing.length > 5 ? ` +${missing.length - 5} autres` : "")), /*#__PURE__*/React.createElement("p", {
+    }, stats.map(s => {
+      const full = s.used >= s.maxCount;
+      const empty = s.used === 0;
+      return /*#__PURE__*/React.createElement("span", {
+        key: s.id,
+        style: {
+          fontSize: 10,
+          padding: "3px 8px",
+          borderRadius: 10,
+          fontWeight: 600,
+          background: full ? "#0A8754" : empty ? "#FFF5F5" : C.white,
+          color: full ? C.white : empty ? C.coral : C.dark,
+          border: full ? "none" : empty ? `1px solid ${C.coral}` : `1px solid ${C.border}`,
+          fontFamily: "'DM Sans',sans-serif"
+        }
+      }, s.emoji, " ", s.label, " ", s.used, "/", s.maxCount);
+    })), /*#__PURE__*/React.createElement("p", {
       style: {
         fontSize: 10,
-        color: C.light,
-        marginTop: 4,
+        color: allDone ? "#0A8754" : C.light,
+        marginTop: 8,
         fontStyle: "italic",
         lineHeight: 1.4
       }
-    }, "\uD83D\uDCA1 Vous pouvez r\xE9utiliser un m\xEAme type plusieurs fois \u2014 la num\xE9rotation (1 \xE0 300) est faite automatiquement."));
+    }, allDone ? "✓ Toutes les pièces ont leur(s) photo(s)." : "💡 La limite vient de la composition fixée au step précédent. Numérotation auto (Chambre 1, 2…)."));
   })(), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.bg,

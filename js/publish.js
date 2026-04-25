@@ -382,34 +382,55 @@ function PublishScreen({ onBack, initialSegment }) {
 
   /* Définit / change le TYPE d'une photo (ex "chambre", "sejour"…).
      Le numéro affiché (Chambre 1, Chambre 2…) est calculé automatiquement
-     selon la position parmi les photos de même type. */
+     selon la position parmi les photos de même type.
+     BLOQUE si la limite (maxCount) du type est déjà atteinte par d'autres
+     photos — la limite vient du nombre de pièces prédéfinies au step 2. */
   const setPhotoTag = (idx, typeId) => {
+    if (typeId) {
+      const meta = (computePhotoTagTypes()).find(t => t.id === typeId);
+      if (meta) {
+        const usedByOthers = form.photos.filter((p, j) => p.tag === typeId && j !== idx).length;
+        if (usedByOthers >= meta.maxCount) {
+          setUploadError(`Limite atteinte pour « ${meta.label} » (${meta.maxCount} photo${meta.maxCount>1?"s":""} max). Modifiez la composition au step précédent pour en ajouter.`);
+          return;
+        }
+      }
+    }
+    setUploadError("");
     setForm(p => ({
       ...p,
       photos: p.photos.map((ph, i) => i === idx ? { ...ph, tag: typeId || null } : ph),
     }));
   };
 
-  /* Liste des TYPES disponibles pour ce buildingType (sans numéros).
-     Le système numérote automatiquement les photos qui partagent le
-     même type — par exemple "Chambre 1", "Chambre 2", … jusqu'à 300.
-     Pour les propriétés : vue ext + tous les types possibles d'entités
-     filles de la catégorie (peu importe le count configuré). */
+  /* Liste des TYPES disponibles pour ce buildingType.
+     Chaque type a un MAXCOUNT = limite du nombre de photos étiquetables
+     pour ce type, pris depuis la composition prédéfinie au step 2.
+     - "exterior" : max 1 (façade unique)
+     - Chaque entité fille avec count > 0 : max = count configuré
+       (ex: 3 chambres configurées → max 3 photos "Chambre" → Chambre 1, 2, 3)
+     - Les types avec count = 0 ne sont PAS proposés.
+     Le numéro est automatique selon la position d'apparition. */
   const computePhotoTagTypes = () => {
     const types = [];
     if (form.segment === "property") {
-      types.push({ id: "exterior", label: "Vue extérieure / façade", emoji: "🏞️" });
+      types.push({ id: "exterior", label: "Vue extérieure / façade", emoji: "🏞️", maxCount: 1 });
       const ents = CHILD_ENTITIES_BY_TYPE[form.buildingType] || [];
       ents.forEach(meta => {
-        types.push({ id: meta.id, label: meta.label, emoji: meta.emoji });
+        const ent = form.childEntities[meta.id];
+        if (!ent || ent.count === 0) return;   // skip si non configuré
+        types.push({
+          id: meta.id, label: meta.label, emoji: meta.emoji,
+          maxCount: ent.count,
+        });
       });
     } else {
       types.push(
-        { id: "exterior",  label: "Vue extérieure",  emoji: "🚗" },
-        { id: "interior",  label: "Intérieur",       emoji: "🪑" },
-        { id: "dashboard", label: "Tableau de bord", emoji: "🎛️" },
-        { id: "trunk",     label: "Coffre",          emoji: "🧳" },
-        { id: "engine",    label: "Moteur",          emoji: "⚙️" },
+        { id: "exterior",  label: "Vue extérieure",  emoji: "🚗",  maxCount: 1 },
+        { id: "interior",  label: "Intérieur",       emoji: "🪑",  maxCount: 1 },
+        { id: "dashboard", label: "Tableau de bord", emoji: "🎛️", maxCount: 1 },
+        { id: "trunk",     label: "Coffre",          emoji: "🧳",  maxCount: 1 },
+        { id: "engine",    label: "Moteur",          emoji: "⚙️",  maxCount: 1 },
       );
     }
     return types;
@@ -1113,7 +1134,7 @@ function PublishScreen({ onBack, initialSegment }) {
               {/* Conseil de prise de vue : aide à comprendre quoi photographier */}
               <div style={{background:"#FFF8E1",border:"1px solid #FFE082",borderRadius:12,padding:"10px 12px",marginBottom:14}}>
                 <p style={{fontSize:11,color:"#7A5500",lineHeight:1.5,fontFamily:"'DM Sans',sans-serif"}}>
-                  📸 <strong>Conseil :</strong> commencez par une photo de la <strong>vue extérieure</strong> (façade), puis pour chaque photo choisissez le <strong>type</strong> (chambre, séjour…). Le numéro est ajouté <strong>automatiquement</strong> — par ex. 2 photos « Chambre » deviennent <em>Chambre 1</em> et <em>Chambre 2</em>.
+                  📸 <strong>Conseil :</strong> commencez par la <strong>vue extérieure</strong> (façade), puis choisissez le <strong>type</strong> de pièce pour chaque photo. Le numéro (Chambre 1, Chambre 2…) est ajouté <strong>automatiquement</strong>. La <strong>limite</strong> par type vient du nombre de pièces fixé au step précédent — ex : 3 chambres configurées → max 3 photos « Chambre ».
                 </p>
               </div>
 
@@ -1204,9 +1225,19 @@ function PublishScreen({ onBack, initialSegment }) {
                         }}
                       >
                         <option value="">📍 Choisir le type…</option>
-                        {PHOTO_TAG_TYPES.map(t => (
-                          <option key={t.id} value={t.id}>{t.emoji} {t.label}</option>
-                        ))}
+                        {PHOTO_TAG_TYPES.map(t => {
+                          const usedByOthers = form.photos.filter((p, j) => p.tag === t.id && j !== i).length;
+                          const isCurrent = tag === t.id;
+                          const isFull = usedByOthers >= t.maxCount;
+                          const counter = t.maxCount > 1
+                            ? ` (${usedByOthers + (isCurrent ? 1 : 0)}/${t.maxCount})`
+                            : "";
+                          return (
+                            <option key={t.id} value={t.id} disabled={isFull && !isCurrent}>
+                              {t.emoji} {t.label}{counter}{isFull && !isCurrent ? " — complet" : ""}
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
                   );
@@ -1236,25 +1267,43 @@ function PublishScreen({ onBack, initialSegment }) {
                 </div>
               )}
 
-              {/* Indicateur de couverture : montre les types qui n'ont
-                  encore aucune photo associée (vue ext + chaque pièce). */}
-              {form.segment === "property" && form.photos.length > 0 && (() => {
-                const taggedTypes = new Set(form.photos.map(p => p.tag).filter(Boolean));
-                const missing = PHOTO_TAG_TYPES.filter(t => !taggedTypes.has(t.id));
-                if (PHOTO_TAG_TYPES.length === 0) return null;
+              {/* Indicateur de couverture : compteur détaillé par type
+                  (utilisé / max prédéfini au step précédent). */}
+              {form.segment === "property" && PHOTO_TAG_TYPES.length > 0 && (() => {
+                const stats = PHOTO_TAG_TYPES.map(t => ({
+                  ...t,
+                  used: form.photos.filter(p => p.tag === t.id).length,
+                }));
+                const totalUsed = stats.reduce((s, x) => s + x.used, 0);
+                const totalMax  = stats.reduce((s, x) => s + x.maxCount, 0);
+                const allDone = stats.every(s => s.used >= s.maxCount);
                 return (
                   <div style={{background:C.bg,borderRadius:12,padding:"10px 12px",marginBottom:14}}>
-                    <p style={{fontSize:11,fontWeight:700,color:C.mid,marginBottom:6,textTransform:"uppercase",letterSpacing:.4}}>
-                      Couverture
+                    <p style={{fontSize:11,fontWeight:700,color:C.mid,marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>
+                      Couverture · {totalUsed}/{totalMax} étiquetée(s)
                     </p>
-                    <p style={{fontSize:11,color: missing.length === 0 ? "#0A8754" : C.mid,lineHeight:1.5}}>
-                      {missing.length === 0
-                        ? "✓ Tous les types de pièces / unités ont au moins une photo."
-                        : <>📷 Types sans photo : {missing.slice(0,5).map(t => `${t.emoji} ${t.label}`).join(" · ")}{missing.length > 5 ? ` +${missing.length-5} autres` : ""}</>
-                      }
-                    </p>
-                    <p style={{fontSize:10,color:C.light,marginTop:4,fontStyle:"italic",lineHeight:1.4}}>
-                      💡 Vous pouvez réutiliser un même type plusieurs fois — la numérotation (1 à 300) est faite automatiquement.
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                      {stats.map(s => {
+                        const full = s.used >= s.maxCount;
+                        const empty = s.used === 0;
+                        return (
+                          <span key={s.id} style={{
+                            fontSize:10, padding:"3px 8px", borderRadius:10,
+                            fontWeight:600,
+                            background: full ? "#0A8754" : (empty ? "#FFF5F5" : C.white),
+                            color:      full ? C.white   : (empty ? C.coral   : C.dark),
+                            border:     full ? "none"    : (empty ? `1px solid ${C.coral}` : `1px solid ${C.border}`),
+                            fontFamily:"'DM Sans',sans-serif",
+                          }}>
+                            {s.emoji} {s.label} {s.used}/{s.maxCount}
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <p style={{fontSize:10,color: allDone ? "#0A8754" : C.light,marginTop:8,fontStyle:"italic",lineHeight:1.4}}>
+                      {allDone
+                        ? "✓ Toutes les pièces ont leur(s) photo(s)."
+                        : "💡 La limite vient de la composition fixée au step précédent. Numérotation auto (Chambre 1, 2…)."}
                     </p>
                   </div>
                 );
