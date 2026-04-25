@@ -18,7 +18,7 @@
 
 ---
 
-## 2️⃣ Exécuter les 8 migrations SQL
+## 2️⃣ Exécuter les 9 migrations SQL
 
 Dès que le projet est prêt :
 
@@ -46,6 +46,9 @@ Dès que le projet est prêt :
     - ✅ `Success. No rows returned`
     - ⏱️ Cette migration active l'extension `pg_cron` et programme **2 tâches automatiques** : (a) `auto-complete-bookings` toutes les heures (passe les bookings expirés en `completed`, déclenche en cascade les notifs + crédit auto de points +2 guest / +5 host), (b) `cleanup-expired-coupons` tous les jours à 03h UTC (marque comme expirés les coupons dont la date limite est dépassée). Crée aussi une vue `cron_jobs_status` pour vérifier l'état des jobs (`select * from cron_jobs_status;`).
     - ⚠️ **Si erreur "extension pg_cron not available"** : va dans **Database → Extensions** dans le dashboard Supabase, cherche `pg_cron`, clique **Enable**, puis ré-exécute la migration. C'est gratuit sur tous les plans Supabase.
+11. **Migration 9** : nouveau **"New query"** → colle `0009_hotfix_validate_arrival.sql` → **Run**
+    - ✅ `Success. No rows returned`
+    - 🐛 Hotfix d'un bug PL/pgSQL dans `validate_arrival()` (migration 0006) : pattern `select b.*, l.owner_id into v_b, v_owner` interdit quand `v_b` est un record. Scindé en 2 requêtes (`select * into v_b` puis `select owner_id into v_owner`). Sans ce fix, l'appel `select validate_arrival(uuid)` échoue avec erreur 42601.
 
 > Si une migration échoue : copie-colle le message d'erreur dans le chat et je te corrige ça en 30 secondes.
 
