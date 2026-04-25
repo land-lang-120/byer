@@ -24614,6 +24614,9 @@ function PublishScreen({
   const [step, setStep] = useState(startStep); // 1=type, 2=infos, 3=prix, 4=photos, 5=règlement, 6=confirm
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  /* cancelConfirmOpen : ouvre la modal de confirmation "Quitter le processus".
+     Visible depuis le × du header, présent à toutes les étapes. */
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [form, setForm] = useState({
     segment: initialSegment || "property",
     // property | vehicle
@@ -25215,6 +25218,22 @@ function PublishScreen({
      Le step 5 (règlement) a été ajouté en v41 — la barre/compteur de
      progression doit refléter ces 6 étapes pour éviter "6 sur 5". */
   const totalSteps = 6;
+
+  /* hasUnsavedWork : true dès que l'utilisateur a renseigné quelque chose
+     (titre, photos, prix, description) ou qu'il a dépassé l'étape de départ.
+     Sert à éviter une confirmation inutile s'il quitte juste après avoir
+     ouvert l'écran sans rien saisir. */
+  const hasUnsavedWork = step > startStep || (form.title || "").trim().length > 0 || form.photos.length > 0 || (form.description || "").trim().length > 0 || (form.nightPrice || "").toString().trim().length > 0;
+
+  /* requestCancel : appelé par le × du header. Si rien n'a été saisi, on
+     quitte directement ; sinon on ouvre la modal de confirmation. */
+  const requestCancel = () => {
+    if (success) {
+      onBack();
+      return;
+    }
+    if (hasUnsavedWork) setCancelConfirmOpen(true);else onBack();
+  };
   return /*#__PURE__*/React.createElement("div", {
     style: S.shell
   }, /*#__PURE__*/React.createElement("style", null, BYER_CSS), /*#__PURE__*/React.createElement("div", {
@@ -25243,11 +25262,17 @@ function PublishScreen({
       fontSize: 12,
       color: C.light
     }
-  }, "\xC9tape ", step, " sur ", totalSteps)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 38
-    }
-  })), /*#__PURE__*/React.createElement("div", {
+  }, "\xC9tape ", step, " sur ", totalSteps)), /*#__PURE__*/React.createElement("button", {
+    style: S.dBack2,
+    onClick: requestCancel,
+    "aria-label": "Annuler la publication",
+    title: "Annuler"
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "close",
+    size: 20,
+    color: C.dark,
+    stroke: 2.5
+  }))), /*#__PURE__*/React.createElement("div", {
     style: {
       height: 3,
       background: C.border,
@@ -27079,7 +27104,85 @@ function PublishScreen({
     disabled: submitting
   }, submitting ? /*#__PURE__*/React.createElement("div", {
     style: Os.spinner
-  }) : "Publier l'annonce ✓"))));
+  }) : "Publier l'annonce ✓"))), cancelConfirmOpen && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,.45)",
+      display: "flex",
+      alignItems: "flex-end",
+      justifyContent: "center",
+      zIndex: 9000
+    },
+    onClick: () => setCancelConfirmOpen(false)
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "sheet",
+    onClick: e => e.stopPropagation(),
+    style: {
+      background: C.white,
+      width: "100%",
+      maxWidth: 460,
+      borderRadius: "20px 20px 0 0",
+      padding: "22px 22px calc(22px + env(safe-area-inset-bottom,0px))",
+      boxShadow: "0 -6px 24px rgba(0,0,0,.12)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 38,
+      height: 4,
+      background: C.border,
+      borderRadius: 2,
+      margin: "0 auto 16px"
+    }
+  }), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 18,
+      fontWeight: 800,
+      color: C.black,
+      marginBottom: 8,
+      textAlign: "center"
+    }
+  }, "Annuler la publication ?"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      color: C.mid,
+      marginBottom: 20,
+      textAlign: "center",
+      lineHeight: 1.5
+    }
+  }, "Vos modifications seront perdues. \xCAtes-vous s\xFBr de vouloir quitter ?"), /*#__PURE__*/React.createElement("button", {
+    style: {
+      width: "100%",
+      padding: "14px",
+      borderRadius: 12,
+      border: "none",
+      background: C.coral,
+      color: C.white,
+      fontSize: 15,
+      fontWeight: 700,
+      cursor: "pointer",
+      fontFamily: "'DM Sans',sans-serif",
+      marginBottom: 10
+    },
+    onClick: () => {
+      setCancelConfirmOpen(false);
+      onBack();
+    }
+  }, "Oui, quitter"), /*#__PURE__*/React.createElement("button", {
+    style: {
+      width: "100%",
+      padding: "14px",
+      borderRadius: 12,
+      border: `1.5px solid ${C.border}`,
+      background: C.white,
+      color: C.black,
+      fontSize: 15,
+      fontWeight: 600,
+      cursor: "pointer",
+      fontFamily: "'DM Sans',sans-serif"
+    },
+    onClick: () => setCancelConfirmOpen(false)
+  }, "Continuer la publication"))));
 }
 
 /* ═══ js/settings.js ═══ */
