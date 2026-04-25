@@ -268,7 +268,7 @@ const S = {
   chatContext:  {display:"flex",alignItems:"center",gap:5,padding:"6px 16px",background:"#FAFAFA",borderBottom:`1px solid ${C.border}`,flexShrink:0},
   chatMessages: {flex:1,overflowY:"auto",padding:"16px 16px 8px",display:"flex",flexDirection:"column"},
   blockedBanner:{display:"flex",alignItems:"flex-start",gap:8,background:"#FFF5F5",border:`1px solid #FFD6D7`,borderRadius:12,padding:"10px 12px",marginBottom:14,fontSize:12,color:C.dark,lineHeight:1.6},
-  chatInputRow: {display:"flex",alignItems:"center",gap:8,padding:"10px 14px 24px",background:C.white,borderTop:`1px solid ${C.border}`,flexShrink:0,marginBottom:64},
+  chatInputRow: {display:"flex",alignItems:"center",gap:8,padding:"10px 14px 24px",background:C.white,borderTop:`1px solid ${C.border}`,flexShrink:0},
   chatInput:    {flex:1,display:"flex",alignItems:"center",background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:24,padding:"10px 16px"},
   chatSendBtn:  {width:42,height:42,borderRadius:21,background:C.coral,border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,transition:"opacity .18s"},
   chatBlockedInput:{flex:1,display:"flex",alignItems:"center",gap:8,background:C.bg,borderRadius:24,padding:"12px 16px",justifyContent:"center"},

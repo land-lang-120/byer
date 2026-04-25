@@ -4505,8 +4505,7 @@ const S = {
     padding: "10px 14px 24px",
     background: C.white,
     borderTop: `1px solid ${C.border}`,
-    flexShrink: 0,
-    marginBottom: 64
+    flexShrink: 0
   },
   chatInput: {
     flex: 1,
@@ -10281,7 +10280,8 @@ function TripsScreen({
 
 /* ─── MESSAGES SCREEN ───────────────────────────── */
 function MessagesScreen({
-  role
+  role,
+  onChatActiveChange
 }) {
   const isBailleur = role === "bailleur";
 
@@ -10303,6 +10303,14 @@ function MessagesScreen({
   React.useEffect(() => {
     setConvos(baseConvs); /* eslint-disable-next-line */
   }, [role]);
+
+  /* Notifie le parent (ByerApp) que le chat est actif/inactif pour qu'il
+     puisse masquer la nav bar du bas (UX : seule la barre de saisie doit
+     rester visible quand on est dans une conversation). */
+  React.useEffect(() => {
+    onChatActiveChange?.(!!openChat);
+    return () => onChatActiveChange?.(false);
+  }, [openChat]);
 
   /* Charge les vraies conversations depuis Supabase si user connecté.
      Les convs Supabase sont préfixées dans la liste, en complément des mocks
@@ -11349,6 +11357,9 @@ function ProfileScreen({
   const [inviteOpen, setInviteOpen] = useState(false);
   const [rewardsOpen, setRewardsOpen] = useState(false);
   const [toast, setToast] = useState("");
+  // Menu 3-points en haut à droite (regroupe "Informations personnelles"
+  // et autres actions rapides — évite la redondance avec un row dédié).
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
 
   // Points dynamiques (persistés via byerStorage)
   const [rewardsPoints, setRewardsPoints] = useState(() => pointsManager.get());
@@ -11402,11 +11413,10 @@ function ProfileScreen({
   const rewardsTier = rewardsPoints >= POINTS_TIERS.gold ? "Or" : rewardsPoints >= POINTS_TIERS.silver ? "Argent" : "Bronze";
   const tierColor = rewardsTier === "Or" ? "#F59E0B" : rewardsTier === "Argent" ? "#94A3B8" : "#B45309";
   const tierBg = rewardsTier === "Or" ? "#FEF3C7" : rewardsTier === "Argent" ? "#F1F5F9" : "#FEF3C7";
+
+  // "Informations personnelles" est désormais dans le menu 3-points du header
+  // (Pino : "pour éviter la redondance"). On la retire de la liste des rows.
   const rows = [{
-    icon: "user",
-    l: "Informations personnelles",
-    action: onOpenEditProfile
-  }, {
     icon: "trips",
     l: "Historique des réservations",
     action: onOpenHistory
@@ -11423,11 +11433,113 @@ function ProfileScreen({
     l: "Paramètres du compte",
     action: onOpenSettings
   }];
+
+  // Items du menu 3-points (header)
+  const headerMenuItems = [{
+    icon: "user",
+    label: "Informations personnelles",
+    action: onOpenEditProfile
+  }];
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: S.pageHead
+    style: {
+      ...S.pageHead,
+      position: "relative",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between"
+    }
   }, /*#__PURE__*/React.createElement("p", {
     style: S.pageTitle
-  }, "Mon profil")), /*#__PURE__*/React.createElement("div", {
+  }, "Mon profil"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setHeaderMenuOpen(v => !v),
+    "aria-label": "Menu profil",
+    style: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      background: headerMenuOpen ? C.bg : "transparent",
+      border: "none",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      transition: "background .15s"
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    width: "20",
+    height: "20",
+    viewBox: "0 0 24 24",
+    fill: C.dark
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "5",
+    cy: "12",
+    r: "2"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "12",
+    r: "2"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "19",
+    cy: "12",
+    r: "2"
+  }))), headerMenuOpen && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      inset: 0,
+      zIndex: 90
+    },
+    onClick: () => setHeaderMenuOpen(false)
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      top: "calc(100% - 4px)",
+      right: 14,
+      background: C.white,
+      borderRadius: 14,
+      boxShadow: "0 10px 36px rgba(0,0,0,.16)",
+      border: `1px solid ${C.border}`,
+      minWidth: 240,
+      zIndex: 100,
+      padding: "6px",
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, headerMenuItems.map(item => /*#__PURE__*/React.createElement("button", {
+    key: item.label,
+    onClick: () => {
+      setHeaderMenuOpen(false);
+      item.action?.();
+    },
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+      width: "100%",
+      padding: "12px 14px",
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      borderRadius: 10,
+      textAlign: "left",
+      fontSize: 14,
+      fontWeight: 500,
+      color: C.dark,
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: item.icon,
+    size: 18,
+    color: C.dark,
+    stroke: 1.8
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1
+    }
+  }, item.label), /*#__PURE__*/React.createElement(Icon, {
+    name: "chevron",
+    size: 14,
+    color: C.light,
+    stroke: 2
+  })))))), /*#__PURE__*/React.createElement("div", {
     style: {
       margin: "0 16px 12px",
       background: C.white,
@@ -11438,10 +11550,6 @@ function ProfileScreen({
       gap: 14,
       boxShadow: `0 1px 8px rgba(0,0,0,.05)`
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative"
-    }
   }, /*#__PURE__*/React.createElement(FaceAvatar, {
     photo: USER.photo,
     avatar: USER.avatar,
@@ -11449,34 +11557,6 @@ function ProfileScreen({
     size: 56,
     radius: 28
   }), /*#__PURE__*/React.createElement("div", {
-    onClick: onOpenEditProfile,
-    style: {
-      position: "absolute",
-      bottom: 0,
-      right: 0,
-      width: 20,
-      height: 20,
-      borderRadius: 10,
-      background: C.coral,
-      border: "2px solid white",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer"
-    }
-  }, /*#__PURE__*/React.createElement("svg", {
-    width: "10",
-    height: "10",
-    fill: "none",
-    stroke: "white",
-    strokeWidth: "2",
-    strokeLinecap: "round",
-    viewBox: "0 0 24 24"
-  }, /*#__PURE__*/React.createElement("path", {
-    d: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"
-  }), /*#__PURE__*/React.createElement("path", {
-    d: "M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
-  })))), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       minWidth: 0
@@ -14687,6 +14767,336 @@ function QRScanButton({
     fill: "white",
     stroke: "none"
   })));
+}
+
+/* ── My QR Code Floating Button (above the scan button) ──
+   Donne au locataire un accès rapide à son propre QR code de réservation.
+   Icône noire, fond blanc — contraste fort vs le bouton scan coral du bailleur. */
+function MyQRCodeButton({
+  onClick
+}) {
+  return /*#__PURE__*/React.createElement("button", {
+    onClick: onClick,
+    title: "Mon QR Code",
+    style: {
+      position: "fixed",
+      bottom: 156,
+      /* au-dessus du bouton scan (90 + 56 + 10) */
+      right: 20,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      background: C.white,
+      border: `1.5px solid ${C.border}`,
+      boxShadow: "0 4px 16px rgba(0,0,0,.12)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      cursor: "pointer",
+      zIndex: 100,
+      transition: "transform .18s"
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    width: "26",
+    height: "26",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: C.black,
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("rect", {
+    x: "2",
+    y: "2",
+    width: "8",
+    height: "8",
+    rx: "1"
+  }), /*#__PURE__*/React.createElement("rect", {
+    x: "14",
+    y: "2",
+    width: "8",
+    height: "8",
+    rx: "1"
+  }), /*#__PURE__*/React.createElement("rect", {
+    x: "2",
+    y: "14",
+    width: "8",
+    height: "8",
+    rx: "1"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M14 14h2v2h-2z",
+    fill: C.black,
+    stroke: "none"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M20 14h2v2h-2z",
+    fill: C.black,
+    stroke: "none"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M14 20h2v2h-2z",
+    fill: C.black,
+    stroke: "none"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M20 20h2v2h-2z",
+    fill: C.black,
+    stroke: "none"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M17 17h2v2h-2z",
+    fill: C.black,
+    stroke: "none"
+  })));
+}
+
+/* ── My QR Code Dialog (shows the user's own reservation QR) ──
+   Affiche le QR code à présenter au bailleur pour la vérification d'arrivée.
+   Si l'utilisateur n'a pas encore de réservation, on tombe sur un mock démo. */
+function MyQRCodeDialog({
+  booking,
+  onClose
+}) {
+  // Fallback démo si pas de réservation utilisateur
+  const ref = booking?.ref || "BYR-2025-0322-A";
+  const title = booking?.title || "Appartement Bonamoussadi";
+  const city = booking?.city || "Douala";
+  const zone = booking?.zone || "Bonamoussadi";
+  const checkIn = booking?.checkIn || "22 mars 2025";
+  const checkOut = booking?.checkOut || "25 mars 2025";
+
+  // Générateur QR via API publique gratuite (sans clé)
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(ref)}&color=000000&bgcolor=FFFFFF&margin=10`;
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,.6)",
+      zIndex: 350
+    },
+    onClick: onClose
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      bottom: 0,
+      left: 0,
+      right: 0,
+      background: C.white,
+      borderRadius: "22px 22px 0 0",
+      zIndex: 351,
+      padding: "0 0 32px",
+      maxHeight: "92vh",
+      overflowY: "auto"
+    },
+    className: "sheet"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 36,
+      height: 4,
+      borderRadius: 2,
+      background: C.border,
+      margin: "12px auto 4px"
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "12px 20px 8px"
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 18,
+      fontWeight: 700,
+      color: C.black
+    }
+  }, "Mon QR Code"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: C.mid,
+      marginTop: 2
+    }
+  }, "Pr\xE9sentez ce code \xE0 votre arriv\xE9e")), /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      padding: 4
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    width: "20",
+    height: "20",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: C.mid,
+    strokeWidth: "2",
+    strokeLinecap: "round"
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: "18",
+    y1: "6",
+    x2: "6",
+    y2: "18"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "6",
+    y1: "6",
+    x2: "18",
+    y2: "18"
+  })))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: "16px 24px 12px",
+      padding: "20px",
+      background: C.white,
+      border: `1.5px solid ${C.border}`,
+      borderRadius: 20,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: 12,
+      boxShadow: "0 2px 12px rgba(0,0,0,.05)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 240,
+      height: 240,
+      background: C.white,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 12
+    }
+  }, /*#__PURE__*/React.createElement("img", {
+    src: qrUrl,
+    alt: `QR Code ${ref}`,
+    style: {
+      width: 240,
+      height: 240,
+      display: "block"
+    }
+  })), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 13,
+      fontWeight: 700,
+      color: C.black,
+      fontFamily: "monospace",
+      letterSpacing: 1
+    }
+  }, ref)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "8px 20px 0"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.bg,
+      borderRadius: 14,
+      padding: "14px"
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      fontWeight: 700,
+      color: C.black,
+      marginBottom: 4
+    }
+  }, title), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement(ByerPin, {
+    size: 11
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.mid
+    }
+  }, zone, ", ", city)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      borderTop: `1px solid ${C.border}`,
+      paddingTop: 10,
+      gap: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 9,
+      fontWeight: 700,
+      color: C.light,
+      textTransform: "uppercase",
+      letterSpacing: .6
+    }
+  }, "ARRIV\xC9E"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 13,
+      fontWeight: 700,
+      color: C.black,
+      marginTop: 2
+    }
+  }, checkIn)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      textAlign: "right"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 9,
+      fontWeight: 700,
+      color: C.light,
+      textTransform: "uppercase",
+      letterSpacing: .6
+    }
+  }, "D\xC9PART"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 13,
+      fontWeight: 700,
+      color: C.black,
+      marginTop: 2
+    }
+  }, checkOut))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "14px 20px 0"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#FFF8F8",
+      border: "1px solid #FFD6D7",
+      borderRadius: 12,
+      padding: "10px 12px",
+      display: "flex",
+      alignItems: "flex-start",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 16
+    }
+  }, "\uD83D\uDCA1"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: C.dark,
+      lineHeight: 1.5
+    }
+  }, "Le bailleur scannera ce code pour v\xE9rifier votre identit\xE9 et votre paiement en 2 secondes."))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "16px 20px 0"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    style: {
+      width: "100%",
+      background: C.bg,
+      color: C.dark,
+      border: `1.5px solid ${C.border}`,
+      borderRadius: 12,
+      padding: "13px",
+      fontWeight: 600,
+      fontSize: 14,
+      cursor: "pointer",
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, "Fermer"))));
 }
 
 /* ── QR Scanner Overlay ── */
@@ -23508,8 +23918,12 @@ function PickerSheet({
 function EditProfileScreen({
   onBack
 }) {
+  // Split "name" -> firstName + lastName pour collecter chaque champ séparément
+  // (Pino : "le nom, prénom (pas nom complet uniquement)")
+  const [firstNameInit, lastNameInit] = (USER.name || "").trim().split(/\s+/, 2);
   const [formData, setFormData] = useState({
-    name: USER.name,
+    firstName: firstNameInit || "",
+    lastName: lastNameInit || "",
     phone: "+237 6XX XXX XXX",
     email: "pino@email.com",
     city: USER.city,
@@ -23547,38 +23961,50 @@ function EditProfileScreen({
     fontFamily: "DM Sans, sans-serif"
   };
   const headerStyle = {
-    ...S.pageHead,
+    background: C.white,
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "var(--top-pad) 16px 16px",
-    borderBottom: `1px solid ${C.border}`
+    gap: 12,
+    padding: "var(--top-pad) 16px 14px",
+    borderBottom: `1px solid ${C.border}`,
+    position: "sticky",
+    top: 0,
+    zIndex: 10
   };
   const headerLeftStyle = {
     display: "flex",
     alignItems: "center",
-    gap: "12px"
+    gap: 10,
+    minWidth: 0,
+    flex: 1
   };
   const titleStyle = {
-    ...S.pageTitle,
     margin: 0,
-    fontSize: "18px",
-    fontWeight: 600,
-    color: C.black
+    fontSize: 17,
+    fontWeight: 700,
+    color: C.black,
+    fontFamily: "'DM Sans',sans-serif",
+    letterSpacing: -0.2,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis"
   };
+
+  // "Enregistrer" en pill coral collée au coin droit
   const saveButtonStyle = {
-    background: "none",
+    background: C.coral,
     border: "none",
-    color: C.coral,
-    fontSize: "15px",
-    fontWeight: 600,
+    color: C.white,
+    fontSize: 13,
+    fontWeight: 700,
     cursor: "pointer",
-    padding: "8px 16px",
-    borderRadius: "8px",
-    transition: "all 0.2s",
-    "&:hover": {
-      opacity: 0.8
-    }
+    padding: "9px 18px",
+    borderRadius: 22,
+    transition: "transform .15s, box-shadow .15s",
+    boxShadow: "0 2px 10px rgba(255,90,95,.3)",
+    fontFamily: "'DM Sans',sans-serif",
+    flexShrink: 0
   };
   const contentStyle = {
     ...S.scroll,
@@ -23622,30 +24048,48 @@ function EditProfileScreen({
     color: C.mid,
     marginTop: "8px"
   };
+
+  // Wrapper de formulaire centré, max-width pour mieux respirer sur grand écran
+  const formWrapperStyle = {
+    maxWidth: 520,
+    margin: "0 auto",
+    padding: "0 20px",
+    width: "100%",
+    boxSizing: "border-box"
+  };
   const formGroupStyle = {
-    marginBottom: "18px",
-    padding: "0 16px"
+    marginBottom: 18
+  };
+
+  // Pour les champs côte-à-côte (Prénom / Nom)
+  const formRowStyle = {
+    display: "flex",
+    gap: 12,
+    marginBottom: 18
   };
   const labelStyle = {
-    fontSize: "12px",
+    fontSize: 12,
     fontWeight: 600,
     color: C.light,
-    marginBottom: "6px",
+    marginBottom: 7,
     textTransform: "uppercase",
-    letterSpacing: "0.5px",
+    letterSpacing: 0.5,
     display: "block"
   };
+
+  // Champs plus généreux : padding vertical augmenté, font 15.5
   const inputStyle = {
-    fontSize: "15px",
-    padding: "12px 16px",
-    borderRadius: "12px",
+    fontSize: 15,
+    padding: "14px 18px",
+    borderRadius: 14,
     border: `1.5px solid ${C.border}`,
     backgroundColor: C.white,
     width: "100%",
     boxSizing: "border-box",
-    fontFamily: "DM Sans, sans-serif",
-    transition: "border-color 0.2s",
-    outline: "none"
+    fontFamily: "'DM Sans',sans-serif",
+    transition: "border-color .2s",
+    outline: "none",
+    color: C.dark
   };
   const selectStyle = {
     ...inputStyle,
@@ -23664,11 +24108,15 @@ function EditProfileScreen({
     textAlign: "right"
   };
   const verificationsStyle = {
-    padding: "16px",
-    marginTop: "24px",
+    padding: "18px 20px",
+    marginTop: 24,
+    maxWidth: 520,
+    marginLeft: "auto",
+    marginRight: "auto",
     backgroundColor: C.white,
     borderTop: `1px solid ${C.border}`,
-    borderBottom: `1px solid ${C.border}`
+    borderBottom: `1px solid ${C.border}`,
+    boxSizing: "border-box"
   };
   const verificationsTitle = {
     fontSize: "13px",
@@ -23784,22 +24232,26 @@ function EditProfileScreen({
   }, /*#__PURE__*/React.createElement("button", {
     onClick: onBack,
     style: {
-      background: "none",
+      background: C.bg,
       border: "none",
-      padding: "8px",
+      padding: 0,
+      width: 38,
+      height: 38,
+      borderRadius: 19,
       cursor: "pointer",
       display: "flex",
       alignItems: "center",
-      justifyContent: "center"
+      justifyContent: "center",
+      flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement(Icon, {
     name: "back",
-    size: 20,
+    size: 18,
     color: C.dark,
     stroke: 2.5
   })), /*#__PURE__*/React.createElement("h1", {
     style: titleStyle
-  }, "Modifier le profil")), /*#__PURE__*/React.createElement("button", {
+  }, "Informations personnelles")), /*#__PURE__*/React.createElement("button", {
     onClick: handleSave,
     style: saveButtonStyle
   }, "Enregistrer")), /*#__PURE__*/React.createElement("div", {
@@ -23834,16 +24286,36 @@ function EditProfileScreen({
   })))), /*#__PURE__*/React.createElement("div", {
     style: changePhotoTextStyle
   }, "Changer la photo")), /*#__PURE__*/React.createElement("div", {
-    style: formGroupStyle
+    style: formWrapperStyle
+  }, /*#__PURE__*/React.createElement("div", {
+    style: formRowStyle
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
   }, /*#__PURE__*/React.createElement("label", {
     style: labelStyle
-  }, "Nom complet"), /*#__PURE__*/React.createElement("input", {
+  }, "Pr\xE9nom"), /*#__PURE__*/React.createElement("input", {
     type: "text",
-    name: "name",
-    value: formData.name,
+    name: "firstName",
+    value: formData.firstName,
     onChange: handleInputChange,
+    placeholder: "Ex. Pino",
     style: inputStyle
   })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle
+  }, "Nom"), /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    name: "lastName",
+    value: formData.lastName,
+    onChange: handleInputChange,
+    placeholder: "Ex. Landon",
+    style: inputStyle
+  }))), /*#__PURE__*/React.createElement("div", {
     style: formGroupStyle
   }, /*#__PURE__*/React.createElement("label", {
     style: labelStyle
@@ -23887,7 +24359,7 @@ function EditProfileScreen({
     style: textareaStyle
   }), /*#__PURE__*/React.createElement("div", {
     style: charCountStyle
-  }, formData.bio.length, "/200")), /*#__PURE__*/React.createElement("div", {
+  }, formData.bio.length, "/200"))), /*#__PURE__*/React.createElement("div", {
     style: verificationsStyle
   }, /*#__PURE__*/React.createElement("div", {
     style: verificationsTitle
@@ -26685,6 +27157,9 @@ function ByerApp({
   const [qrScanOpen, setQrScanOpen] = useState(false);
   const [qrResult, setQrResult] = useState(null); // scanned code
   const [qrInfoOpen, setQrInfoOpen] = useState(false); // info dialog
+  const [myQrOpen, setMyQrOpen] = useState(false); // dialog "Mon QR Code"
+  // Conversation ouverte dans Messages → masque la nav bar (UX chat plein écran)
+  const [chatActive, setChatActive] = useState(false);
 
   // New feature screens
   const [dashboardOpen, setDashboardOpen] = useState(false);
@@ -26941,9 +27416,14 @@ function ByerApp({
   if (historyOpen) return /*#__PURE__*/React.createElement(BookingHistoryScreen, {
     onBack: () => setHistoryOpen(false)
   });
+
+  // Le bouton "Mon QR Code" affiche le QR de la réservation utilisateur
+  // la plus récente (ou la première booking mock si aucune userBooking).
+  const myQrBooking = userBookings[0] || BOOKINGS[0];
   return /*#__PURE__*/React.createElement(Shell, {
     tab: tab,
-    setTab: setTab
+    setTab: setTab,
+    hideNav: chatActive
   }, locOpen && /*#__PURE__*/React.createElement(LocationSheet, {
     location: location,
     onSelect: loc => {
@@ -27007,10 +27487,13 @@ function ByerApp({
     openDetail: setDetail,
     userBookings: userBookings,
     onCancelBooking: id => setUserBookings(prev => prev.filter(b => b.id !== id))
-  }), tab === "messages" && /*#__PURE__*/React.createElement(MessagesScreen, {
-    role: role
-  }), tab === "messages" && /*#__PURE__*/React.createElement(QRScanButton, {
+  }), tab === "trips" && /*#__PURE__*/React.createElement(MyQRCodeButton, {
+    onClick: () => setMyQrOpen(true)
+  }), tab === "trips" && /*#__PURE__*/React.createElement(QRScanButton, {
     onClick: () => setQrInfoOpen(true)
+  }), tab === "messages" && /*#__PURE__*/React.createElement(MessagesScreen, {
+    role: role,
+    onChatActiveChange: setChatActive
   }), tab === "profile" && /*#__PURE__*/React.createElement(ProfileScreen, {
     role: role,
     setRole: setRole,
@@ -27032,6 +27515,9 @@ function ByerApp({
     onOpenEditProfile: () => setEditProfileOpen(true),
     onOpenReviews: () => setReviewsOpen(true),
     onOpenHistory: () => setHistoryOpen(true)
+  }), myQrOpen && /*#__PURE__*/React.createElement(MyQRCodeDialog, {
+    booking: myQrBooking,
+    onClose: () => setMyQrOpen(false)
   }), qrInfoOpen && /*#__PURE__*/React.createElement(QRInfoDialog, {
     onClose: () => setQrInfoOpen(false),
     onScan: () => {
@@ -27054,7 +27540,8 @@ function ByerApp({
 function Shell({
   children,
   tab,
-  setTab
+  setTab,
+  hideNav
 }) {
   const nav = [{
     id: "home",
@@ -27077,11 +27564,18 @@ function Shell({
     icon: "user",
     label: "Profil"
   }];
+  // Quand on est dans une conversation (hideNav=true), on retire la nav bar
+  // ET on supprime le paddingBottom du scroll pour que la barre de saisie
+  // colle bien au bas de l'écran (UX chat full-screen).
+  const scrollStyle = hideNav ? {
+    ...S.scroll,
+    paddingBottom: 0
+  } : S.scroll;
   return /*#__PURE__*/React.createElement("div", {
     style: S.shell
   }, /*#__PURE__*/React.createElement("style", null, BYER_CSS), /*#__PURE__*/React.createElement("div", {
-    style: S.scroll
-  }, children), /*#__PURE__*/React.createElement("nav", {
+    style: scrollStyle
+  }, children), !hideNav && /*#__PURE__*/React.createElement("nav", {
     style: S.nav
   }, nav.map(n => {
     const on = tab === n.id;

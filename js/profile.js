@@ -10,6 +10,9 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
   const [inviteOpen, setInviteOpen]       = useState(false);
   const [rewardsOpen, setRewardsOpen]     = useState(false);
   const [toast, setToast]                 = useState("");
+  // Menu 3-points en haut à droite (regroupe "Informations personnelles"
+  // et autres actions rapides — évite la redondance avec un row dédié).
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
 
   // Points dynamiques (persistés via byerStorage)
   const [rewardsPoints, setRewardsPoints] = useState(() => pointsManager.get());
@@ -63,28 +66,85 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
   const tierColor     = rewardsTier === "Or" ? "#F59E0B" : rewardsTier === "Argent" ? "#94A3B8" : "#B45309";
   const tierBg        = rewardsTier === "Or" ? "#FEF3C7" : rewardsTier === "Argent" ? "#F1F5F9" : "#FEF3C7";
 
+  // "Informations personnelles" est désormais dans le menu 3-points du header
+  // (Pino : "pour éviter la redondance"). On la retire de la liste des rows.
   const rows=[
-    {icon:"user",    l:"Informations personnelles",  action:onOpenEditProfile},
     {icon:"trips",   l:"Historique des réservations",action:onOpenHistory},
     {icon:"message", l:"Avis reçus",                  action:onOpenReviews},
     {icon:"home",    l:"Publier une annonce",         action:onOpenPublish},
     {icon:"gear",    l:"Paramètres du compte",        action:onOpenSettings},
   ];
+
+  // Items du menu 3-points (header)
+  const headerMenuItems = [
+    { icon:"user", label:"Informations personnelles", action: onOpenEditProfile },
+  ];
+
   return (
     <div>
-      <div style={S.pageHead}><p style={S.pageTitle}>Mon profil</p></div>
+      {/* Header avec menu 3-points en haut à droite */}
+      <div style={{...S.pageHead, position:"relative", display:"flex", alignItems:"center", justifyContent:"space-between"}}>
+        <p style={S.pageTitle}>Mon profil</p>
+        <button
+          onClick={() => setHeaderMenuOpen(v => !v)}
+          aria-label="Menu profil"
+          style={{
+            width:38, height:38, borderRadius:19,
+            background: headerMenuOpen ? C.bg : "transparent",
+            border:"none", cursor:"pointer",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            transition:"background .15s",
+          }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill={C.dark}>
+            <circle cx="5" cy="12" r="2"/>
+            <circle cx="12" cy="12" r="2"/>
+            <circle cx="19" cy="12" r="2"/>
+          </svg>
+        </button>
 
-      {/* Avatar card */}
+        {headerMenuOpen && (
+          <>
+            {/* Backdrop pour fermer au clic dehors */}
+            <div
+              style={{position:"fixed", inset:0, zIndex:90}}
+              onClick={() => setHeaderMenuOpen(false)}
+            />
+            {/* Dropdown */}
+            <div style={{
+              position:"absolute", top:"calc(100% - 4px)", right:14,
+              background:C.white, borderRadius:14,
+              boxShadow:"0 10px 36px rgba(0,0,0,.16)",
+              border:`1px solid ${C.border}`,
+              minWidth:240, zIndex:100, padding:"6px",
+              fontFamily:"'DM Sans',sans-serif",
+            }}>
+              {headerMenuItems.map(item => (
+                <button
+                  key={item.label}
+                  onClick={() => { setHeaderMenuOpen(false); item.action?.(); }}
+                  style={{
+                    display:"flex", alignItems:"center", gap:12,
+                    width:"100%", padding:"12px 14px",
+                    background:"none", border:"none", cursor:"pointer",
+                    borderRadius:10, textAlign:"left",
+                    fontSize:14, fontWeight:500, color:C.dark,
+                    fontFamily:"'DM Sans',sans-serif",
+                  }}
+                >
+                  <Icon name={item.icon} size={18} color={C.dark} stroke={1.8}/>
+                  <span style={{flex:1}}>{item.label}</span>
+                  <Icon name="chevron" size={14} color={C.light} stroke={2}/>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Avatar card (sans crayon — l'édition se fait via le menu 3-points) */}
       <div style={{margin:"0 16px 12px",background:C.white,borderRadius:16,padding:"18px 16px",display:"flex",alignItems:"center",gap:14,boxShadow:`0 1px 8px rgba(0,0,0,.05)`}}>
-        <div style={{position:"relative"}}>
-          <FaceAvatar photo={USER.photo} avatar={USER.avatar} bg={USER.bg} size={56} radius={28}/>
-          <div onClick={onOpenEditProfile} style={{position:"absolute",bottom:0,right:0,width:20,height:20,borderRadius:10,background:C.coral,border:"2px solid white",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
-            <svg width="10" height="10" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24">
-              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-            </svg>
-          </div>
-        </div>
+        <FaceAvatar photo={USER.photo} avatar={USER.avatar} bg={USER.bg} size={56} radius={28}/>
         <div style={{flex:1,minWidth:0}}>
           <p style={{fontSize:16,fontWeight:700,color:C.black}}>{USER.name}</p>
           <p style={{fontSize:12,color:C.light,marginTop:2}}>{USER.city} · Membre {USER.since}</p>

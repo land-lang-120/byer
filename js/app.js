@@ -136,6 +136,9 @@ function ByerApp({ onLogout }) {
   const [qrScanOpen, setQrScanOpen]     = useState(false);
   const [qrResult, setQrResult]         = useState(null);  // scanned code
   const [qrInfoOpen, setQrInfoOpen]     = useState(false); // info dialog
+  const [myQrOpen, setMyQrOpen]         = useState(false); // dialog "Mon QR Code"
+  // Conversation ouverte dans Messages → masque la nav bar (UX chat plein écran)
+  const [chatActive, setChatActive]     = useState(false);
 
   // New feature screens
   const [dashboardOpen, setDashboardOpen] = useState(false);
@@ -267,8 +270,12 @@ function ByerApp({ onLogout }) {
   if (reviewsOpen)     return <ReviewsScreen onBack={()=>setReviewsOpen(false)}/>;
   if (historyOpen)     return <BookingHistoryScreen onBack={()=>setHistoryOpen(false)}/>;
 
+  // Le bouton "Mon QR Code" affiche le QR de la réservation utilisateur
+  // la plus récente (ou la première booking mock si aucune userBooking).
+  const myQrBooking = userBookings[0] || BOOKINGS[0];
+
   return (
-    <Shell tab={tab} setTab={setTab}>
+    <Shell tab={tab} setTab={setTab} hideNav={chatActive}>
       {locOpen && (
         <LocationSheet
           location={location}
@@ -306,10 +313,17 @@ function ByerApp({ onLogout }) {
       }
       {tab==="saved"    && <SavedScreen role={role} items={[...PROPERTIES,...VEHICLES].filter(i=>saved[i.id])} openDetail={setDetail} toggleSave={toggleSave} saved={saved} openGallery={openGallery} duration={duration}/>}
       {tab==="trips"    && <TripsScreen role={role} openDetail={setDetail} userBookings={userBookings} onCancelBooking={(id)=>setUserBookings(prev=>prev.filter(b=>b.id!==id))}/>}
-      {tab==="messages" && <MessagesScreen role={role}/>}
-      {tab==="messages" && <QRScanButton onClick={() => setQrInfoOpen(true)}/>}
+      {/* Boutons QR sur l'onglet Voyages :
+          - "Mon QR Code" (icône noire / fond blanc) au-dessus → locataire présente son QR
+          - "Scanner QR" (coral) en dessous → bailleur scanne le QR du voyageur
+          Plus visible dans Messages (mauvaise ergonomie en chat). */}
+      {tab==="trips" && <MyQRCodeButton onClick={() => setMyQrOpen(true)}/>}
+      {tab==="trips" && <QRScanButton onClick={() => setQrInfoOpen(true)}/>}
+      {tab==="messages" && <MessagesScreen role={role} onChatActiveChange={setChatActive}/>}
       {tab==="profile"  && <ProfileScreen role={role} setRole={setRole} onOpenRent={() => setRentOpen(true)} onOpenDashboard={()=>setDashboardOpen(true)} onOpenTechs={()=>{setTechsRole(role);setTechsOpen(true);}} onOpenPros={()=>{setProsRole(role);setProsOpen(true);}} onOpenPublish={()=>{setPublishSegment(null);setPublishOpen(true);}} onOpenSettings={()=>setSettingsOpen(true)} onOpenEditProfile={()=>setEditProfileOpen(true)} onOpenReviews={()=>setReviewsOpen(true)} onOpenHistory={()=>setHistoryOpen(true)}/>}
 
+      {/* My QR Code dialog (locataire) */}
+      {myQrOpen && <MyQRCodeDialog booking={myQrBooking} onClose={() => setMyQrOpen(false)}/>}
       {/* QR Code info dialog */}
       {qrInfoOpen && <QRInfoDialog onClose={() => setQrInfoOpen(false)} onScan={() => { setQrInfoOpen(false); setQrScanOpen(true); }}/>}
       {/* QR Scanner overlay */}
@@ -321,27 +335,33 @@ function ByerApp({ onLogout }) {
 }
 
 /* ─── SHELL ─────────────────────────────────────── */
-function Shell({ children, tab, setTab }) {
+function Shell({ children, tab, setTab, hideNav }) {
   const nav = [
     {id:"home",icon:"home",label:"Accueil"},{id:"saved",icon:"heart",label:"Favoris"},
     {id:"trips",icon:"trips",label:"Voyages"},{id:"messages",icon:"message",label:"Messages"},
     {id:"profile",icon:"user",label:"Profil"},
   ];
+  // Quand on est dans une conversation (hideNav=true), on retire la nav bar
+  // ET on supprime le paddingBottom du scroll pour que la barre de saisie
+  // colle bien au bas de l'écran (UX chat full-screen).
+  const scrollStyle = hideNav ? {...S.scroll, paddingBottom: 0} : S.scroll;
   return (
     <div style={S.shell}>
       <style>{BYER_CSS}</style>
-      <div style={S.scroll}>{children}</div>
-      <nav style={S.nav}>
-        {nav.map(n => {
-          const on = tab===n.id;
-          return (
-            <button key={n.id} style={S.navBtn} onClick={()=>setTab(n.id)}>
-              <Icon name={on&&n.id==="saved"?"heartF":n.icon} size={21} color={on?C.coral:C.light} stroke={on?2:1.7}/>
-              <span style={{...S.navLabel,color:on?C.coral:C.light}}>{n.label}</span>
-            </button>
-          );
-        })}
-      </nav>
+      <div style={scrollStyle}>{children}</div>
+      {!hideNav && (
+        <nav style={S.nav}>
+          {nav.map(n => {
+            const on = tab===n.id;
+            return (
+              <button key={n.id} style={S.navBtn} onClick={()=>setTab(n.id)}>
+                <Icon name={on&&n.id==="saved"?"heartF":n.icon} size={21} color={on?C.coral:C.light} stroke={on?2:1.7}/>
+                <span style={{...S.navLabel,color:on?C.coral:C.light}}>{n.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      )}
     </div>
   );
 }

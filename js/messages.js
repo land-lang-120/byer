@@ -1,7 +1,7 @@
 /* Byer — Messages & Chat */
 
 /* ─── MESSAGES SCREEN ───────────────────────────── */
-function MessagesScreen({ role }) {
+function MessagesScreen({ role, onChatActiveChange }) {
   const isBailleur = role === "bailleur";
 
   /* En mode bailleur on simule des conversations entrantes (voyageurs/locataires).
@@ -23,6 +23,14 @@ function MessagesScreen({ role }) {
 
   /* Re-sync conversations quand on bascule de rôle */
   React.useEffect(() => { setConvos(baseConvs); /* eslint-disable-next-line */ }, [role]);
+
+  /* Notifie le parent (ByerApp) que le chat est actif/inactif pour qu'il
+     puisse masquer la nav bar du bas (UX : seule la barre de saisie doit
+     rester visible quand on est dans une conversation). */
+  React.useEffect(() => {
+    onChatActiveChange?.(!!openChat);
+    return () => onChatActiveChange?.(false);
+  }, [openChat]);
 
   /* Charge les vraies conversations depuis Supabase si user connecté.
      Les convs Supabase sont préfixées dans la liste, en complément des mocks

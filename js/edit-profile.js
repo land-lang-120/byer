@@ -1,6 +1,10 @@
 function EditProfileScreen({ onBack }) {
+  // Split "name" -> firstName + lastName pour collecter chaque champ séparément
+  // (Pino : "le nom, prénom (pas nom complet uniquement)")
+  const [firstNameInit, lastNameInit] = (USER.name || "").trim().split(/\s+/, 2);
   const [formData, setFormData] = useState({
-    name: USER.name,
+    firstName: firstNameInit || "",
+    lastName:  lastNameInit  || "",
     phone: "+237 6XX XXX XXX",
     email: "pino@email.com",
     city: USER.city,
@@ -41,41 +45,52 @@ function EditProfileScreen({ onBack }) {
   };
 
   const headerStyle = {
-    ...S.pageHead,
+    background: C.white,
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "var(--top-pad) 16px 16px",
-    borderBottom: `1px solid ${C.border}`
+    gap: 12,
+    padding: "var(--top-pad) 16px 14px",
+    borderBottom: `1px solid ${C.border}`,
+    position: "sticky",
+    top: 0,
+    zIndex: 10,
   };
 
   const headerLeftStyle = {
     display: "flex",
     alignItems: "center",
-    gap: "12px"
+    gap: 10,
+    minWidth: 0,
+    flex: 1,
   };
 
   const titleStyle = {
-    ...S.pageTitle,
     margin: 0,
-    fontSize: "18px",
-    fontWeight: 600,
-    color: C.black
+    fontSize: 17,
+    fontWeight: 700,
+    color: C.black,
+    fontFamily: "'DM Sans',sans-serif",
+    letterSpacing: -0.2,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   };
 
+  // "Enregistrer" en pill coral collée au coin droit
   const saveButtonStyle = {
-    background: "none",
+    background: C.coral,
     border: "none",
-    color: C.coral,
-    fontSize: "15px",
-    fontWeight: 600,
+    color: C.white,
+    fontSize: 13,
+    fontWeight: 700,
     cursor: "pointer",
-    padding: "8px 16px",
-    borderRadius: "8px",
-    transition: "all 0.2s",
-    "&:hover": {
-      opacity: 0.8
-    }
+    padding: "9px 18px",
+    borderRadius: 22,
+    transition: "transform .15s, box-shadow .15s",
+    boxShadow: "0 2px 10px rgba(255,90,95,.3)",
+    fontFamily: "'DM Sans',sans-serif",
+    flexShrink: 0,
   };
 
   const contentStyle = {
@@ -125,32 +140,49 @@ function EditProfileScreen({ onBack }) {
     marginTop: "8px"
   };
 
+  // Wrapper de formulaire centré, max-width pour mieux respirer sur grand écran
+  const formWrapperStyle = {
+    maxWidth: 520,
+    margin: "0 auto",
+    padding: "0 20px",
+    width: "100%",
+    boxSizing: "border-box",
+  };
+
   const formGroupStyle = {
-    marginBottom: "18px",
-    padding: "0 16px"
+    marginBottom: 18,
+  };
+
+  // Pour les champs côte-à-côte (Prénom / Nom)
+  const formRowStyle = {
+    display: "flex",
+    gap: 12,
+    marginBottom: 18,
   };
 
   const labelStyle = {
-    fontSize: "12px",
+    fontSize: 12,
     fontWeight: 600,
     color: C.light,
-    marginBottom: "6px",
+    marginBottom: 7,
     textTransform: "uppercase",
-    letterSpacing: "0.5px",
+    letterSpacing: 0.5,
     display: "block"
   };
 
+  // Champs plus généreux : padding vertical augmenté, font 15.5
   const inputStyle = {
-    fontSize: "15px",
-    padding: "12px 16px",
-    borderRadius: "12px",
+    fontSize: 15,
+    padding: "14px 18px",
+    borderRadius: 14,
     border: `1.5px solid ${C.border}`,
     backgroundColor: C.white,
     width: "100%",
     boxSizing: "border-box",
-    fontFamily: "DM Sans, sans-serif",
-    transition: "border-color 0.2s",
-    outline: "none"
+    fontFamily: "'DM Sans',sans-serif",
+    transition: "border-color .2s",
+    outline: "none",
+    color: C.dark,
   };
 
   const selectStyle = {
@@ -173,11 +205,15 @@ function EditProfileScreen({ onBack }) {
   };
 
   const verificationsStyle = {
-    padding: "16px",
-    marginTop: "24px",
+    padding: "18px 20px",
+    marginTop: 24,
+    maxWidth: 520,
+    marginLeft: "auto",
+    marginRight: "auto",
     backgroundColor: C.white,
     borderTop: `1px solid ${C.border}`,
-    borderBottom: `1px solid ${C.border}`
+    borderBottom: `1px solid ${C.border}`,
+    boxSizing: "border-box",
   };
 
   const verificationsTitle = {
@@ -304,18 +340,22 @@ function EditProfileScreen({ onBack }) {
           <button
             onClick={onBack}
             style={{
-              background: "none",
+              background: C.bg,
               border: "none",
-              padding: "8px",
+              padding: 0,
+              width: 38,
+              height: 38,
+              borderRadius: 19,
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center"
+              justifyContent: "center",
+              flexShrink: 0,
             }}
           >
-            <Icon name="back" size={20} color={C.dark} stroke={2.5} />
+            <Icon name="back" size={18} color={C.dark} stroke={2.5} />
           </button>
-          <h1 style={titleStyle}>Modifier le profil</h1>
+          <h1 style={titleStyle}>Informations personnelles</h1>
         </div>
         <button onClick={handleSave} style={saveButtonStyle}>Enregistrer</button>
       </div>
@@ -339,63 +379,80 @@ function EditProfileScreen({ onBack }) {
           <div style={changePhotoTextStyle}>Changer la photo</div>
         </div>
 
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Nom complet</label>
-          <input
-            type="text"
-            name="name"
-            value={formData.name}
-            onChange={handleInputChange}
-            style={inputStyle}
-          />
-        </div>
+        <div style={formWrapperStyle}>
+          {/* Prénom + Nom : 2 champs côte-à-côte (au lieu de "Nom complet") */}
+          <div style={formRowStyle}>
+            <div style={{flex: 1}}>
+              <label style={labelStyle}>Prénom</label>
+              <input
+                type="text"
+                name="firstName"
+                value={formData.firstName}
+                onChange={handleInputChange}
+                placeholder="Ex. Pino"
+                style={inputStyle}
+              />
+            </div>
+            <div style={{flex: 1}}>
+              <label style={labelStyle}>Nom</label>
+              <input
+                type="text"
+                name="lastName"
+                value={formData.lastName}
+                onChange={handleInputChange}
+                placeholder="Ex. Landon"
+                style={inputStyle}
+              />
+            </div>
+          </div>
 
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Numéro de téléphone</label>
-          <input
-            type="tel"
-            name="phone"
-            value={formData.phone}
-            onChange={handleInputChange}
-            style={inputStyle}
-          />
-        </div>
+          <div style={formGroupStyle}>
+            <label style={labelStyle}>Numéro de téléphone</label>
+            <input
+              type="tel"
+              name="phone"
+              value={formData.phone}
+              onChange={handleInputChange}
+              style={inputStyle}
+            />
+          </div>
 
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Email</label>
-          <input
-            type="email"
-            name="email"
-            value={formData.email}
-            onChange={handleInputChange}
-            style={inputStyle}
-          />
-        </div>
+          <div style={formGroupStyle}>
+            <label style={labelStyle}>Email</label>
+            <input
+              type="email"
+              name="email"
+              value={formData.email}
+              onChange={handleInputChange}
+              style={inputStyle}
+            />
+          </div>
 
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Ville</label>
-          <select
-            name="city"
-            value={formData.city}
-            onChange={handleSelectChange}
-            style={selectStyle}
-          >
-            {cities.map(city => (
-              <option key={city} value={city}>{city}</option>
-            ))}
-          </select>
-        </div>
+          <div style={formGroupStyle}>
+            <label style={labelStyle}>Ville</label>
+            <select
+              name="city"
+              value={formData.city}
+              onChange={handleSelectChange}
+              style={selectStyle}
+            >
+              {cities.map(city => (
+                <option key={city} value={city}>{city}</option>
+              ))}
+            </select>
+          </div>
 
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Bio</label>
-          <textarea
-            name="bio"
-            value={formData.bio}
-            onChange={handleInputChange}
-            maxLength={200}
-            style={textareaStyle}
-          />
-          <div style={charCountStyle}>{formData.bio.length}/200</div>
+          <div style={formGroupStyle}>
+            <label style={labelStyle}>Bio</label>
+            <textarea
+              name="bio"
+              value={formData.bio}
+              onChange={handleInputChange}
+              maxLength={200}
+              style={textareaStyle}
+            />
+            <div style={charCountStyle}>{formData.bio.length}/200</div>
+          </div>
         </div>
 
         <div style={verificationsStyle}>

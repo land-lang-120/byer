@@ -255,6 +255,170 @@ function QRScanButton({ onClick }) {
   );
 }
 
+/* ── My QR Code Floating Button (above the scan button) ──
+   Donne au locataire un accès rapide à son propre QR code de réservation.
+   Icône noire, fond blanc — contraste fort vs le bouton scan coral du bailleur. */
+function MyQRCodeButton({ onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      title="Mon QR Code"
+      style={{
+        position: "fixed",
+        bottom: 156,           /* au-dessus du bouton scan (90 + 56 + 10) */
+        right: 20,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        background: C.white,
+        border: `1.5px solid ${C.border}`,
+        boxShadow: "0 4px 16px rgba(0,0,0,.12)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        zIndex: 100,
+        transition: "transform .18s",
+      }}
+    >
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={C.black} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="2" width="8" height="8" rx="1"/>
+        <rect x="14" y="2" width="8" height="8" rx="1"/>
+        <rect x="2" y="14" width="8" height="8" rx="1"/>
+        <path d="M14 14h2v2h-2z" fill={C.black} stroke="none"/>
+        <path d="M20 14h2v2h-2z" fill={C.black} stroke="none"/>
+        <path d="M14 20h2v2h-2z" fill={C.black} stroke="none"/>
+        <path d="M20 20h2v2h-2z" fill={C.black} stroke="none"/>
+        <path d="M17 17h2v2h-2z" fill={C.black} stroke="none"/>
+      </svg>
+    </button>
+  );
+}
+
+/* ── My QR Code Dialog (shows the user's own reservation QR) ──
+   Affiche le QR code à présenter au bailleur pour la vérification d'arrivée.
+   Si l'utilisateur n'a pas encore de réservation, on tombe sur un mock démo. */
+function MyQRCodeDialog({ booking, onClose }) {
+  // Fallback démo si pas de réservation utilisateur
+  const ref      = booking?.ref      || "BYR-2025-0322-A";
+  const title    = booking?.title    || "Appartement Bonamoussadi";
+  const city     = booking?.city     || "Douala";
+  const zone     = booking?.zone     || "Bonamoussadi";
+  const checkIn  = booking?.checkIn  || "22 mars 2025";
+  const checkOut = booking?.checkOut || "25 mars 2025";
+
+  // Générateur QR via API publique gratuite (sans clé)
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(ref)}&color=000000&bgcolor=FFFFFF&margin=10`;
+
+  return (
+    <>
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 350 }} onClick={onClose}/>
+      <div style={{
+        position: "fixed", bottom: 0, left: 0, right: 0, background: C.white,
+        borderRadius: "22px 22px 0 0", zIndex: 351, padding: "0 0 32px",
+        maxHeight: "92vh", overflowY: "auto",
+      }} className="sheet">
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "12px auto 4px" }}/>
+
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px 8px" }}>
+          <div>
+            <p style={{ fontSize: 18, fontWeight: 700, color: C.black }}>Mon QR Code</p>
+            <p style={{ fontSize: 12, color: C.mid, marginTop: 2 }}>Présentez ce code à votre arrivée</p>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.mid} strokeWidth="2" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* QR Code visuel — fond blanc, code noir */}
+        <div style={{
+          margin: "16px 24px 12px", padding: "20px",
+          background: C.white, border: `1.5px solid ${C.border}`,
+          borderRadius: 20, display: "flex", flexDirection: "column",
+          alignItems: "center", gap: 12,
+          boxShadow: "0 2px 12px rgba(0,0,0,.05)",
+        }}>
+          <div style={{
+            width: 240, height: 240, background: C.white,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            borderRadius: 12,
+          }}>
+            <img
+              src={qrUrl}
+              alt={`QR Code ${ref}`}
+              style={{ width: 240, height: 240, display: "block" }}
+            />
+          </div>
+          <p style={{
+            fontSize: 13, fontWeight: 700, color: C.black,
+            fontFamily: "monospace", letterSpacing: 1,
+          }}>
+            {ref}
+          </p>
+        </div>
+
+        {/* Détails de la réservation */}
+        <div style={{ padding: "8px 20px 0" }}>
+          <div style={{
+            background: C.bg, borderRadius: 14, padding: "14px",
+          }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: C.black, marginBottom: 4 }}>
+              {title}
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 10 }}>
+              <ByerPin size={11}/>
+              <span style={{ fontSize: 12, color: C.mid }}>{zone}, {city}</span>
+            </div>
+            <div style={{
+              display: "flex", borderTop: `1px solid ${C.border}`, paddingTop: 10, gap: 0,
+            }}>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: C.light, textTransform: "uppercase", letterSpacing: .6 }}>ARRIVÉE</span>
+                <p style={{ fontSize: 13, fontWeight: 700, color: C.black, marginTop: 2 }}>{checkIn}</p>
+              </div>
+              <div style={{ flex: 1, textAlign: "right" }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: C.light, textTransform: "uppercase", letterSpacing: .6 }}>DÉPART</span>
+                <p style={{ fontSize: 13, fontWeight: 700, color: C.black, marginTop: 2 }}>{checkOut}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Astuce */}
+        <div style={{ padding: "14px 20px 0" }}>
+          <div style={{
+            background: "#FFF8F8", border: "1px solid #FFD6D7",
+            borderRadius: 12, padding: "10px 12px",
+            display: "flex", alignItems: "flex-start", gap: 10,
+          }}>
+            <span style={{ fontSize: 16 }}>💡</span>
+            <p style={{ fontSize: 12, color: C.dark, lineHeight: 1.5 }}>
+              Le bailleur scannera ce code pour vérifier votre identité et votre paiement en 2 secondes.
+            </p>
+          </div>
+        </div>
+
+        {/* Close */}
+        <div style={{ padding: "16px 20px 0" }}>
+          <button
+            onClick={onClose}
+            style={{
+              width: "100%", background: C.bg, color: C.dark, border: `1.5px solid ${C.border}`,
+              borderRadius: 12, padding: "13px", fontWeight: 600, fontSize: 14,
+              cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
+            }}
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 /* ── QR Scanner Overlay ── */
 function QRScannerOverlay({ onClose, onScan }) {
   const [scanning, setScanning] = useState(true);
