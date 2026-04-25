@@ -17914,11 +17914,20 @@ function TechniciansScreen({
   const [becomeSuccess, setBecomeSuccess] = useState(false);
   const isBailleur = role === "bailleur";
 
-  /* Liste combinée : profils utilisateur d'abord, puis catalogue de base */
+  /* Liste combinée : profils utilisateur d'abord, puis catalogue de base.
+     Tri prioritaire : VÉRIFIÉS en tête (mise en avant payante 10 000 FCFA/mois),
+     puis non-vérifiés. À l'intérieur de chaque groupe, on conserve l'ordre
+     "user-created d'abord" pour ne pas pénaliser les nouveaux inscrits.
+     Cette logique reflète le modèle économique (les vérifiés payent pour
+     remonter et être proposés en premier aux bailleurs). */
   const allTechs = [...userTechs, ...TECHNICIANS];
-  const filtered = allTechs.filter(t => {
-    if (category !== "all" && t.category !== category) return false;
-    return true;
+  const filtered = allTechs.filter(t => category === "all" || t.category === category).sort((a, b) => {
+    const av = a.verified ? 1 : 0;
+    const bv = b.verified ? 1 : 0;
+    if (av !== bv) return bv - av; // vérifiés d'abord
+    const ar = a.rating || 0;
+    const br = b.rating || 0;
+    return br - ar; // puis par note décroissante
   });
 
   /* Assigned vs available */
@@ -18059,13 +18068,24 @@ function TechniciansScreen({
       fontWeight: 700,
       color: "#1D4ED8"
     }
-  }, "Devenir technicien"), /*#__PURE__*/React.createElement("p", {
+  }, "Devenir technicien ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 9,
+      fontWeight: 700,
+      background: "#16A34A",
+      color: "white",
+      padding: "1px 6px",
+      borderRadius: 6,
+      marginLeft: 4,
+      verticalAlign: "middle"
+    }
+  }, "GRATUIT")), /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 11,
       color: "#3B82F6",
       marginTop: 1
     }
-  }, "Inscrivez votre profil pour recevoir des missions")), /*#__PURE__*/React.createElement("span", {
+  }, "Cr\xE9ation gratuite \xB7 V\xE9rification + mise en avant 10 000 F/mois")), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 18,
       color: "#2563EB",
@@ -19310,6 +19330,20 @@ function BecomeTechnicianSheet({
     }
   }, about.length, " caract\xE8res \xB7 20 minimum")), /*#__PURE__*/React.createElement("div", {
     style: {
+      background: "#F0FDF4",
+      border: "1px solid #86EFAC",
+      borderRadius: 10,
+      padding: "10px 12px",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: "#166534",
+      lineHeight: 1.55
+    }
+  }, "\u2713 ", /*#__PURE__*/React.createElement("strong", null, "Cr\xE9ation de profil gratuite."), " Aucun frais pour vous inscrire et recevoir vos premi\xE8res demandes.")), /*#__PURE__*/React.createElement("div", {
+    style: {
       background: "#FFFBEB",
       border: "1px solid #FDE68A",
       borderRadius: 10,
@@ -19320,9 +19354,21 @@ function BecomeTechnicianSheet({
     style: {
       fontSize: 11,
       color: "#A16207",
-      lineHeight: 1.5
+      lineHeight: 1.55
     }
-  }, "\u2139\uFE0F Votre profil appara\xEEtra avec un badge ", /*#__PURE__*/React.createElement("strong", null, "\"Non v\xE9rifi\xE9\""), " jusqu'\xE0 validation par notre \xE9quipe (24-48h).")), /*#__PURE__*/React.createElement("div", {
+  }, "\u2139\uFE0F Votre profil appara\xEEtra avec un badge ", /*#__PURE__*/React.createElement("strong", null, "\"Non v\xE9rifi\xE9\""), " tant que votre identit\xE9 n'est pas valid\xE9e."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 1,
+      background: "#FDE68A",
+      margin: "8px 0"
+    }
+  }), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: "#A16207",
+      lineHeight: 1.55
+    }
+  }, "\u2B50 ", /*#__PURE__*/React.createElement("strong", null, "V\xE9rification + mise en avant : 10 000 FCFA/mois."), " Les profils v\xE9rifi\xE9s sont affich\xE9s ", /*#__PURE__*/React.createElement("strong", null, "en premier"), " dans la liste et propos\xE9s en priorit\xE9 aux bailleurs. Activable depuis votre profil apr\xE8s inscription.")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8

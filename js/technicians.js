@@ -17,12 +17,23 @@ function TechniciansScreen({ onBack, role }) {
 
   const isBailleur = role === "bailleur";
 
-  /* Liste combinée : profils utilisateur d'abord, puis catalogue de base */
+  /* Liste combinée : profils utilisateur d'abord, puis catalogue de base.
+     Tri prioritaire : VÉRIFIÉS en tête (mise en avant payante 10 000 FCFA/mois),
+     puis non-vérifiés. À l'intérieur de chaque groupe, on conserve l'ordre
+     "user-created d'abord" pour ne pas pénaliser les nouveaux inscrits.
+     Cette logique reflète le modèle économique (les vérifiés payent pour
+     remonter et être proposés en premier aux bailleurs). */
   const allTechs = [...userTechs, ...TECHNICIANS];
-  const filtered = allTechs.filter(t => {
-    if (category !== "all" && t.category !== category) return false;
-    return true;
-  });
+  const filtered = allTechs
+    .filter(t => category === "all" || t.category === category)
+    .sort((a, b) => {
+      const av = a.verified ? 1 : 0;
+      const bv = b.verified ? 1 : 0;
+      if (av !== bv) return bv - av;        // vérifiés d'abord
+      const ar = a.rating || 0;
+      const br = b.rating || 0;
+      return br - ar;                        // puis par note décroissante
+    });
 
   /* Assigned vs available */
   const myTechs     = isBailleur ? filtered.filter(t=>assignedIds.includes(t.id)) : filtered;
@@ -105,8 +116,8 @@ function TechniciansScreen({ onBack, role }) {
               <span style={{fontSize:18}}>🛠️</span>
             </div>
             <div style={{flex:1,textAlign:"left"}}>
-              <p style={{fontSize:13,fontWeight:700,color:"#1D4ED8"}}>Devenir technicien</p>
-              <p style={{fontSize:11,color:"#3B82F6",marginTop:1}}>Inscrivez votre profil pour recevoir des missions</p>
+              <p style={{fontSize:13,fontWeight:700,color:"#1D4ED8"}}>Devenir technicien <span style={{fontSize:9,fontWeight:700,background:"#16A34A",color:"white",padding:"1px 6px",borderRadius:6,marginLeft:4,verticalAlign:"middle"}}>GRATUIT</span></p>
+              <p style={{fontSize:11,color:"#3B82F6",marginTop:1}}>Création gratuite · Vérification + mise en avant 10 000 F/mois</p>
             </div>
             <span style={{fontSize:18,color:"#2563EB",fontWeight:700}}>+</span>
           </button>
@@ -704,10 +715,20 @@ function BecomeTechnicianSheet({ onClose, onSubmit }) {
           <p style={{fontSize:10,color:C.light,marginTop:3}}>{about.length} caractères · 20 minimum</p>
         </div>
 
-        {/* Info */}
+        {/* Info — création gratuite + vérification optionnelle payante */}
+        <div style={{background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+          <p style={{fontSize:11,color:"#166534",lineHeight:1.55}}>
+            ✓ <strong>Création de profil gratuite.</strong> Aucun frais pour vous inscrire et recevoir vos premières demandes.
+          </p>
+        </div>
+
         <div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:10,padding:"10px 12px",marginBottom:14}}>
-          <p style={{fontSize:11,color:"#A16207",lineHeight:1.5}}>
-            ℹ️ Votre profil apparaîtra avec un badge <strong>"Non vérifié"</strong> jusqu'à validation par notre équipe (24-48h).
+          <p style={{fontSize:11,color:"#A16207",lineHeight:1.55}}>
+            ℹ️ Votre profil apparaîtra avec un badge <strong>"Non vérifié"</strong> tant que votre identité n'est pas validée.
+          </p>
+          <div style={{height:1,background:"#FDE68A",margin:"8px 0"}}/>
+          <p style={{fontSize:11,color:"#A16207",lineHeight:1.55}}>
+            ⭐ <strong>Vérification + mise en avant : 10 000 FCFA/mois.</strong> Les profils vérifiés sont affichés <strong>en premier</strong> dans la liste et proposés en priorité aux bailleurs. Activable depuis votre profil après inscription.
           </p>
         </div>
 
