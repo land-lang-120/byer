@@ -106,6 +106,52 @@ const CHILD_ENTITIES_BY_TYPE = {
   ],
 };
 
+/* ─── RÈGLEMENT (HOUSE RULES) ────────────────────────
+   Règles pré-définies que le bailleur peut activer en chips.
+   Liste séparée pour propriétés vs véhicules. L'utilisateur peut
+   aussi ajouter ses propres règles personnalisées en texte libre. */
+const PROPERTY_RULES = [
+  { id:"no_smoking",            label:"Non fumeur",                  emoji:"🚭" },
+  { id:"no_pets",               label:"Animaux non admis",           emoji:"🐾" },
+  { id:"no_parties",            label:"Pas de fêtes / événements",   emoji:"🎉" },
+  { id:"no_visitors",           label:"Visiteurs non admis",         emoji:"🚫" },
+  { id:"limit_visitors",        label:"Visiteurs limités",           emoji:"👥" },
+  { id:"curfew",                label:"Couvre-feu (22h)",            emoji:"🌙" },
+  { id:"no_kids",               label:"Pas d'enfants",               emoji:"👶" },
+  { id:"shoes_off",             label:"Chaussures à retirer",        emoji:"👞" },
+  { id:"no_loud_music",         label:"Pas de musique forte",        emoji:"🎵" },
+  { id:"no_alcohol",            label:"Alcool interdit",             emoji:"🥃" },
+  { id:"no_filming",            label:"Pas d'enregistrement",        emoji:"📷" },
+  { id:"clean_before_leaving",  label:"Ménage au départ",            emoji:"🧹" },
+  { id:"caution_required",      label:"Caution obligatoire",         emoji:"💰" },
+  { id:"lock_when_leaving",     label:"Verrouiller en sortant",      emoji:"🔒" },
+  { id:"save_water",            label:"Économiser l'eau",            emoji:"💧" },
+  { id:"family_only",           label:"Familles uniquement",         emoji:"👨‍👩‍👧" },
+  { id:"students_only",         label:"Étudiants uniquement",        emoji:"🎓" },
+  { id:"professionals_only",    label:"Professionnels uniquement",   emoji:"👔" },
+  { id:"no_unmarried_couples",  label:"Pas de couples non mariés",   emoji:"💍" },
+  { id:"id_required",           label:"Pièce d'identité requise",    emoji:"🪪" },
+];
+
+const VEHICLE_RULES = [
+  { id:"no_smoking",        label:"Non fumeur",                emoji:"🚭" },
+  { id:"min_age_25",        label:"Conducteur min 25 ans",     emoji:"📅" },
+  { id:"min_age_21",        label:"Conducteur min 21 ans",     emoji:"📅" },
+  { id:"license_2years",    label:"Permis depuis +2 ans",      emoji:"🪪" },
+  { id:"no_pets",           label:"Animaux non admis",         emoji:"🐾" },
+  { id:"caution_required",  label:"Caution obligatoire",       emoji:"💰" },
+  { id:"clean_return",      label:"Rendre propre",             emoji:"🧹" },
+  { id:"full_tank",         label:"Plein essence au retour",   emoji:"⛽" },
+  { id:"no_offroad",        label:"Pas de tout-terrain",       emoji:"🏔️" },
+  { id:"no_long_trip",      label:"Pas de trajets longs",      emoji:"🛣️" },
+  { id:"max_km_per_day",    label:"Kilométrage limité/jour",   emoji:"📍" },
+  { id:"no_outside_country",label:"Frontière interdite",       emoji:"🚧" },
+  { id:"id_required",       label:"Pièce d'identité requise",  emoji:"🪪" },
+  { id:"deposit_required",  label:"Avance obligatoire",        emoji:"💵" },
+];
+
+const getRulesForSegment = (seg) => seg === "vehicle" ? VEHICLE_RULES : PROPERTY_RULES;
+
 /* IDs uniques pour les instances (clé React stable) */
 let _instanceCounter = 1;
 const newInstanceId = () => `i${Date.now().toString(36)}-${_instanceCounter++}`;
@@ -136,7 +182,7 @@ function PublishScreen({ onBack, initialSegment }) {
   // Si on arrive avec un segment pré-sélectionné (depuis Dashboard),
   // on saute l'étape 1 (sélection du type) directement à l'étape 2.
   const startStep = initialSegment ? 2 : 1;
-  const [step, setStep]     = useState(startStep); // 1=type, 2=infos, 3=prix, 4=photos, 5=confirm
+  const [step, setStep]     = useState(startStep); // 1=type, 2=infos, 3=prix, 4=photos, 5=règlement, 6=confirm
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess]       = useState(false);
 
@@ -156,6 +202,10 @@ function PublishScreen({ onBack, initialSegment }) {
     nightPrice:        "",
     monthPrice:        "",
     photos:            [],
+    /* houseRules : IDs des règles pré-définies cochées (PROPERTY_RULES ou VEHICLE_RULES)
+       customRules : règles personnalisées en texte libre (max 10) */
+    houseRules:        [],
+    customRules:       [],
     // Vehicle-specific
     brand:             "",
     seats:             5,
@@ -571,6 +621,10 @@ function PublishScreen({ onBack, initialSegment }) {
         general_amenities: isVehicle ? null : (form.generalAmenities || []),
         /* child_entities : compo détaillée (count + shared/instances + amenities) */
         child_entities:    isVehicle ? null : form.childEntities,
+        /* house_rules : IDs des règles pré-définies cochées par le bailleur
+           custom_rules : règles personnalisées (texte libre, max 10) */
+        house_rules:       Array.isArray(form.houseRules)  ? form.houseRules  : [],
+        custom_rules:      Array.isArray(form.customRules) ? form.customRules : [],
         is_active:    true,
       };
 
@@ -1324,8 +1378,137 @@ function PublishScreen({ onBack, initialSegment }) {
             </div>
           )}
 
-          {/* ── STEP 5 : Récapitulatif ── */}
-          {step === 5 && (
+          {/* ── STEP 5 : Règlement ── */}
+          {step === 5 && (() => {
+            const RULES_LIST = getRulesForSegment(form.segment);
+            const toggleRule = (id) => {
+              setForm(p => ({
+                ...p,
+                houseRules: p.houseRules.includes(id)
+                  ? p.houseRules.filter(x => x !== id)
+                  : [...p.houseRules, id],
+              }));
+            };
+            const addCustomRule = () => {
+              const text = (form._customDraft || "").trim();
+              if (!text) return;
+              if (form.customRules.length >= 10) return;
+              setForm(p => ({
+                ...p,
+                customRules: [...p.customRules, text],
+                _customDraft: "",
+              }));
+            };
+            const removeCustomRule = (idx) => {
+              setForm(p => ({ ...p, customRules: p.customRules.filter((_, i) => i !== idx) }));
+            };
+            return (
+              <div>
+                <p style={{fontSize:20,fontWeight:800,color:C.black,marginBottom:6}}>Règlement</p>
+                <p style={{fontSize:13,color:C.mid,marginBottom:16,lineHeight:1.5}}>
+                  Définissez les règles d'utilisation. Les locataires les verront avant de réserver et devront les accepter.
+                </p>
+
+                {/* Astuce */}
+                <div style={{background:"#FFF8E1",border:"1px solid #FFE082",borderRadius:12,padding:"10px 12px",marginBottom:16}}>
+                  <p style={{fontSize:11,color:"#7A5500",lineHeight:1.5,fontFamily:"'DM Sans',sans-serif"}}>
+                    💡 Cochez les règles qui s'appliquent. Vous pouvez aussi ajouter <strong>jusqu'à 10 règles personnalisées</strong> en bas (ex. « Heure d'arrivée 14h-22h »).
+                  </p>
+                </div>
+
+                {/* Règles pré-définies en chips */}
+                <p style={{fontSize:13,fontWeight:700,color:C.dark,marginBottom:8}}>
+                  Règles courantes ({form.houseRules.length} sélectionnée{form.houseRules.length>1?"s":""})
+                </p>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:20}}>
+                  {RULES_LIST.map(r => {
+                    const active = form.houseRules.includes(r.id);
+                    return (
+                      <button key={r.id} onClick={() => toggleRule(r.id)} style={{
+                        fontSize:12, padding:"7px 12px", borderRadius:18,
+                        background: active ? C.coral : C.white,
+                        color:      active ? C.white : C.dark,
+                        border:     `1.5px solid ${active ? C.coral : C.border}`,
+                        fontWeight:600, cursor:"pointer",
+                        fontFamily:"'DM Sans',sans-serif",
+                        display:"inline-flex", alignItems:"center", gap:5,
+                      }}>
+                        <span>{r.emoji}</span> {r.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Règles personnalisées */}
+                <p style={{fontSize:13,fontWeight:700,color:C.dark,marginBottom:8}}>
+                  Règles personnalisées ({form.customRules.length}/10)
+                </p>
+                <div style={{display:"flex",gap:6,marginBottom:10}}>
+                  <input
+                    type="text"
+                    value={form._customDraft || ""}
+                    onChange={e => set("_customDraft", e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCustomRule(); } }}
+                    placeholder="Ex. Pas de bruit après 22h"
+                    maxLength={120}
+                    disabled={form.customRules.length >= 10}
+                    style={{
+                      flex:1, padding:"10px 12px", borderRadius:10,
+                      border:`1.5px solid ${C.border}`,
+                      fontSize:13, outline:"none",
+                      fontFamily:"'DM Sans',sans-serif",
+                      background: form.customRules.length >= 10 ? C.bg : C.white,
+                    }}
+                  />
+                  <button onClick={addCustomRule} disabled={!form._customDraft || form.customRules.length >= 10} style={{
+                    padding:"10px 14px", borderRadius:10,
+                    background: (form._customDraft && form.customRules.length < 10) ? C.coral : C.bg,
+                    color:      (form._customDraft && form.customRules.length < 10) ? C.white : C.light,
+                    border:"none", fontSize:13, fontWeight:700,
+                    cursor: (form._customDraft && form.customRules.length < 10) ? "pointer" : "not-allowed",
+                    fontFamily:"'DM Sans',sans-serif",
+                  }}>+ Ajouter</button>
+                </div>
+
+                {form.customRules.length > 0 && (
+                  <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:20}}>
+                    {form.customRules.map((rule, i) => (
+                      <div key={i} style={{
+                        display:"flex", alignItems:"center", justifyContent:"space-between",
+                        padding:"10px 12px", borderRadius:10,
+                        background: C.bg, border:`1px solid ${C.border}`,
+                        gap:8,
+                      }}>
+                        <p style={{fontSize:12,color:C.dark,flex:1,fontFamily:"'DM Sans',sans-serif"}}>
+                          📌 {rule}
+                        </p>
+                        <button onClick={() => removeCustomRule(i)} style={{
+                          background:"transparent", border:"none", cursor:"pointer",
+                          color:"#B91C1C", fontSize:18, fontWeight:700, lineHeight:1,
+                          padding:"0 4px",
+                        }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {(form.houseRules.length === 0 && form.customRules.length === 0) && (
+                  <div style={{background:"#FEF2F2",border:`1px solid #FEC8C8`,borderRadius:10,padding:"10px 12px",marginBottom:16}}>
+                    <p style={{fontSize:11,color:"#B91C1C",lineHeight:1.5,fontFamily:"'DM Sans',sans-serif"}}>
+                      ⚠️ Aucune règle définie. Vous pouvez continuer mais c'est recommandé d'en ajouter au moins une pour éviter les malentendus.
+                    </p>
+                  </div>
+                )}
+
+                <button style={S.payBtn} onClick={() => setStep(6)}>
+                  Continuer →
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* ── STEP 6 : Récapitulatif ── */}
+          {step === 6 && (
             <div>
               <p style={{fontSize:20,fontWeight:800,color:C.black,marginBottom:6}}>Récapitulatif</p>
               <p style={{fontSize:13,color:C.mid,marginBottom:20}}>Vérifiez les informations avant de publier.</p>
@@ -1376,6 +1559,39 @@ function PublishScreen({ onBack, initialSegment }) {
                   )}
                 </div>
               )}
+
+              {/* Récap règlement */}
+              {(form.houseRules.length > 0 || form.customRules.length > 0) && (() => {
+                const RULES_LIST = getRulesForSegment(form.segment);
+                return (
+                  <div style={{background:C.white,border:`1.5px solid ${C.border}`,borderRadius:14,padding:"10px 12px",marginBottom:14}}>
+                    <p style={{fontSize:11,fontWeight:700,color:C.dark,marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
+                      <span>📜</span> Règlement ({form.houseRules.length + form.customRules.length})
+                    </p>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                      {form.houseRules.map(rid => {
+                        const r = RULES_LIST.find(x => x.id === rid);
+                        if (!r) return null;
+                        return (
+                          <span key={rid} style={{
+                            fontSize:10,padding:"3px 7px",borderRadius:10,
+                            background:C.bg,color:C.dark,
+                            fontFamily:"'DM Sans',sans-serif",
+                          }}>{r.emoji} {r.label}</span>
+                        );
+                      })}
+                      {form.customRules.map((rule, i) => (
+                        <span key={`c${i}`} style={{
+                          fontSize:10,padding:"3px 7px",borderRadius:10,
+                          background:"#FFF5F5",color:C.coral,
+                          fontFamily:"'DM Sans',sans-serif",
+                          border:`1px solid ${C.coral}`,
+                        }}>📌 {rule}</span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Récap composition */}
               {form.segment === "property" && (() => {
