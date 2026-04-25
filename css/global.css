@@ -6,12 +6,15 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
 
 /* ── Padding-top adaptatif pour les headers ──
-   - Navigateur classique / Android (sans encoche)  : 32px (équilibre confortable)
-   - PWA iOS (encoche)                              : encoche + 32px (clairance correcte)
-   La variable utilise env(safe-area-inset-top) qui
-   ne fonctionne qu'avec viewport-fit=cover. */
+   max() garantit un minimum de 64px même quand env(safe-area-inset-top)
+   retourne 0 (cas Android Chrome standard, Edge desktop, certaines PWA
+   où la status bar n'est pas reportée correctement).
+   - Android Chrome (env=0px)        : max(32, 64) = 64px
+   - PWA iOS encoche (env=44px)      : max(76, 64) = 76px
+   - PWA iOS sans encoche (env=20px) : max(52, 64) = 64px
+   Garantit que le header n'est jamais coupé par la status bar. */
 :root {
-  --top-pad: calc(env(safe-area-inset-top, 0px) + 32px);
+  --top-pad: max(calc(env(safe-area-inset-top, 0px) + 32px), 64px);
 }
 
 *,
@@ -128,24 +131,23 @@ input[type=date]::-webkit-calendar-picker-indicator {
 }
 
 /* ═══════════════════════════════════════════════════
-   DARK MODE — Mode sombre DOUX (gris foncé, pas noir pur)
-   On atténue l'inversion (0.88 au lieu de 1) et on baisse
-   la luminosité globale pour obtenir un fond gris anthracite
-   confortable plutôt qu'un noir agressif. Approche similaire
-   aux modes sombres "soft" de Twitter/X et GitHub.
+   DARK MODE — Mode sombre profond (style Material You / X)
+   Inversion forte (0.96) avec contraste réduit pour un rendu
+   très sombre mais lisible. Fond proche du noir charbon
+   (#0e0e10) — moins agressif qu'un #000 pur.
    ═══════════════════════════════════════════════════ */
 html.byer-dark {
-  background: #1c1c1e;
+  background: #0e0e10;
 }
 
 html.byer-dark body {
-  /* invert(0.88) = inversion adoucie (au lieu de 1.0 = inversion totale)
-     hue-rotate(180deg) = rétablit les couleurs (rouge reste rouge, etc.)
-     contrast(0.88) = baisse le contraste pour un rendu moins agressif
-     brightness(0.95) = légère atténuation globale
-     Résultat : fond gris anthracite (~#222), texte gris très clair (~#E0E0E0) */
-  filter: invert(0.88) hue-rotate(180deg) contrast(0.88) brightness(0.95);
-  background: #1c1c1e;
+  /* invert(0.96) = inversion quasi-totale (gris très sombre)
+     hue-rotate(180deg) = rétablit les couleurs (rouge reste rouge)
+     contrast(0.92) = légère réduction du contraste pour confort
+     brightness(0.82) = atténuation marquée de la luminosité globale
+     Résultat : fond charbon (~#111), texte gris clair (~#D5D5D5) */
+  filter: invert(0.96) hue-rotate(180deg) contrast(0.92) brightness(0.82);
+  background: #0e0e10;
 }
 
 /* Contre-inverse les images, vidéos et iframes pour qu'elles
@@ -157,10 +159,10 @@ html.byer-dark iframe,
 html.byer-dark canvas,
 html.byer-dark [data-no-invert],
 html.byer-dark .face-avatar {
-  filter: invert(0.88) hue-rotate(180deg) contrast(1.14) brightness(1.05);
+  filter: invert(0.96) hue-rotate(180deg) contrast(1.09) brightness(1.22);
 }
 
 /* Loader (avant React mount) */
 html.byer-dark #byer-loading {
-  background: #1c1c1e;
+  background: #0e0e10;
 }

@@ -415,12 +415,23 @@ function ByerApp({ onLogout }) {
   );
   }
 
-  /* Render final : l'écran courant + la nav bar globale toujours visible
-     (sauf en mode immersif chat/galerie/scanner). */
+  /* Render final : l'écran courant + la nav bar globale.
+     La nav est TOUJOURS rendue (pas de unmount) pour éviter qu'elle
+     "saute" visuellement quand on quitte un écran secondaire. Elle est
+     juste masquée via opacity+pointer-events quand hideGlobalNav=true.
+     Avantage : sa position fixe (bottom:0) est stable, et pas de
+     re-mount qui déclenche un repaint visible. */
   return (
     <>
       {screenContent}
-      {!hideGlobalNav && <BottomNavBar tab={tab} setTab={switchTab}/>}
+      <div style={{
+        opacity: hideGlobalNav ? 0 : 1,
+        visibility: hideGlobalNav ? "hidden" : "visible",
+        pointerEvents: hideGlobalNav ? "none" : "auto",
+        transition: "opacity 0.12s ease",
+      }}>
+        <BottomNavBar tab={tab} setTab={switchTab}/>
+      </div>
     </>
   );
 }

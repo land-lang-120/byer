@@ -277,11 +277,11 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
         ))}
       </div>
 
-      {/* Bouton Déconnexion — au tout fond du profil (avant le padding nav).
-          Style distinct (rouge clair, icône logout) pour être identifié comme
-          action de fin / sortie. Demande explicite Pino : visibilité directe
-          sans devoir entrer dans Paramètres. */}
-      <div style={{padding:"4px 16px 28px"}}>
+      {/* Bouton Déconnexion — au tout fond du profil, BIEN détaché du
+          contenu au-dessus pour être perçu comme une action de sortie
+          plutôt qu'une simple option. Padding-top important pour créer
+          un espace clair, padding-bottom = espace nav + safe area. */}
+      <div style={{padding:"56px 16px 100px"}}>
         <button
           onClick={() => {
             if (typeof onLogout === "function") onLogout();

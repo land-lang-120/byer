@@ -64,7 +64,6 @@ const CHILD_ENTITIES_BY_TYPE = {
     { id:"cuisine",   label:"Cuisine",     emoji:"🍳", default:1, max:3,  force:false },
     { id:"douche",    label:"Douche/SdB",  emoji:"🚿", default:2, max:10, force:false },
     { id:"buanderie", label:"Buanderie",   emoji:"🧺", default:1, max:3,  force:false },
-    { id:"garage",    label:"Garage",      emoji:"🚙", default:1, max:5,  force:false },
     { id:"terrasse",  label:"Terrasse",    emoji:"🌅", default:1, max:3,  force:false },
   ],
   immeuble: [
@@ -73,7 +72,6 @@ const CHILD_ENTITIES_BY_TYPE = {
     { id:"chambre",     label:"Chambre",     emoji:"🛏️", default:0, max:100, force:false },
     { id:"magasin",     label:"Magasin",     emoji:"📦", default:0, max:100, force:false },
     { id:"buanderie",   label:"Buanderie",   emoji:"🧺", default:0, max:100, force:false },
-    { id:"garage",      label:"Garage",      emoji:"🚙", default:0, max:100, force:false },
   ],
   hotel: [
     { id:"chambre", label:"Chambre", emoji:"🛏️", default:1, max:300, force:true },
@@ -91,7 +89,6 @@ const CHILD_ENTITIES_BY_TYPE = {
     { id:"douche",    label:"Douche/SdB",   emoji:"🚿", default:1, max:5,  force:false },
     { id:"magasin",   label:"Magasin",      emoji:"📦", default:0, max:3,  force:false },
     { id:"buanderie", label:"Buanderie",    emoji:"🧺", default:0, max:2,  force:false },
-    { id:"garage",    label:"Garage",       emoji:"🚙", default:0, max:2,  force:false },
     { id:"balcon",    label:"Balcon privé", emoji:"🪟", default:0, max:3,  force:false },
   ],
   studio: [
@@ -100,14 +97,12 @@ const CHILD_ENTITIES_BY_TYPE = {
     { id:"douche",    label:"Douche/SdB",   emoji:"🚿", default:1, max:2, force:false },
     { id:"magasin",   label:"Magasin",      emoji:"📦", default:0, max:2, force:false },
     { id:"buanderie", label:"Buanderie",    emoji:"🧺", default:0, max:1, force:false },
-    { id:"garage",    label:"Garage",       emoji:"🚙", default:0, max:2, force:false },
     { id:"balcon",    label:"Balcon privé", emoji:"🪟", default:0, max:2, force:false },
   ],
   chambre: [
     { id:"douche",    label:"Douche",     emoji:"🚿", default:1, max:2, force:true },
     { id:"buanderie", label:"Buanderie",  emoji:"🧺", default:0, max:1, force:false },
     { id:"gardien",   label:"Gardien",    emoji:"👮", default:0, max:1, force:false },
-    { id:"garage",    label:"Garage",     emoji:"🚙", default:0, max:1, force:false },
   ],
 };
 
@@ -351,9 +346,19 @@ function PublishScreen({ onBack, initialSegment }) {
           continue;
         }
         const dataUrl = await compressImage(f);
-        compressed.push(dataUrl);
+        /* Photo = objet {src, tag}.
+           Tag par défaut = "exterior" pour la 1ère photo (vue de face),
+           null pour les suivantes — l'utilisateur choisit ensuite */
+        compressed.push({ src: dataUrl, tag: null });
       }
-      setForm(p => ({ ...p, photos: [...p.photos, ...compressed] }));
+      setForm(p => {
+        const startIdx = p.photos.length;
+        const tagged = compressed.map((ph, i) => ({
+          ...ph,
+          tag: (startIdx + i === 0) ? "exterior" : null,
+        }));
+        return { ...p, photos: [...p.photos, ...tagged] };
+      });
       if (skipped > 0) setUploadError(`${skipped} photo(s) ignorée(s) — limite de 10 atteinte.`);
     } catch (err) {
       setUploadError("Erreur lors du chargement d'une photo. Réessayez.");
@@ -372,6 +377,57 @@ function PublishScreen({ onBack, initialSegment }) {
       arr.unshift(moved);
       return { ...p, photos: arr };
     });
+  };
+
+  /* Définit / change le tag d'une photo (vue ext, pièce, etc.) */
+  const setPhotoTag = (idx, tagId) => {
+    setForm(p => ({
+      ...p,
+      photos: p.photos.map((ph, i) => i === idx ? { ...ph, tag: tagId || null } : ph),
+    }));
+  };
+
+  /* Génère la liste des tags disponibles pour ce buildingType + composition.
+     Tag = identifiant unique + label lisible.
+     Logique :
+     - Toujours : "Vue extérieure / façade" (entité mère)
+     - Pour chaque entité fille avec count > 0 :
+       - count = 1 → un tag "[Entité]"
+       - count > 1 → N tags "[Entité] 1", "[Entité] 2", ...
+     - Pour les véhicules : intérieur, moteur, coffre, etc. */
+  const computePhotoTags = () => {
+    const tags = [];
+    if (form.segment === "property") {
+      const cat = BUILDING_TYPES.find(b => b.id === form.buildingType);
+      tags.push({ id: "exterior", label: `🏞️ Vue extérieure ${cat ? "("+cat.label.toLowerCase()+")" : ""}`.trim() });
+      const ents = CHILD_ENTITIES_BY_TYPE[form.buildingType] || [];
+      ents.forEach(meta => {
+        const ent = form.childEntities[meta.id];
+        if (!ent || ent.count === 0) return;
+        if (ent.count === 1) {
+          tags.push({ id: `${meta.id}-0`, label: `${meta.emoji} ${meta.label}` });
+        } else {
+          for (let i = 0; i < ent.count; i++) {
+            tags.push({ id: `${meta.id}-${i}`, label: `${meta.emoji} ${meta.label} ${i+1}` });
+          }
+        }
+      });
+    } else {
+      tags.push(
+        { id: "exterior",    label: "🚗 Vue extérieure"   },
+        { id: "interior",    label: "🪑 Intérieur"        },
+        { id: "dashboard",   label: "🎛️ Tableau de bord" },
+        { id: "trunk",       label: "🧳 Coffre"           },
+        { id: "engine",      label: "⚙️ Moteur"           },
+      );
+    }
+    return tags;
+  };
+  const PHOTO_TAGS = computePhotoTags();
+  const tagLabelOf = (tagId) => {
+    if (!tagId) return null;
+    const t = PHOTO_TAGS.find(x => x.id === tagId);
+    return t ? t.label : tagId;
   };
 
   /* Équipements véhicule */
@@ -478,7 +534,9 @@ function PublishScreen({ onBack, initialSegment }) {
 
       // Upload des photos (max 10) en parallèle
       if (form.photos && form.photos.length > 0) {
-        const uploads = form.photos.map(async (dataUrl, idx) => {
+        const uploads = form.photos.map(async (photo, idx) => {
+          const dataUrl = photo.src || photo;   // compat anciennes données
+          const tag     = photo.tag || null;
           try {
             const file = await dataUrlToFile(dataUrl, `photo-${idx + 1}.jpg`);
             const { data: up, error: eu } = await db.storage.uploadPhoto(file, listing.id);
@@ -487,6 +545,7 @@ function PublishScreen({ onBack, initialSegment }) {
               listing_id: listing.id,
               url:        up.url,
               position:   idx,
+              tag:        tag,   // ex: "chambre-2", "exterior", "appartement-0"
             });
             return up.url;
           } catch (err) {
@@ -1023,58 +1082,96 @@ function PublishScreen({ onBack, initialSegment }) {
                 onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
               />
 
+              {/* Conseil de prise de vue : aide à comprendre quoi photographier */}
+              <div style={{background:"#FFF8E1",border:"1px solid #FFE082",borderRadius:12,padding:"10px 12px",marginBottom:14}}>
+                <p style={{fontSize:11,color:"#7A5500",lineHeight:1.5,fontFamily:"'DM Sans',sans-serif"}}>
+                  📸 <strong>Conseil :</strong> commencez par une photo de la <strong>vue extérieure</strong> (façade), puis prenez une photo de chaque <strong>pièce / unité</strong> ({form.segment === "property" ? "séjour, chambres, douches…" : "intérieur, tableau de bord, coffre…"}). Pour chaque photo, étiquetez ci-dessous l'endroit montré.
+                </p>
+              </div>
+
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-                {form.photos.map((src, i) => (
-                  <div key={i} style={{
-                    position:"relative",
-                    height:120,borderRadius:16,overflow:"hidden",
-                    border: i === 0 ? `2px solid ${C.coral}` : `1.5px solid ${C.border}`,
-                    background:C.bg,
-                  }}>
-                    <img src={src} alt={`Photo ${i+1}`} style={{
-                      width:"100%",height:"100%",objectFit:"cover",display:"block",
-                    }}/>
-                    {i === 0 && (
-                      <span style={{
-                        position:"absolute",top:6,left:6,
-                        background:C.coral,color:C.white,
-                        fontSize:10,fontWeight:700,
-                        padding:"3px 8px",borderRadius:8,
-                        fontFamily:"'DM Sans',sans-serif",
-                      }}>Principale</span>
-                    )}
-                    {i !== 0 && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); movePhotoToFirst(i); }}
-                        title="Définir comme principale"
+                {form.photos.map((photo, i) => {
+                  const src = photo.src || photo;   // compat si jamais string
+                  const tag = photo.tag || null;
+                  return (
+                    <div key={i} style={{
+                      borderRadius:16,
+                      border: i === 0 ? `2px solid ${C.coral}` : `1.5px solid ${C.border}`,
+                      background:C.white,
+                      overflow:"hidden",
+                      display:"flex",flexDirection:"column",
+                    }}>
+                      {/* Image */}
+                      <div style={{position:"relative",height:108,background:C.bg}}>
+                        <img src={src} alt={`Photo ${i+1}`} style={{
+                          width:"100%",height:"100%",objectFit:"cover",display:"block",
+                        }}/>
+                        {i === 0 && (
+                          <span style={{
+                            position:"absolute",top:6,left:6,
+                            background:C.coral,color:C.white,
+                            fontSize:9,fontWeight:700,
+                            padding:"3px 7px",borderRadius:8,
+                            fontFamily:"'DM Sans',sans-serif",
+                          }}>Principale</span>
+                        )}
+                        {i !== 0 && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); movePhotoToFirst(i); }}
+                            title="Définir comme principale"
+                            style={{
+                              position:"absolute",top:6,left:6,
+                              background:"rgba(0,0,0,0.6)",color:C.white,
+                              fontSize:9,fontWeight:600,
+                              padding:"3px 7px",borderRadius:8,
+                              border:"none",cursor:"pointer",
+                              fontFamily:"'DM Sans',sans-serif",
+                            }}
+                          >★</button>
+                        )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removePhoto(i); }}
+                          title="Supprimer"
+                          style={{
+                            position:"absolute",top:6,right:6,
+                            width:24,height:24,borderRadius:12,
+                            background:"rgba(0,0,0,0.65)",color:C.white,
+                            border:"none",cursor:"pointer",
+                            display:"flex",alignItems:"center",justifyContent:"center",
+                            fontSize:13,fontWeight:700,lineHeight:1,
+                          }}
+                        >×</button>
+                      </div>
+                      {/* Sélecteur de tag — précise quel endroit la photo montre */}
+                      <select
+                        value={tag || ""}
+                        onChange={(e) => setPhotoTag(i, e.target.value)}
                         style={{
-                          position:"absolute",top:6,left:6,
-                          background:"rgba(0,0,0,0.6)",color:C.white,
+                          border:"none",borderTop:`1px solid ${C.border}`,
+                          background: tag ? "#FFF5F5" : C.bg,
+                          color: tag ? C.coral : C.mid,
                           fontSize:10,fontWeight:600,
-                          padding:"3px 8px",borderRadius:8,
-                          border:"none",cursor:"pointer",
+                          padding:"6px 6px",
                           fontFamily:"'DM Sans',sans-serif",
+                          cursor:"pointer",
+                          outline:"none",
+                          width:"100%",
+                          appearance:"none",
+                          textAlign:"center",
                         }}
-                      >★ Principale</button>
-                    )}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); removePhoto(i); }}
-                      title="Supprimer"
-                      style={{
-                        position:"absolute",top:6,right:6,
-                        width:26,height:26,borderRadius:13,
-                        background:"rgba(0,0,0,0.65)",color:C.white,
-                        border:"none",cursor:"pointer",
-                        display:"flex",alignItems:"center",justifyContent:"center",
-                        fontSize:14,fontWeight:700,lineHeight:1,
-                      }}
-                    >×</button>
-                  </div>
-                ))}
+                      >
+                        <option value="">📍 Étiqueter…</option>
+                        {PHOTO_TAGS.map(t => (
+                          <option key={t.id} value={t.id}>{t.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
 
                 {form.photos.length < 10 && (
                   <label htmlFor="byer-photo-input" style={{
-                    height:120,borderRadius:16,
+                    minHeight:140,borderRadius:16,
                     border:`2px dashed ${form.photos.length === 0 ? C.coral : C.border}`,
                     background: form.photos.length === 0 ? "#FFF5F5" : C.bg,
                     display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,
@@ -1095,6 +1192,27 @@ function PublishScreen({ onBack, initialSegment }) {
                   <p style={{fontSize:12,color:"#B91C1C",fontFamily:"'DM Sans',sans-serif"}}>{uploadError}</p>
                 </div>
               )}
+
+              {/* Indicateur de couverture des entités filles : montre les
+                  pièces/unités déjà photographiées et celles encore sans photo */}
+              {form.segment === "property" && form.photos.length > 0 && (() => {
+                const taggedIds = new Set(form.photos.map(p => p.tag).filter(Boolean));
+                const missing = PHOTO_TAGS.filter(t => !taggedIds.has(t.id));
+                if (PHOTO_TAGS.length === 0) return null;
+                return (
+                  <div style={{background:C.bg,borderRadius:12,padding:"10px 12px",marginBottom:14}}>
+                    <p style={{fontSize:11,fontWeight:700,color:C.mid,marginBottom:6,textTransform:"uppercase",letterSpacing:.4}}>
+                      Couverture
+                    </p>
+                    <p style={{fontSize:11,color: missing.length === 0 ? "#0A8754" : C.mid,lineHeight:1.5}}>
+                      {missing.length === 0
+                        ? "✓ Toutes les pièces / unités ont au moins une photo."
+                        : <>📷 Encore à photographier : {missing.slice(0,5).map(t => t.label.replace(/^[^\s]+\s/,"")).join(" · ")}{missing.length > 5 ? ` +${missing.length-5} autres` : ""}</>
+                      }
+                    </p>
+                  </div>
+                );
+              })()}
 
               <div style={{background:C.bg,borderRadius:12,padding:"12px 14px",marginBottom:20}}>
                 <p style={{fontSize:12,color:C.mid,lineHeight:1.6,fontFamily:"'DM Sans',sans-serif"}}>
@@ -1119,7 +1237,7 @@ function PublishScreen({ onBack, initialSegment }) {
 
               {form.photos.length > 0 && (
                 <div style={{borderRadius:16,overflow:"hidden",marginBottom:14,position:"relative",height:170}}>
-                  <img src={form.photos[0]} alt="Principale" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+                  <img src={form.photos[0].src || form.photos[0]} alt="Principale" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
                   {form.photos.length > 1 && (
                     <span style={{
                       position:"absolute",bottom:8,right:8,
@@ -1128,6 +1246,38 @@ function PublishScreen({ onBack, initialSegment }) {
                       padding:"4px 10px",borderRadius:10,
                       fontFamily:"'DM Sans',sans-serif",
                     }}>+{form.photos.length - 1} photos</span>
+                  )}
+                  {form.photos[0].tag && tagLabelOf(form.photos[0].tag) && (
+                    <span style={{
+                      position:"absolute",top:8,left:8,
+                      background:"rgba(0,0,0,0.65)",color:C.white,
+                      fontSize:10,fontWeight:600,
+                      padding:"4px 8px",borderRadius:8,
+                      fontFamily:"'DM Sans',sans-serif",
+                    }}>{tagLabelOf(form.photos[0].tag)}</span>
+                  )}
+                </div>
+              )}
+
+              {/* Récap des étiquettes photo si l'annonce en a */}
+              {form.photos.some(p => p.tag) && (
+                <div style={{background:C.white,border:`1.5px solid ${C.border}`,borderRadius:14,padding:"10px 12px",marginBottom:14}}>
+                  <p style={{fontSize:11,fontWeight:700,color:C.dark,marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
+                    <span>📸</span> Photos étiquetées
+                  </p>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                    {form.photos.map((p, i) => p.tag ? (
+                      <span key={i} style={{
+                        fontSize:10,padding:"3px 7px",borderRadius:10,
+                        background:C.bg,color:C.dark,
+                        fontFamily:"'DM Sans',sans-serif",
+                      }}>#{i+1} → {tagLabelOf(p.tag)}</span>
+                    ) : null)}
+                  </div>
+                  {form.photos.some(p => !p.tag) && (
+                    <p style={{fontSize:10,color:C.light,marginTop:6,fontStyle:"italic"}}>
+                      {form.photos.filter(p => !p.tag).length} photo(s) sans étiquette
+                    </p>
                   )}
                 </div>
               )}
