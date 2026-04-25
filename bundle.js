@@ -678,12 +678,14 @@ const DURATION_OPTS = {
     id: "month",
     label: "Mois"
   }],
-  vehicle: [{
+  vehicle: [
+  /* Option "Semaine" retirée : prend trop de place dans le toggle home
+     et rend les chips invisibles sur petits écrans. La logique de calcul
+     hebdomadaire reste dans le code pour compat ascendante mais n'est
+     plus exposée à l'utilisateur. */
+  {
     id: "day",
     label: "Jour"
-  }, {
-    id: "week",
-    label: "Semaine"
   }, {
     id: "month",
     label: "Mois"
@@ -22703,7 +22705,9 @@ const newVariantId = () => `v${Date.now().toString(36)}-${_variantIdCounter++}`;
    par défaut. L'utilisateur peut ensuite :
    - augmenter le count si toutes les unités sont identiques (duplication)
    - ajouter d'autres variantes si certaines unités ont une compo différente
-   - supprimer une variante */
+   - supprimer une variante
+   Chaque variante a aussi sa propre liste d'amenities (équipements
+   spécifiques à l'unité, distincts des équipements communs du bâtiment). */
 const buildUnitsConfig = buildingType => {
   const bt = BUILDING_TYPES.find(b => b.id === buildingType);
   if (!bt) return {};
@@ -22714,12 +22718,25 @@ const buildUnitsConfig = buildingType => {
       variants: [{
         id: newVariantId(),
         count: 1,
-        rooms: DEFAULT_ROOMS(u.id)
+        rooms: DEFAULT_ROOMS(u.id),
+        amenities: []
       }]
     };
   });
   return cfg;
 };
+
+/* ─── ÉQUIPEMENTS DUAL-NIVEAU ──────────────────────
+   - Équipements communs (BUILDING) : partagés par toutes les unités du bâtiment
+     (piscine commune, ascenseur, gardien, parking sécurisé, salle de sport
+     du complexe…). À cocher au niveau de l'annonce/bâtiment.
+   - Équipements par unité (UNIT) : propres à chaque appartement / chambre /
+     studio individuel (WiFi privé, climatisé, smart TV, cuisine équipée,
+     eau chaude…). Cochés sur chaque variante.
+   Cette séparation permet à un immeuble d'avoir une piscine commune ET à
+   chaque appartement d'avoir son propre WiFi/clim/etc. */
+const BUILDING_AMENITY_OPTIONS = ["Piscine commune", "Salle de sport", "Ascenseur", "Gardien 24/7", "Parking sécurisé", "Terrasse commune", "Buanderie commune", "Jardin", "BBQ", "Groupe électrogène", "Réception", "Vidéosurveillance"];
+const UNIT_AMENITY_OPTIONS = ["WiFi", "Climatisé", "Eau chaude", "Cuisine équipée", "Smart TV", "Vue mer", "Balcon privé", "Coffre-fort", "Room service", "Petit-déj", "Mini-bar", "Sèche-cheveux"];
 
 /* ─── PUBLISH SCREEN ─────────────────────────────── */
 function PublishScreen({
@@ -22746,6 +22763,11 @@ function PublishScreen({
     title: "",
     city: "Douala",
     zone: "",
+    /* buildingAmenities : équipements communs au bâtiment entier
+       (piscine, ascenseur, gardien…) — ne s'applique qu'aux logements.
+       Distinct de variant.amenities qui est par-unité. */
+    buildingAmenities: [],
+    /* amenities : conservé pour les véhicules (équipements uniques) */
     amenities: [],
     nightPrice: "",
     monthPrice: "",
@@ -22862,6 +22884,39 @@ function PublishScreen({
       };
     });
   };
+  /* Toggle équipement commun au bâtiment */
+  const toggleBuildingAmenity = a => {
+    setForm(p => ({
+      ...p,
+      buildingAmenities: p.buildingAmenities.includes(a) ? p.buildingAmenities.filter(x => x !== a) : [...p.buildingAmenities, a]
+    }));
+  };
+  /* Toggle équipement spécifique à une variante */
+  const toggleVariantAmenity = (subId, variantId, a) => {
+    setForm(p => {
+      const sub = p.unitsConfig[subId];
+      if (!sub) return p;
+      const newVariants = sub.variants.map(v => {
+        if (v.id !== variantId) return v;
+        const has = (v.amenities || []).includes(a);
+        const newAmens = has ? v.amenities.filter(x => x !== a) : [...(v.amenities || []), a];
+        return {
+          ...v,
+          amenities: newAmens
+        };
+      });
+      return {
+        ...p,
+        unitsConfig: {
+          ...p.unitsConfig,
+          [subId]: {
+            ...sub,
+            variants: newVariants
+          }
+        }
+      };
+    });
+  };
 
   /* Compresser une image avant stockage (resize max 1200px, JPEG 0.8) */
   const compressImage = file => new Promise((resolve, reject) => {
@@ -22944,8 +22999,13 @@ function PublishScreen({
       };
     });
   };
-  const AMENITY_OPTIONS = ["WiFi", "Climatisé", "Parking", "Piscine", "Vue mer", "Terrasse", "Cuisine équipée", "Eau chaude", "Gardien", "Groupe électrogène", "Smart TV", "Room service", "Petit-déj", "Jardin", "BBQ"];
+
+  /* Équipements véhicule (la liste property est splittée en 2 :
+     BUILDING_AMENITY_OPTIONS au niveau bâtiment + UNIT_AMENITY_OPTIONS
+     par variante — voir constantes en haut du fichier). */
   const VEHICLE_AMENITIES = ["GPS", "Climatisé", "Bluetooth", "4×4", "Chauffeur", "Wifi embarqué", "Siège bébé", "Coffre grand", "Luxe"];
+
+  /* Toggle pour véhicules uniquement (utilise form.amenities). */
   const toggleAmenity = a => {
     setForm(p => ({
       ...p,
@@ -23029,10 +23089,26 @@ function PublishScreen({
         brand: isVehicle ? (form.brand || "").trim() || null : null,
         fuel: isVehicle ? form.fuel : null,
         transmission: isVehicle ? form.trans : null,
-        amenities: Array.isArray(form.amenities) ? form.amenities : [],
+        /* Pour les véhicules : form.amenities (liste plate).
+           Pour les logements : on agrège équipements communs +
+           équipements uniques de toutes les variantes (dédoublonnés)
+           dans le champ amenities pour rester compatible avec les requêtes
+           legacy de filtrage; la granularité est conservée dans units_config
+           et building_amenities. */
+        amenities: isVehicle ? Array.isArray(form.amenities) ? form.amenities : [] : (() => {
+          const set = new Set(form.buildingAmenities || []);
+          Object.values(form.unitsConfig || {}).forEach(sub => {
+            (sub.variants || []).forEach(v => {
+              (v.amenities || []).forEach(a => set.add(a));
+            });
+          });
+          return Array.from(set);
+        })(),
+        building_amenities: isVehicle ? null : form.buildingAmenities || [],
         /* Compo détaillée par unité — stockée en JSON pour conserver la
-           granularité des variantes et pièces. Le backend peut l'ignorer
-           sans casser, ou la persister selon le schéma listings. */
+           granularité des variantes, pièces et amenities par variante.
+           Le backend peut l'ignorer sans casser, ou la persister selon
+           le schéma listings. */
         units_config: isVehicle ? null : form.unitsConfig,
         is_active: true
       };
@@ -23547,7 +23623,8 @@ function PublishScreen({
         style: {
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
-          gap: 5
+          gap: 5,
+          marginBottom: 10
         }
       }, ROOM_FIELDS.map(r => {
         const v = vrt.rooms[r.k] || 0;
@@ -23628,6 +23705,46 @@ function PublishScreen({
             padding: 0
           }
         }, "+")));
+      })), /*#__PURE__*/React.createElement("p", {
+        style: {
+          fontSize: 10,
+          fontWeight: 600,
+          color: C.mid,
+          marginBottom: 6,
+          textTransform: "uppercase",
+          letterSpacing: .4
+        }
+      }, "\xC9quipements de cette unit\xE9"), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 5
+        }
+      }, UNIT_AMENITY_OPTIONS.map(a => {
+        const on = (vrt.amenities || []).includes(a);
+        return /*#__PURE__*/React.createElement("button", {
+          key: a,
+          onClick: () => toggleVariantAmenity(u.id, vrt.id, a),
+          style: {
+            padding: "4px 9px",
+            borderRadius: 14,
+            cursor: "pointer",
+            border: on ? `1.5px solid ${C.coral}` : `1px solid ${C.border}`,
+            background: on ? "#FFF5F5" : C.bg,
+            fontSize: 10,
+            fontWeight: 600,
+            fontFamily: "'DM Sans',sans-serif",
+            color: on ? C.coral : C.mid,
+            display: "flex",
+            alignItems: "center",
+            gap: 3
+          }
+        }, on && /*#__PURE__*/React.createElement(Icon, {
+          name: "check",
+          size: 9,
+          color: C.coral,
+          stroke: 2.5
+        }), a);
       }))))));
     }));
   })(), form.segment === "vehicle" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
@@ -23784,21 +23901,70 @@ function PublishScreen({
       color: C.light,
       marginTop: 3
     }
-  }, "Laisser vide si non disponible au mois"))), /*#__PURE__*/React.createElement("p", {
+  }, "Laisser vide si non disponible au mois"))), form.segment === "property" ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 13,
-      fontWeight: 600,
+      fontWeight: 700,
       color: C.dark,
-      marginBottom: 8
+      marginBottom: 4,
+      display: "flex",
+      alignItems: "center",
+      gap: 6
     }
-  }, form.segment === "property" ? "Équipements" : "Caractéristiques"), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", null, "\uD83C\uDFD7\uFE0F"), " \xC9quipements communs au b\xE2timent"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: C.light,
+      marginBottom: 10,
+      lineHeight: 1.5
+    }
+  }, "Partag\xE9s par toutes les unit\xE9s (piscine commune, ascenseur, gardien, parking\u2026). Les \xE9quipements propres \xE0 chaque unit\xE9 (WiFi, clim\u2026) ont \xE9t\xE9 d\xE9finis \xE0 l'\xE9tape pr\xE9c\xE9dente."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexWrap: "wrap",
       gap: 8,
       marginBottom: 24
     }
-  }, (form.segment === "property" ? AMENITY_OPTIONS : VEHICLE_AMENITIES).map(a => {
+  }, BUILDING_AMENITY_OPTIONS.map(a => {
+    const on = form.buildingAmenities.includes(a);
+    return /*#__PURE__*/React.createElement("button", {
+      key: a,
+      onClick: () => toggleBuildingAmenity(a),
+      style: {
+        padding: "7px 13px",
+        borderRadius: 20,
+        cursor: "pointer",
+        border: on ? `1.5px solid ${C.coral}` : `1.5px solid ${C.border}`,
+        background: on ? "#FFF5F5" : C.white,
+        fontSize: 12,
+        fontWeight: 600,
+        fontFamily: "'DM Sans',sans-serif",
+        color: on ? C.coral : C.mid,
+        display: "flex",
+        alignItems: "center",
+        gap: 4
+      }
+    }, on && /*#__PURE__*/React.createElement(Icon, {
+      name: "check",
+      size: 12,
+      color: C.coral,
+      stroke: 2.5
+    }), a);
+  }))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: C.dark,
+      marginBottom: 8
+    }
+  }, "Caract\xE9ristiques"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 8,
+      marginBottom: 24
+    }
+  }, VEHICLE_AMENITIES.map(a => {
     const on = form.amenities.includes(a);
     return /*#__PURE__*/React.createElement("button", {
       key: a,
@@ -23823,7 +23989,7 @@ function PublishScreen({
       color: C.coral,
       stroke: 2.5
     }), a);
-  })), /*#__PURE__*/React.createElement("button", {
+  }))), /*#__PURE__*/React.createElement("button", {
     style: {
       ...S.payBtn,
       opacity: form.nightPrice ? 1 : .5
@@ -24102,17 +24268,51 @@ function PublishScreen({
         }
       }, u.label, " (", subTotal, ")"), sub.variants.filter(v => v.count > 0).map((vrt, i) => {
         const roomSummary = ROOM_FIELDS.filter(r => (vrt.rooms[r.k] || 0) > 0).map(r => `${vrt.rooms[r.k]} ${r.label.toLowerCase()}`).join(" · ") || "Aucune pièce détaillée";
-        return /*#__PURE__*/React.createElement("p", {
+        const amens = vrt.amenities || [];
+        return /*#__PURE__*/React.createElement("div", {
           key: vrt.id,
+          style: {
+            marginBottom: 4
+          }
+        }, /*#__PURE__*/React.createElement("p", {
           style: {
             fontSize: 11,
             color: C.mid,
-            lineHeight: 1.5,
-            marginBottom: 2
+            lineHeight: 1.5
           }
-        }, /*#__PURE__*/React.createElement("strong", null, "\xD7", vrt.count), " \u2014 ", roomSummary);
+        }, /*#__PURE__*/React.createElement("strong", null, "\xD7", vrt.count), " \u2014 ", roomSummary), amens.length > 0 && /*#__PURE__*/React.createElement("p", {
+          style: {
+            fontSize: 10,
+            color: C.light,
+            lineHeight: 1.4,
+            marginTop: 1,
+            paddingLeft: 14
+          }
+        }, "\uD83D\uDD27 ", amens.join(" · ")));
       }));
-    }));
+    }), form.buildingAmenities.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        paddingTop: 8,
+        marginTop: 6,
+        borderTop: `1px dashed ${C.border}`
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: C.dark,
+        marginBottom: 4,
+        display: "flex",
+        alignItems: "center",
+        gap: 4
+      }
+    }, "\uD83C\uDFD7\uFE0F \xC9quipements communs"), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        color: C.mid,
+        lineHeight: 1.5
+      }
+    }, form.buildingAmenities.join(" · "))));
   })(), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.bg,
@@ -24150,10 +24350,10 @@ function PublishScreen({
   }, {
     l: "Boîte",
     v: form.trans
-  }]), {
+  }]), ...(form.segment === "vehicle" ? [{
     l: "Équipements",
     v: form.amenities.length > 0 ? form.amenities.join(", ") : "Aucun"
-  }, {
+  }] : []), {
     l: "Photos",
     v: `${form.photos.length} ajoutée(s)`
   }].map(row => /*#__PURE__*/React.createElement("div", {

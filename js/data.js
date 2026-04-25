@@ -32,9 +32,12 @@ const DURATION_OPTS = {
     { id:"month", label:"Mois" },
   ],
   vehicle: [
-    { id:"day",   label:"Jour"    },
-    { id:"week",  label:"Semaine" },
-    { id:"month", label:"Mois"    },
+    /* Option "Semaine" retirée : prend trop de place dans le toggle home
+       et rend les chips invisibles sur petits écrans. La logique de calcul
+       hebdomadaire reste dans le code pour compat ascendante mais n'est
+       plus exposée à l'utilisateur. */
+    { id:"day",   label:"Jour" },
+    { id:"month", label:"Mois" },
   ],
 };
 
