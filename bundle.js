@@ -30575,6 +30575,47 @@ function ByerApp({
     setTab(newTab);
   };
 
+  /* ── Gestion du bouton "Retour" système (Android, navigateur PC) ──
+     Le bouton back natif ne doit PAS quitter l'app quand l'utilisateur
+     est dans un écran secondaire. Stratégie :
+     - Au montage : on tag la 1ère entry du history du navigateur comme
+       "ancre" (sans en créer une nouvelle).
+     - Quand un écran secondaire s'ouvre : on push une entry "overlay"
+       qui sera consommée par le back système.
+     - Au popstate (back système) :
+       - Si un écran secondaire est actif → on ferme tous les overlays et
+         on revient à l'onglet principal courant. On re-push une ancre pour
+         que l'app ne quitte pas au prochain back immédiat.
+       - Sinon → comportement natif (l'app quitte, comme attendu). */
+  const onSecondaryScreenRef = React.useRef(false);
+
+  // Mount-once: anchor + popstate listener (ne re-bind jamais grâce au ref)
+  React.useEffect(() => {
+    try {
+      const cur = window.history.state || {};
+      if (!cur._byerAnchor) {
+        window.history.replaceState({
+          ...cur,
+          _byerAnchor: true
+        }, "");
+      }
+    } catch (_) {}
+    const onPop = () => {
+      if (onSecondaryScreenRef.current) {
+        closeAllOverlays();
+        // Re-push une ancre pour rester dans l'app
+        try {
+          window.history.pushState({
+            _byerAnchor: true
+          }, "");
+        } catch (_) {}
+      }
+      // Sinon, pop naturel : on est sur un onglet principal → l'app quitte
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   /* Hide nav bar dans certains contextes immersifs :
      - Conversation chat (UX plein écran)
      - Galerie photo plein écran
@@ -30583,6 +30624,27 @@ function ByerApp({
        → la nav bar ne doit apparaître QUE sur les 5 onglets principaux. */
   const onSecondaryScreen = !!detail || !!gallery || !!allReviewsItem || rentOpen || !!ownerProfile || !!buildingDetail || dashboardOpen || !!listAllFilter || techsOpen || prosOpen || boostOpen || notifsOpen || publishOpen || settingsOpen || termsOpen || privacyOpen || forgotOpen || supportOpen || editProfileOpen || !!bookingItem || reviewsOpen || historyOpen;
   const hideGlobalNav = chatActive || !!gallery || qrScanOpen || onSecondaryScreen;
+
+  /* Synchronise le ref avec onSecondaryScreen (lu par popstate listener) */
+  React.useEffect(() => {
+    onSecondaryScreenRef.current = onSecondaryScreen;
+  }, [onSecondaryScreen]);
+
+  /* Push une entry "overlay" à chaque transition vers un écran secondaire.
+     Cette entry sera consommée par le bouton back système — qui déclenchera
+     popstate, qui appellera closeAllOverlays() et reviendra à l'onglet. */
+  React.useEffect(() => {
+    if (onSecondaryScreen) {
+      try {
+        const cur = window.history.state || {};
+        if (!cur._byerOverlay) {
+          window.history.pushState({
+            _byerOverlay: true
+          }, "");
+        }
+      } catch (_) {}
+    }
+  }, [onSecondaryScreen]);
 
   /* renderScreen : sélectionne l'écran courant. Une seule sortie pour
      que le nav bar soit toujours rendu en dessous (au niveau racine). */
