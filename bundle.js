@@ -6027,7 +6027,30 @@ function LoginScreen({
       fontFamily: "'DM Sans',sans-serif"
     },
     onClick: onSignup
-  }, "Cr\xE9er un compte"))));
+  }, "Cr\xE9er un compte")), /*#__PURE__*/React.createElement("button", {
+    onClick: onLogin,
+    style: {
+      background: "none",
+      border: `1.5px dashed ${C.border}`,
+      width: "100%",
+      padding: "13px",
+      borderRadius: 14,
+      marginTop: 18,
+      fontSize: 13,
+      fontWeight: 600,
+      color: C.mid,
+      cursor: "pointer",
+      fontFamily: "'DM Sans',sans-serif",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 14
+    }
+  }, "\uD83D\uDC40"), "D\xE9couvrir l'app sans compte")));
 }
 
 /* ─── SIGNUP ─────────────────────────────────────── */
