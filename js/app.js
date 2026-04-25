@@ -53,6 +53,11 @@ function adaptListing(row) {
 
 /* ═══════════════════════════════════════════════════ */
 function ByerApp({ onLogout }) {
+  /* i18n : tick d'invalidation. Quand la langue change dans Settings,
+     ce hook bump un counter, ce qui re-rend ByerApp et toute sa
+     descendance avec les nouvelles traductions via t(). */
+  window.byerI18n.useLangTick();
+
   const [tab, setTab]           = useState("home");
   const [segment, setSegment]   = useState("property");
   const [propType, setPropType] = useState("all");
@@ -258,8 +263,15 @@ function ByerApp({ onLogout }) {
   /* Hide nav bar dans certains contextes immersifs :
      - Conversation chat (UX plein écran)
      - Galerie photo plein écran
-     - Scanner QR overlay (caméra plein écran) */
-  const hideGlobalNav = chatActive || !!gallery || qrScanOpen;
+     - Scanner QR overlay (caméra plein écran)
+     - TOUT écran secondaire (Settings, Publish, Dashboard, Detail, etc.)
+       → la nav bar ne doit apparaître QUE sur les 5 onglets principaux. */
+  const onSecondaryScreen = !!detail || !!gallery || !!allReviewsItem
+    || rentOpen || !!ownerProfile || !!buildingDetail || dashboardOpen
+    || !!listAllFilter || techsOpen || prosOpen || boostOpen || notifsOpen
+    || publishOpen || settingsOpen || termsOpen || privacyOpen || forgotOpen
+    || supportOpen || editProfileOpen || !!bookingItem || reviewsOpen || historyOpen;
+  const hideGlobalNav = chatActive || !!gallery || qrScanOpen || onSecondaryScreen;
 
   /* renderScreen : sélectionne l'écran courant. Une seule sortie pour
      que le nav bar soit toujours rendu en dessous (au niveau racine). */
@@ -435,9 +447,11 @@ function Shell({ children, hideNav }) {
    qui appelle closeAll). */
 function BottomNavBar({ tab, setTab }) {
   const nav = [
-    {id:"home",icon:"home",label:"Accueil"},{id:"saved",icon:"heart",label:"Favoris"},
-    {id:"trips",icon:"trips",label:"Voyages"},{id:"messages",icon:"message",label:"Messages"},
-    {id:"profile",icon:"user",label:"Profil"},
+    {id:"home",icon:"home",label:t("nav.home")},
+    {id:"saved",icon:"heart",label:t("nav.favorites") === "nav.favorites" ? "Favoris" : t("nav.favorites")},
+    {id:"trips",icon:"trips",label:t("nav.trips")},
+    {id:"messages",icon:"message",label:t("nav.messages")},
+    {id:"profile",icon:"user",label:t("nav.profile")},
   ];
   return (
     <nav style={S.nav}>

@@ -2810,6 +2810,1455 @@ const pointsManager = {
   }
 };
 
+/* ═══ js/i18n.js ═══ */
+"use strict";
+
+/* ═══════════════════════════════════════════════════
+   Byer — i18n
+   Systeme de traduction simple : t(key, params) avec
+   fallback automatique fr -> en -> key.
+   ═══════════════════════════════════════════════════ */
+
+/* ── Langues disponibles (20 langues, codes ISO 639-1) ── */
+const I18N_LANGUAGES = [{
+  code: "fr",
+  label: "Français",
+  native: "Français",
+  flag: "🇫🇷"
+}, {
+  code: "en",
+  label: "English",
+  native: "English",
+  flag: "🇬🇧"
+}, {
+  code: "es",
+  label: "Español",
+  native: "Español",
+  flag: "🇪🇸"
+}, {
+  code: "de",
+  label: "Deutsch",
+  native: "Deutsch",
+  flag: "🇩🇪"
+}, {
+  code: "pt",
+  label: "Português",
+  native: "Português",
+  flag: "🇵🇹"
+}, {
+  code: "it",
+  label: "Italiano",
+  native: "Italiano",
+  flag: "🇮🇹"
+}, {
+  code: "ar",
+  label: "Arabic",
+  native: "العربية",
+  flag: "🇸🇦"
+}, {
+  code: "zh",
+  label: "Chinese",
+  native: "中文",
+  flag: "🇨🇳"
+}, {
+  code: "ja",
+  label: "Japanese",
+  native: "日本語",
+  flag: "🇯🇵"
+}, {
+  code: "ko",
+  label: "Korean",
+  native: "한국어",
+  flag: "🇰🇷"
+}, {
+  code: "ru",
+  label: "Russian",
+  native: "Русский",
+  flag: "🇷🇺"
+}, {
+  code: "hi",
+  label: "Hindi",
+  native: "हिन्दी",
+  flag: "🇮🇳"
+}, {
+  code: "tr",
+  label: "Turkish",
+  native: "Türkçe",
+  flag: "🇹🇷"
+}, {
+  code: "nl",
+  label: "Dutch",
+  native: "Nederlands",
+  flag: "🇳🇱"
+}, {
+  code: "pl",
+  label: "Polish",
+  native: "Polski",
+  flag: "🇵🇱"
+}, {
+  code: "sw",
+  label: "Swahili",
+  native: "Kiswahili",
+  flag: "🇹🇿"
+}, {
+  code: "ln",
+  label: "Lingala",
+  native: "Lingála",
+  flag: "🇨🇩"
+}, {
+  code: "wo",
+  label: "Wolof",
+  native: "Wolof",
+  flag: "🇸🇳"
+}, {
+  code: "ha",
+  label: "Hausa",
+  native: "Hausa",
+  flag: "🇳🇬"
+}, {
+  code: "bm",
+  label: "Bambara",
+  native: "Bamanankan",
+  flag: "🇲🇱"
+}];
+
+/* ── Dictionnaires de traduction ──
+   Cle = chemin point (ex: "nav.home"). Fallback : fr -> en -> key.
+   Variables interpolees : {var} dans la chaine, params en 2e arg de t().
+*/
+const I18N_DICT = {
+  /* ─── FRANCAIS (source de verite) ─── */
+  fr: {
+    "nav.home": "Accueil",
+    "nav.favorites": "Favoris",
+    "nav.trips": "Voyages",
+    "nav.messages": "Messages",
+    "nav.profile": "Profil",
+    "nav.publish": "Publier",
+    "common.save": "Enregistrer",
+    "common.cancel": "Annuler",
+    "common.confirm": "Confirmer",
+    "common.back": "Retour",
+    "common.close": "Fermer",
+    "common.continue": "Continuer",
+    "common.delete": "Supprimer",
+    "common.edit": "Modifier",
+    "common.search": "Rechercher",
+    "common.loading": "Chargement...",
+    "common.yes": "Oui",
+    "common.no": "Non",
+    "common.logout": "Se deconnecter",
+    "common.next": "Suivant",
+    "common.previous": "Precedent",
+    "common.send": "Envoyer",
+    "common.share": "Partager",
+    "common.add": "Ajouter",
+    "settings.title": "Parametres",
+    "settings.preferences": "Preferences",
+    "settings.language": "Langue",
+    "settings.notifications": "Notifications push",
+    "settings.darkMode": "Mode sombre",
+    "settings.currency": "Devise",
+    "settings.data": "Donnees",
+    "settings.clearCache": "Vider le cache",
+    "settings.offlineDownloads": "Telechargements hors-ligne",
+    "settings.security": "Securite",
+    "settings.changePassword": "Changer le mot de passe",
+    "settings.twoFactor": "Verification en 2 etapes",
+    "settings.devices": "Appareils connectes",
+    "settings.help": "Aide & Support",
+    "settings.helpCenter": "Centre d'aide",
+    "settings.about": "A propos",
+    "settings.appVersion": "Version de l'app",
+    "settings.terms": "Conditions d'utilisation",
+    "settings.privacy": "Politique de confidentialite",
+    "settings.licenses": "Licences open source",
+    "settings.deleteAccount": "Supprimer mon compte",
+    "settings.darkModeOn": "Mode sombre active",
+    "settings.darkModeOff": "Mode sombre desactive",
+    "settings.languageChanged": "Langue : {lang}",
+    "settings.currencyChanged": "Devise : {curr}",
+    "settings.cacheCleared": "Cache vide avec succes",
+    "settings.chooseLanguage": "Choisir la langue",
+    "settings.chooseCurrency": "Choisir la devise",
+    "settings.confirmLogout": "Etes-vous sur de vouloir vous deconnecter ?",
+    "settings.confirmClearCache": "Etes-vous sur de vouloir supprimer tous les fichiers en cache ?",
+    "profile.editProfile": "Modifier le profil",
+    "profile.bookingHistory": "Historique des reservations",
+    "profile.notifications": "Notifications",
+    "profile.becomeOwner": "Devenir bailleur",
+    "profile.becomeTechnician": "Devenir technicien",
+    "profile.member": "Membre",
+    "profile.helpSupport": "Aide & Support"
+  },
+  /* ─── ENGLISH ─── */
+  en: {
+    "nav.home": "Home",
+    "nav.favorites": "Favorites",
+    "nav.trips": "Trips",
+    "nav.messages": "Messages",
+    "nav.profile": "Profile",
+    "nav.publish": "Publish",
+    "common.save": "Save",
+    "common.cancel": "Cancel",
+    "common.confirm": "Confirm",
+    "common.back": "Back",
+    "common.close": "Close",
+    "common.continue": "Continue",
+    "common.delete": "Delete",
+    "common.edit": "Edit",
+    "common.search": "Search",
+    "common.loading": "Loading...",
+    "common.yes": "Yes",
+    "common.no": "No",
+    "common.logout": "Log out",
+    "common.next": "Next",
+    "common.previous": "Previous",
+    "common.send": "Send",
+    "common.share": "Share",
+    "common.add": "Add",
+    "settings.title": "Settings",
+    "settings.preferences": "Preferences",
+    "settings.language": "Language",
+    "settings.notifications": "Push notifications",
+    "settings.darkMode": "Dark mode",
+    "settings.currency": "Currency",
+    "settings.data": "Data",
+    "settings.clearCache": "Clear cache",
+    "settings.offlineDownloads": "Offline downloads",
+    "settings.security": "Security",
+    "settings.changePassword": "Change password",
+    "settings.twoFactor": "Two-factor authentication",
+    "settings.devices": "Connected devices",
+    "settings.help": "Help & Support",
+    "settings.helpCenter": "Help center",
+    "settings.about": "About",
+    "settings.appVersion": "App version",
+    "settings.terms": "Terms of service",
+    "settings.privacy": "Privacy policy",
+    "settings.licenses": "Open source licenses",
+    "settings.deleteAccount": "Delete my account",
+    "settings.darkModeOn": "Dark mode enabled",
+    "settings.darkModeOff": "Dark mode disabled",
+    "settings.languageChanged": "Language: {lang}",
+    "settings.currencyChanged": "Currency: {curr}",
+    "settings.cacheCleared": "Cache cleared successfully",
+    "settings.chooseLanguage": "Choose language",
+    "settings.chooseCurrency": "Choose currency",
+    "settings.confirmLogout": "Are you sure you want to log out?",
+    "settings.confirmClearCache": "Are you sure you want to clear all cached files?",
+    "profile.editProfile": "Edit profile",
+    "profile.bookingHistory": "Booking history",
+    "profile.notifications": "Notifications",
+    "profile.becomeOwner": "Become a host",
+    "profile.becomeTechnician": "Become a technician",
+    "profile.member": "Member since",
+    "profile.helpSupport": "Help & Support"
+  },
+  /* ─── ESPANOL ─── */
+  es: {
+    "nav.home": "Inicio",
+    "nav.favorites": "Favoritos",
+    "nav.trips": "Viajes",
+    "nav.messages": "Mensajes",
+    "nav.profile": "Perfil",
+    "nav.publish": "Publicar",
+    "common.save": "Guardar",
+    "common.cancel": "Cancelar",
+    "common.confirm": "Confirmar",
+    "common.back": "Atras",
+    "common.close": "Cerrar",
+    "common.continue": "Continuar",
+    "common.delete": "Eliminar",
+    "common.edit": "Editar",
+    "common.search": "Buscar",
+    "common.loading": "Cargando...",
+    "common.yes": "Si",
+    "common.no": "No",
+    "common.logout": "Cerrar sesion",
+    "common.next": "Siguiente",
+    "common.previous": "Anterior",
+    "common.send": "Enviar",
+    "common.share": "Compartir",
+    "common.add": "Anadir",
+    "settings.title": "Ajustes",
+    "settings.preferences": "Preferencias",
+    "settings.language": "Idioma",
+    "settings.notifications": "Notificaciones push",
+    "settings.darkMode": "Modo oscuro",
+    "settings.currency": "Moneda",
+    "settings.data": "Datos",
+    "settings.clearCache": "Vaciar la cache",
+    "settings.offlineDownloads": "Descargas sin conexion",
+    "settings.security": "Seguridad",
+    "settings.changePassword": "Cambiar contrasena",
+    "settings.twoFactor": "Verificacion en 2 pasos",
+    "settings.devices": "Dispositivos conectados",
+    "settings.help": "Ayuda y soporte",
+    "settings.helpCenter": "Centro de ayuda",
+    "settings.about": "Acerca de",
+    "settings.appVersion": "Version de la app",
+    "settings.terms": "Condiciones de uso",
+    "settings.privacy": "Politica de privacidad",
+    "settings.licenses": "Licencias open source",
+    "settings.deleteAccount": "Eliminar mi cuenta",
+    "settings.darkModeOn": "Modo oscuro activado",
+    "settings.darkModeOff": "Modo oscuro desactivado",
+    "settings.languageChanged": "Idioma: {lang}",
+    "settings.currencyChanged": "Moneda: {curr}",
+    "settings.cacheCleared": "Cache vaciada con exito",
+    "settings.chooseLanguage": "Elegir idioma",
+    "settings.chooseCurrency": "Elegir moneda",
+    "settings.confirmLogout": "Estas seguro de cerrar sesion?",
+    "settings.confirmClearCache": "Estas seguro de borrar todos los archivos en cache?",
+    "profile.editProfile": "Editar perfil",
+    "profile.bookingHistory": "Historial de reservas",
+    "profile.notifications": "Notificaciones",
+    "profile.becomeOwner": "Hazte anfitrion",
+    "profile.becomeTechnician": "Hazte tecnico",
+    "profile.member": "Miembro desde",
+    "profile.helpSupport": "Ayuda y soporte"
+  },
+  /* ─── DEUTSCH ─── */
+  de: {
+    "nav.home": "Start",
+    "nav.trips": "Reisen",
+    "nav.messages": "Nachrichten",
+    "nav.profile": "Profil",
+    "nav.publish": "Veroffentlichen",
+    "common.save": "Speichern",
+    "common.cancel": "Abbrechen",
+    "common.confirm": "Bestatigen",
+    "common.back": "Zuruck",
+    "common.close": "Schliessen",
+    "common.continue": "Weiter",
+    "common.delete": "Loschen",
+    "common.edit": "Bearbeiten",
+    "common.search": "Suchen",
+    "common.loading": "Laden...",
+    "common.yes": "Ja",
+    "common.no": "Nein",
+    "common.logout": "Abmelden",
+    "common.next": "Weiter",
+    "common.previous": "Zuruck",
+    "common.send": "Senden",
+    "common.share": "Teilen",
+    "common.add": "Hinzufugen",
+    "settings.title": "Einstellungen",
+    "settings.preferences": "Einstellungen",
+    "settings.language": "Sprache",
+    "settings.notifications": "Push-Benachrichtigungen",
+    "settings.darkMode": "Dunkler Modus",
+    "settings.currency": "Wahrung",
+    "settings.data": "Daten",
+    "settings.clearCache": "Cache leeren",
+    "settings.offlineDownloads": "Offline-Downloads",
+    "settings.security": "Sicherheit",
+    "settings.changePassword": "Passwort andern",
+    "settings.twoFactor": "Zwei-Faktor-Authentifizierung",
+    "settings.devices": "Verbundene Gerate",
+    "settings.help": "Hilfe & Support",
+    "settings.helpCenter": "Hilfe-Center",
+    "settings.about": "Uber",
+    "settings.appVersion": "App-Version",
+    "settings.terms": "Nutzungsbedingungen",
+    "settings.privacy": "Datenschutzrichtlinie",
+    "settings.licenses": "Open-Source-Lizenzen",
+    "settings.deleteAccount": "Konto loschen",
+    "settings.darkModeOn": "Dunkler Modus aktiviert",
+    "settings.darkModeOff": "Dunkler Modus deaktiviert",
+    "settings.languageChanged": "Sprache: {lang}",
+    "settings.currencyChanged": "Wahrung: {curr}",
+    "settings.cacheCleared": "Cache erfolgreich geleert",
+    "settings.chooseLanguage": "Sprache wahlen",
+    "settings.chooseCurrency": "Wahrung wahlen",
+    "settings.confirmLogout": "Mochten Sie sich wirklich abmelden?",
+    "settings.confirmClearCache": "Mochten Sie wirklich alle Cache-Dateien loschen?",
+    "profile.editProfile": "Profil bearbeiten",
+    "profile.bookingHistory": "Buchungshistorie",
+    "profile.notifications": "Benachrichtigungen",
+    "profile.becomeOwner": "Vermieter werden",
+    "profile.becomeTechnician": "Techniker werden",
+    "profile.member": "Mitglied seit",
+    "profile.helpSupport": "Hilfe & Support"
+  },
+  /* ─── PORTUGUES ─── */
+  pt: {
+    "nav.home": "Inicio",
+    "nav.trips": "Viagens",
+    "nav.messages": "Mensagens",
+    "nav.profile": "Perfil",
+    "nav.publish": "Publicar",
+    "common.save": "Guardar",
+    "common.cancel": "Cancelar",
+    "common.confirm": "Confirmar",
+    "common.back": "Voltar",
+    "common.close": "Fechar",
+    "common.continue": "Continuar",
+    "common.delete": "Apagar",
+    "common.edit": "Editar",
+    "common.search": "Pesquisar",
+    "common.loading": "A carregar...",
+    "common.yes": "Sim",
+    "common.no": "Nao",
+    "common.logout": "Terminar sessao",
+    "common.next": "Seguinte",
+    "common.previous": "Anterior",
+    "common.send": "Enviar",
+    "common.share": "Partilhar",
+    "common.add": "Adicionar",
+    "settings.title": "Definicoes",
+    "settings.preferences": "Preferencias",
+    "settings.language": "Idioma",
+    "settings.notifications": "Notificacoes push",
+    "settings.darkMode": "Modo escuro",
+    "settings.currency": "Moeda",
+    "settings.data": "Dados",
+    "settings.clearCache": "Limpar cache",
+    "settings.offlineDownloads": "Transferencias offline",
+    "settings.security": "Seguranca",
+    "settings.changePassword": "Mudar palavra-passe",
+    "settings.twoFactor": "Verificacao em 2 etapas",
+    "settings.devices": "Dispositivos conectados",
+    "settings.help": "Ajuda e Suporte",
+    "settings.helpCenter": "Centro de ajuda",
+    "settings.about": "Sobre",
+    "settings.appVersion": "Versao da app",
+    "settings.terms": "Termos de servico",
+    "settings.privacy": "Politica de privacidade",
+    "settings.licenses": "Licencas open source",
+    "settings.deleteAccount": "Apagar a minha conta",
+    "settings.darkModeOn": "Modo escuro ativado",
+    "settings.darkModeOff": "Modo escuro desativado",
+    "settings.languageChanged": "Idioma: {lang}",
+    "settings.currencyChanged": "Moeda: {curr}",
+    "settings.cacheCleared": "Cache limpo com sucesso",
+    "settings.chooseLanguage": "Escolher idioma",
+    "settings.chooseCurrency": "Escolher moeda",
+    "settings.confirmLogout": "Tem a certeza que quer terminar sessao?",
+    "settings.confirmClearCache": "Tem a certeza que quer limpar todos os ficheiros em cache?",
+    "profile.editProfile": "Editar perfil",
+    "profile.bookingHistory": "Historico de reservas",
+    "profile.notifications": "Notificacoes",
+    "profile.becomeOwner": "Tornar-se anfitriao",
+    "profile.becomeTechnician": "Tornar-se tecnico",
+    "profile.member": "Membro desde",
+    "profile.helpSupport": "Ajuda e Suporte"
+  },
+  /* ─── ITALIANO ─── */
+  it: {
+    "nav.home": "Home",
+    "nav.trips": "Viaggi",
+    "nav.messages": "Messaggi",
+    "nav.profile": "Profilo",
+    "nav.publish": "Pubblica",
+    "common.save": "Salva",
+    "common.cancel": "Annulla",
+    "common.confirm": "Conferma",
+    "common.back": "Indietro",
+    "common.close": "Chiudi",
+    "common.continue": "Continua",
+    "common.delete": "Elimina",
+    "common.edit": "Modifica",
+    "common.search": "Cerca",
+    "common.loading": "Caricamento...",
+    "common.yes": "Si",
+    "common.no": "No",
+    "common.logout": "Esci",
+    "common.next": "Avanti",
+    "common.previous": "Indietro",
+    "common.send": "Invia",
+    "common.share": "Condividi",
+    "common.add": "Aggiungi",
+    "settings.title": "Impostazioni",
+    "settings.preferences": "Preferenze",
+    "settings.language": "Lingua",
+    "settings.notifications": "Notifiche push",
+    "settings.darkMode": "Modalita scura",
+    "settings.currency": "Valuta",
+    "settings.data": "Dati",
+    "settings.clearCache": "Svuota cache",
+    "settings.offlineDownloads": "Download offline",
+    "settings.security": "Sicurezza",
+    "settings.changePassword": "Cambia password",
+    "settings.twoFactor": "Autenticazione a 2 fattori",
+    "settings.devices": "Dispositivi connessi",
+    "settings.help": "Aiuto e supporto",
+    "settings.helpCenter": "Centro assistenza",
+    "settings.about": "Informazioni",
+    "settings.appVersion": "Versione app",
+    "settings.terms": "Termini di servizio",
+    "settings.privacy": "Politica sulla privacy",
+    "settings.licenses": "Licenze open source",
+    "settings.deleteAccount": "Elimina il mio account",
+    "settings.darkModeOn": "Modalita scura attivata",
+    "settings.darkModeOff": "Modalita scura disattivata",
+    "settings.languageChanged": "Lingua: {lang}",
+    "settings.currencyChanged": "Valuta: {curr}",
+    "settings.cacheCleared": "Cache svuotata con successo",
+    "settings.chooseLanguage": "Scegli lingua",
+    "settings.chooseCurrency": "Scegli valuta",
+    "settings.confirmLogout": "Sei sicuro di voler uscire?",
+    "settings.confirmClearCache": "Sei sicuro di voler svuotare la cache?",
+    "profile.editProfile": "Modifica profilo",
+    "profile.bookingHistory": "Cronologia prenotazioni",
+    "profile.notifications": "Notifiche",
+    "profile.becomeOwner": "Diventa host",
+    "profile.becomeTechnician": "Diventa tecnico",
+    "profile.member": "Membro dal",
+    "profile.helpSupport": "Aiuto e supporto"
+  },
+  /* ─── العربية (ARABIC) ─── */
+  ar: {
+    "nav.home": "الرئيسية",
+    "nav.trips": "الرحلات",
+    "nav.messages": "الرسائل",
+    "nav.profile": "الملف الشخصي",
+    "nav.publish": "نشر",
+    "common.save": "حفظ",
+    "common.cancel": "إلغاء",
+    "common.confirm": "تأكيد",
+    "common.back": "رجوع",
+    "common.close": "إغلاق",
+    "common.continue": "متابعة",
+    "common.delete": "حذف",
+    "common.edit": "تعديل",
+    "common.search": "بحث",
+    "common.loading": "جاري التحميل...",
+    "common.yes": "نعم",
+    "common.no": "لا",
+    "common.logout": "تسجيل الخروج",
+    "common.next": "التالي",
+    "common.previous": "السابق",
+    "common.send": "إرسال",
+    "common.share": "مشاركة",
+    "common.add": "إضافة",
+    "settings.title": "الإعدادات",
+    "settings.preferences": "التفضيلات",
+    "settings.language": "اللغة",
+    "settings.notifications": "إشعارات الدفع",
+    "settings.darkMode": "الوضع الداكن",
+    "settings.currency": "العملة",
+    "settings.data": "البيانات",
+    "settings.clearCache": "مسح ذاكرة التخزين المؤقت",
+    "settings.offlineDownloads": "تنزيلات بدون اتصال",
+    "settings.security": "الأمان",
+    "settings.changePassword": "تغيير كلمة المرور",
+    "settings.twoFactor": "التحقق بخطوتين",
+    "settings.devices": "الأجهزة المتصلة",
+    "settings.help": "المساعدة والدعم",
+    "settings.helpCenter": "مركز المساعدة",
+    "settings.about": "حول",
+    "settings.appVersion": "إصدار التطبيق",
+    "settings.terms": "شروط الاستخدام",
+    "settings.privacy": "سياسة الخصوصية",
+    "settings.licenses": "تراخيص المصدر المفتوح",
+    "settings.deleteAccount": "حذف حسابي",
+    "settings.darkModeOn": "تم تفعيل الوضع الداكن",
+    "settings.darkModeOff": "تم إيقاف الوضع الداكن",
+    "settings.languageChanged": "اللغة: {lang}",
+    "settings.currencyChanged": "العملة: {curr}",
+    "settings.cacheCleared": "تم مسح ذاكرة التخزين المؤقت بنجاح",
+    "settings.chooseLanguage": "اختر اللغة",
+    "settings.chooseCurrency": "اختر العملة",
+    "settings.confirmLogout": "هل أنت متأكد من تسجيل الخروج؟",
+    "settings.confirmClearCache": "هل أنت متأكد من مسح جميع الملفات المخزنة مؤقتًا؟",
+    "profile.editProfile": "تعديل الملف الشخصي",
+    "profile.bookingHistory": "سجل الحجوزات",
+    "profile.notifications": "الإشعارات",
+    "profile.becomeOwner": "كن مضيفا",
+    "profile.becomeTechnician": "كن فنيا",
+    "profile.member": "عضو منذ",
+    "profile.helpSupport": "المساعدة والدعم"
+  },
+  /* ─── 中文 (CHINESE Simplified) ─── */
+  zh: {
+    "nav.home": "首页",
+    "nav.trips": "行程",
+    "nav.messages": "消息",
+    "nav.profile": "我的",
+    "nav.publish": "发布",
+    "common.save": "保存",
+    "common.cancel": "取消",
+    "common.confirm": "确认",
+    "common.back": "返回",
+    "common.close": "关闭",
+    "common.continue": "继续",
+    "common.delete": "删除",
+    "common.edit": "编辑",
+    "common.search": "搜索",
+    "common.loading": "加载中...",
+    "common.yes": "是",
+    "common.no": "否",
+    "common.logout": "退出登录",
+    "common.next": "下一步",
+    "common.previous": "上一步",
+    "common.send": "发送",
+    "common.share": "分享",
+    "common.add": "添加",
+    "settings.title": "设置",
+    "settings.preferences": "偏好设置",
+    "settings.language": "语言",
+    "settings.notifications": "推送通知",
+    "settings.darkMode": "深色模式",
+    "settings.currency": "货币",
+    "settings.data": "数据",
+    "settings.clearCache": "清除缓存",
+    "settings.offlineDownloads": "离线下载",
+    "settings.security": "安全",
+    "settings.changePassword": "修改密码",
+    "settings.twoFactor": "两步验证",
+    "settings.devices": "已连接设备",
+    "settings.help": "帮助与支持",
+    "settings.helpCenter": "帮助中心",
+    "settings.about": "关于",
+    "settings.appVersion": "应用版本",
+    "settings.terms": "服务条款",
+    "settings.privacy": "隐私政策",
+    "settings.licenses": "开源许可",
+    "settings.deleteAccount": "删除我的账户",
+    "settings.darkModeOn": "已启用深色模式",
+    "settings.darkModeOff": "已禁用深色模式",
+    "settings.languageChanged": "语言: {lang}",
+    "settings.currencyChanged": "货币: {curr}",
+    "settings.cacheCleared": "缓存已成功清除",
+    "settings.chooseLanguage": "选择语言",
+    "settings.chooseCurrency": "选择货币",
+    "settings.confirmLogout": "确定要退出登录吗?",
+    "settings.confirmClearCache": "确定要清除所有缓存文件吗?",
+    "profile.editProfile": "编辑资料",
+    "profile.bookingHistory": "预订历史",
+    "profile.notifications": "通知",
+    "profile.becomeOwner": "成为房东",
+    "profile.becomeTechnician": "成为技师",
+    "profile.member": "成员自",
+    "profile.helpSupport": "帮助与支持"
+  },
+  /* ─── 日本語 (JAPANESE) ─── */
+  ja: {
+    "nav.home": "ホーム",
+    "nav.trips": "予約",
+    "nav.messages": "メッセージ",
+    "nav.profile": "プロフィール",
+    "nav.publish": "投稿",
+    "common.save": "保存",
+    "common.cancel": "キャンセル",
+    "common.confirm": "確認",
+    "common.back": "戻る",
+    "common.close": "閉じる",
+    "common.continue": "続ける",
+    "common.delete": "削除",
+    "common.edit": "編集",
+    "common.search": "検索",
+    "common.loading": "読み込み中...",
+    "common.yes": "はい",
+    "common.no": "いいえ",
+    "common.logout": "ログアウト",
+    "common.next": "次へ",
+    "common.previous": "前へ",
+    "common.send": "送信",
+    "common.share": "共有",
+    "common.add": "追加",
+    "settings.title": "設定",
+    "settings.preferences": "環境設定",
+    "settings.language": "言語",
+    "settings.notifications": "プッシュ通知",
+    "settings.darkMode": "ダークモード",
+    "settings.currency": "通貨",
+    "settings.data": "データ",
+    "settings.clearCache": "キャッシュを削除",
+    "settings.offlineDownloads": "オフラインダウンロード",
+    "settings.security": "セキュリティ",
+    "settings.changePassword": "パスワードを変更",
+    "settings.twoFactor": "2段階認証",
+    "settings.devices": "接続されたデバイス",
+    "settings.help": "ヘルプとサポート",
+    "settings.helpCenter": "ヘルプセンター",
+    "settings.about": "概要",
+    "settings.appVersion": "アプリのバージョン",
+    "settings.terms": "利用規約",
+    "settings.privacy": "プライバシーポリシー",
+    "settings.licenses": "オープンソースライセンス",
+    "settings.deleteAccount": "アカウントを削除",
+    "settings.darkModeOn": "ダークモードが有効になりました",
+    "settings.darkModeOff": "ダークモードが無効になりました",
+    "settings.languageChanged": "言語: {lang}",
+    "settings.currencyChanged": "通貨: {curr}",
+    "settings.cacheCleared": "キャッシュが正常に削除されました",
+    "settings.chooseLanguage": "言語を選択",
+    "settings.chooseCurrency": "通貨を選択",
+    "settings.confirmLogout": "ログアウトしてもよろしいですか?",
+    "settings.confirmClearCache": "すべてのキャッシュファイルを削除してもよろしいですか?",
+    "profile.editProfile": "プロフィールを編集",
+    "profile.bookingHistory": "予約履歴",
+    "profile.notifications": "通知",
+    "profile.becomeOwner": "ホストになる",
+    "profile.becomeTechnician": "技術者になる",
+    "profile.member": "メンバー登録",
+    "profile.helpSupport": "ヘルプとサポート"
+  },
+  /* ─── 한국어 (KOREAN) ─── */
+  ko: {
+    "nav.home": "홈",
+    "nav.trips": "여행",
+    "nav.messages": "메시지",
+    "nav.profile": "프로필",
+    "nav.publish": "게시",
+    "common.save": "저장",
+    "common.cancel": "취소",
+    "common.confirm": "확인",
+    "common.back": "뒤로",
+    "common.close": "닫기",
+    "common.continue": "계속",
+    "common.delete": "삭제",
+    "common.edit": "편집",
+    "common.search": "검색",
+    "common.loading": "로딩 중...",
+    "common.yes": "예",
+    "common.no": "아니요",
+    "common.logout": "로그아웃",
+    "common.next": "다음",
+    "common.previous": "이전",
+    "common.send": "보내기",
+    "common.share": "공유",
+    "common.add": "추가",
+    "settings.title": "설정",
+    "settings.preferences": "환경설정",
+    "settings.language": "언어",
+    "settings.notifications": "푸시 알림",
+    "settings.darkMode": "다크 모드",
+    "settings.currency": "통화",
+    "settings.data": "데이터",
+    "settings.clearCache": "캐시 지우기",
+    "settings.offlineDownloads": "오프라인 다운로드",
+    "settings.security": "보안",
+    "settings.changePassword": "비밀번호 변경",
+    "settings.twoFactor": "2단계 인증",
+    "settings.devices": "연결된 기기",
+    "settings.help": "도움말 및 지원",
+    "settings.helpCenter": "도움말 센터",
+    "settings.about": "정보",
+    "settings.appVersion": "앱 버전",
+    "settings.terms": "이용 약관",
+    "settings.privacy": "개인정보 처리방침",
+    "settings.licenses": "오픈소스 라이선스",
+    "settings.deleteAccount": "계정 삭제",
+    "settings.darkModeOn": "다크 모드 활성화됨",
+    "settings.darkModeOff": "다크 모드 비활성화됨",
+    "settings.languageChanged": "언어: {lang}",
+    "settings.currencyChanged": "통화: {curr}",
+    "settings.cacheCleared": "캐시가 성공적으로 지워졌습니다",
+    "settings.chooseLanguage": "언어 선택",
+    "settings.chooseCurrency": "통화 선택",
+    "settings.confirmLogout": "정말 로그아웃하시겠습니까?",
+    "settings.confirmClearCache": "모든 캐시 파일을 삭제하시겠습니까?",
+    "profile.editProfile": "프로필 편집",
+    "profile.bookingHistory": "예약 기록",
+    "profile.notifications": "알림",
+    "profile.becomeOwner": "호스트 되기",
+    "profile.becomeTechnician": "기술자 되기",
+    "profile.member": "가입일",
+    "profile.helpSupport": "도움말 및 지원"
+  },
+  /* ─── РУССКИЙ (RUSSIAN) ─── */
+  ru: {
+    "nav.home": "Главная",
+    "nav.trips": "Поездки",
+    "nav.messages": "Сообщения",
+    "nav.profile": "Профиль",
+    "nav.publish": "Разместить",
+    "common.save": "Сохранить",
+    "common.cancel": "Отмена",
+    "common.confirm": "Подтвердить",
+    "common.back": "Назад",
+    "common.close": "Закрыть",
+    "common.continue": "Продолжить",
+    "common.delete": "Удалить",
+    "common.edit": "Изменить",
+    "common.search": "Поиск",
+    "common.loading": "Загрузка...",
+    "common.yes": "Да",
+    "common.no": "Нет",
+    "common.logout": "Выйти",
+    "common.next": "Далее",
+    "common.previous": "Назад",
+    "common.send": "Отправить",
+    "common.share": "Поделиться",
+    "common.add": "Добавить",
+    "settings.title": "Настройки",
+    "settings.preferences": "Предпочтения",
+    "settings.language": "Язык",
+    "settings.notifications": "Push-уведомления",
+    "settings.darkMode": "Тёмная тема",
+    "settings.currency": "Валюта",
+    "settings.data": "Данные",
+    "settings.clearCache": "Очистить кэш",
+    "settings.offlineDownloads": "Офлайн-загрузки",
+    "settings.security": "Безопасность",
+    "settings.changePassword": "Изменить пароль",
+    "settings.twoFactor": "Двухфакторная аутентификация",
+    "settings.devices": "Подключённые устройства",
+    "settings.help": "Помощь и поддержка",
+    "settings.helpCenter": "Центр помощи",
+    "settings.about": "О приложении",
+    "settings.appVersion": "Версия приложения",
+    "settings.terms": "Условия использования",
+    "settings.privacy": "Политика конфиденциальности",
+    "settings.licenses": "Лицензии open source",
+    "settings.deleteAccount": "Удалить аккаунт",
+    "settings.darkModeOn": "Тёмная тема включена",
+    "settings.darkModeOff": "Тёмная тема отключена",
+    "settings.languageChanged": "Язык: {lang}",
+    "settings.currencyChanged": "Валюта: {curr}",
+    "settings.cacheCleared": "Кэш успешно очищен",
+    "settings.chooseLanguage": "Выбрать язык",
+    "settings.chooseCurrency": "Выбрать валюту",
+    "settings.confirmLogout": "Вы уверены, что хотите выйти?",
+    "settings.confirmClearCache": "Удалить все кэшированные файлы?",
+    "profile.editProfile": "Изменить профиль",
+    "profile.bookingHistory": "История бронирований",
+    "profile.notifications": "Уведомления",
+    "profile.becomeOwner": "Стать арендодателем",
+    "profile.becomeTechnician": "Стать техником",
+    "profile.member": "Участник с",
+    "profile.helpSupport": "Помощь и поддержка"
+  },
+  /* ─── हिन्दी (HINDI) ─── */
+  hi: {
+    "nav.home": "होम",
+    "nav.trips": "यात्राएं",
+    "nav.messages": "संदेश",
+    "nav.profile": "प्रोफ़ाइल",
+    "nav.publish": "प्रकाशित",
+    "common.save": "सहेजें",
+    "common.cancel": "रद्द करें",
+    "common.confirm": "पुष्टि करें",
+    "common.back": "वापस",
+    "common.close": "बंद करें",
+    "common.continue": "जारी रखें",
+    "common.delete": "हटाएं",
+    "common.edit": "संपादित करें",
+    "common.search": "खोजें",
+    "common.loading": "लोड हो रहा है...",
+    "common.yes": "हाँ",
+    "common.no": "नहीं",
+    "common.logout": "लॉग आउट",
+    "common.next": "अगला",
+    "common.previous": "पिछला",
+    "common.send": "भेजें",
+    "common.share": "साझा करें",
+    "common.add": "जोड़ें",
+    "settings.title": "सेटिंग्स",
+    "settings.preferences": "प्राथमिकताएं",
+    "settings.language": "भाषा",
+    "settings.notifications": "पुश सूचनाएं",
+    "settings.darkMode": "डार्क मोड",
+    "settings.currency": "मुद्रा",
+    "settings.data": "डेटा",
+    "settings.clearCache": "कैश साफ़ करें",
+    "settings.offlineDownloads": "ऑफ़लाइन डाउनलोड",
+    "settings.security": "सुरक्षा",
+    "settings.changePassword": "पासवर्ड बदलें",
+    "settings.twoFactor": "द्वि-कारक प्रमाणीकरण",
+    "settings.devices": "कनेक्टेड डिवाइस",
+    "settings.help": "सहायता और समर्थन",
+    "settings.helpCenter": "सहायता केंद्र",
+    "settings.about": "के बारे में",
+    "settings.appVersion": "ऐप संस्करण",
+    "settings.terms": "सेवा की शर्तें",
+    "settings.privacy": "गोपनीयता नीति",
+    "settings.licenses": "ओपन सोर्स लाइसेंस",
+    "settings.deleteAccount": "मेरा खाता हटाएं",
+    "settings.darkModeOn": "डार्क मोड सक्षम",
+    "settings.darkModeOff": "डार्क मोड अक्षम",
+    "settings.languageChanged": "भाषा: {lang}",
+    "settings.currencyChanged": "मुद्रा: {curr}",
+    "settings.cacheCleared": "कैश सफलतापूर्वक साफ़ किया गया",
+    "settings.chooseLanguage": "भाषा चुनें",
+    "settings.chooseCurrency": "मुद्रा चुनें",
+    "settings.confirmLogout": "क्या आप वाकई लॉग आउट करना चाहते हैं?",
+    "settings.confirmClearCache": "क्या आप सभी कैश फ़ाइलें साफ़ करना चाहते हैं?",
+    "profile.editProfile": "प्रोफ़ाइल संपादित करें",
+    "profile.bookingHistory": "बुकिंग इतिहास",
+    "profile.notifications": "सूचनाएं",
+    "profile.becomeOwner": "मेज़बान बनें",
+    "profile.becomeTechnician": "तकनीशियन बनें",
+    "profile.member": "सदस्य",
+    "profile.helpSupport": "सहायता और समर्थन"
+  },
+  /* ─── TURKCE (TURKISH) ─── */
+  tr: {
+    "nav.home": "Ana Sayfa",
+    "nav.trips": "Geziler",
+    "nav.messages": "Mesajlar",
+    "nav.profile": "Profil",
+    "nav.publish": "Yayinla",
+    "common.save": "Kaydet",
+    "common.cancel": "Iptal",
+    "common.confirm": "Onayla",
+    "common.back": "Geri",
+    "common.close": "Kapat",
+    "common.continue": "Devam",
+    "common.delete": "Sil",
+    "common.edit": "Duzenle",
+    "common.search": "Ara",
+    "common.loading": "Yukleniyor...",
+    "common.yes": "Evet",
+    "common.no": "Hayir",
+    "common.logout": "Cikis yap",
+    "common.next": "Ileri",
+    "common.previous": "Geri",
+    "common.send": "Gonder",
+    "common.share": "Paylas",
+    "common.add": "Ekle",
+    "settings.title": "Ayarlar",
+    "settings.preferences": "Tercihler",
+    "settings.language": "Dil",
+    "settings.notifications": "Push bildirimleri",
+    "settings.darkMode": "Karanlik mod",
+    "settings.currency": "Para birimi",
+    "settings.data": "Veri",
+    "settings.clearCache": "Onbellegi temizle",
+    "settings.offlineDownloads": "Cevrimdisi indirmeler",
+    "settings.security": "Guvenlik",
+    "settings.changePassword": "Sifreyi degistir",
+    "settings.twoFactor": "Iki adimli dogrulama",
+    "settings.devices": "Bagli cihazlar",
+    "settings.help": "Yardim ve destek",
+    "settings.helpCenter": "Yardim merkezi",
+    "settings.about": "Hakkinda",
+    "settings.appVersion": "Uygulama surumu",
+    "settings.terms": "Kullanim sartlari",
+    "settings.privacy": "Gizlilik politikasi",
+    "settings.licenses": "Acik kaynak lisanslari",
+    "settings.deleteAccount": "Hesabimi sil",
+    "settings.darkModeOn": "Karanlik mod etkin",
+    "settings.darkModeOff": "Karanlik mod devre disi",
+    "settings.languageChanged": "Dil: {lang}",
+    "settings.currencyChanged": "Para birimi: {curr}",
+    "settings.cacheCleared": "Onbellek basariyla temizlendi",
+    "settings.chooseLanguage": "Dil sec",
+    "settings.chooseCurrency": "Para birimi sec",
+    "settings.confirmLogout": "Cikmak istediginizden emin misiniz?",
+    "settings.confirmClearCache": "Tum onbellek dosyalarini silmek istediginizden emin misiniz?",
+    "profile.editProfile": "Profili duzenle",
+    "profile.bookingHistory": "Rezervasyon gecmisi",
+    "profile.notifications": "Bildirimler",
+    "profile.becomeOwner": "Ev sahibi ol",
+    "profile.becomeTechnician": "Teknisyen ol",
+    "profile.member": "Uye olus",
+    "profile.helpSupport": "Yardim ve destek"
+  },
+  /* ─── NEDERLANDS (DUTCH) ─── */
+  nl: {
+    "nav.home": "Home",
+    "nav.trips": "Reizen",
+    "nav.messages": "Berichten",
+    "nav.profile": "Profiel",
+    "nav.publish": "Plaatsen",
+    "common.save": "Opslaan",
+    "common.cancel": "Annuleren",
+    "common.confirm": "Bevestigen",
+    "common.back": "Terug",
+    "common.close": "Sluiten",
+    "common.continue": "Doorgaan",
+    "common.delete": "Verwijderen",
+    "common.edit": "Bewerken",
+    "common.search": "Zoeken",
+    "common.loading": "Laden...",
+    "common.yes": "Ja",
+    "common.no": "Nee",
+    "common.logout": "Uitloggen",
+    "common.next": "Volgende",
+    "common.previous": "Vorige",
+    "common.send": "Versturen",
+    "common.share": "Delen",
+    "common.add": "Toevoegen",
+    "settings.title": "Instellingen",
+    "settings.preferences": "Voorkeuren",
+    "settings.language": "Taal",
+    "settings.notifications": "Pushmeldingen",
+    "settings.darkMode": "Donkere modus",
+    "settings.currency": "Valuta",
+    "settings.data": "Gegevens",
+    "settings.clearCache": "Cache wissen",
+    "settings.offlineDownloads": "Offline downloads",
+    "settings.security": "Beveiliging",
+    "settings.changePassword": "Wachtwoord wijzigen",
+    "settings.twoFactor": "Tweestapsverificatie",
+    "settings.devices": "Verbonden apparaten",
+    "settings.help": "Hulp & ondersteuning",
+    "settings.helpCenter": "Helpcentrum",
+    "settings.about": "Over",
+    "settings.appVersion": "App-versie",
+    "settings.terms": "Servicevoorwaarden",
+    "settings.privacy": "Privacybeleid",
+    "settings.licenses": "Open source licenties",
+    "settings.deleteAccount": "Account verwijderen",
+    "settings.darkModeOn": "Donkere modus ingeschakeld",
+    "settings.darkModeOff": "Donkere modus uitgeschakeld",
+    "settings.languageChanged": "Taal: {lang}",
+    "settings.currencyChanged": "Valuta: {curr}",
+    "settings.cacheCleared": "Cache succesvol gewist",
+    "settings.chooseLanguage": "Kies taal",
+    "settings.chooseCurrency": "Kies valuta",
+    "settings.confirmLogout": "Weet u zeker dat u wilt uitloggen?",
+    "settings.confirmClearCache": "Weet u zeker dat u alle gecachte bestanden wilt wissen?",
+    "profile.editProfile": "Profiel bewerken",
+    "profile.bookingHistory": "Boekingsgeschiedenis",
+    "profile.notifications": "Meldingen",
+    "profile.becomeOwner": "Word verhuurder",
+    "profile.becomeTechnician": "Word technicus",
+    "profile.member": "Lid sinds",
+    "profile.helpSupport": "Hulp & ondersteuning"
+  },
+  /* ─── POLSKI (POLISH) ─── */
+  pl: {
+    "nav.home": "Start",
+    "nav.trips": "Podroze",
+    "nav.messages": "Wiadomosci",
+    "nav.profile": "Profil",
+    "nav.publish": "Opublikuj",
+    "common.save": "Zapisz",
+    "common.cancel": "Anuluj",
+    "common.confirm": "Potwierdz",
+    "common.back": "Wstecz",
+    "common.close": "Zamknij",
+    "common.continue": "Kontynuuj",
+    "common.delete": "Usun",
+    "common.edit": "Edytuj",
+    "common.search": "Szukaj",
+    "common.loading": "Ladowanie...",
+    "common.yes": "Tak",
+    "common.no": "Nie",
+    "common.logout": "Wyloguj",
+    "common.next": "Dalej",
+    "common.previous": "Wstecz",
+    "common.send": "Wyslij",
+    "common.share": "Udostepnij",
+    "common.add": "Dodaj",
+    "settings.title": "Ustawienia",
+    "settings.preferences": "Preferencje",
+    "settings.language": "Jezyk",
+    "settings.notifications": "Powiadomienia push",
+    "settings.darkMode": "Tryb ciemny",
+    "settings.currency": "Waluta",
+    "settings.data": "Dane",
+    "settings.clearCache": "Wyczysc pamiec podreczna",
+    "settings.offlineDownloads": "Pobieranie offline",
+    "settings.security": "Bezpieczenstwo",
+    "settings.changePassword": "Zmien haslo",
+    "settings.twoFactor": "Uwierzytelnianie dwuetapowe",
+    "settings.devices": "Polaczone urzadzenia",
+    "settings.help": "Pomoc i wsparcie",
+    "settings.helpCenter": "Centrum pomocy",
+    "settings.about": "O aplikacji",
+    "settings.appVersion": "Wersja aplikacji",
+    "settings.terms": "Warunki uzytkowania",
+    "settings.privacy": "Polityka prywatnosci",
+    "settings.licenses": "Licencje open source",
+    "settings.deleteAccount": "Usun moje konto",
+    "settings.darkModeOn": "Tryb ciemny wlaczony",
+    "settings.darkModeOff": "Tryb ciemny wylaczony",
+    "settings.languageChanged": "Jezyk: {lang}",
+    "settings.currencyChanged": "Waluta: {curr}",
+    "settings.cacheCleared": "Pamiec podreczna wyczyszczona",
+    "settings.chooseLanguage": "Wybierz jezyk",
+    "settings.chooseCurrency": "Wybierz walute",
+    "settings.confirmLogout": "Na pewno chcesz sie wylogowac?",
+    "settings.confirmClearCache": "Na pewno chcesz wyczyscic wszystkie pliki cache?",
+    "profile.editProfile": "Edytuj profil",
+    "profile.bookingHistory": "Historia rezerwacji",
+    "profile.notifications": "Powiadomienia",
+    "profile.becomeOwner": "Zostan wynajmujacym",
+    "profile.becomeTechnician": "Zostan technikiem",
+    "profile.member": "Czlonek od",
+    "profile.helpSupport": "Pomoc i wsparcie"
+  },
+  /* ─── KISWAHILI (SWAHILI) ─── */
+  sw: {
+    "nav.home": "Mwanzo",
+    "nav.trips": "Safari",
+    "nav.messages": "Ujumbe",
+    "nav.profile": "Wasifu",
+    "nav.publish": "Chapisha",
+    "common.save": "Hifadhi",
+    "common.cancel": "Ghairi",
+    "common.confirm": "Thibitisha",
+    "common.back": "Rudi",
+    "common.close": "Funga",
+    "common.continue": "Endelea",
+    "common.delete": "Futa",
+    "common.edit": "Hariri",
+    "common.search": "Tafuta",
+    "common.loading": "Inapakia...",
+    "common.yes": "Ndio",
+    "common.no": "Hapana",
+    "common.logout": "Toka",
+    "common.next": "Ifuatayo",
+    "common.previous": "Iliyotangulia",
+    "common.send": "Tuma",
+    "common.share": "Shiriki",
+    "common.add": "Ongeza",
+    "settings.title": "Mipangilio",
+    "settings.preferences": "Mapendeleo",
+    "settings.language": "Lugha",
+    "settings.notifications": "Arifa za push",
+    "settings.darkMode": "Hali ya giza",
+    "settings.currency": "Sarafu",
+    "settings.data": "Data",
+    "settings.clearCache": "Futa kashe",
+    "settings.offlineDownloads": "Vipakuliwa nje ya mtandao",
+    "settings.security": "Usalama",
+    "settings.changePassword": "Badilisha nenosiri",
+    "settings.twoFactor": "Uthibitishaji wa hatua mbili",
+    "settings.devices": "Vifaa vilivyounganishwa",
+    "settings.help": "Msaada na Usaidizi",
+    "settings.helpCenter": "Kituo cha msaada",
+    "settings.about": "Kuhusu",
+    "settings.appVersion": "Toleo la programu",
+    "settings.terms": "Masharti ya huduma",
+    "settings.privacy": "Sera ya faragha",
+    "settings.licenses": "Leseni za chanzo huria",
+    "settings.deleteAccount": "Futa akaunti yangu",
+    "settings.darkModeOn": "Hali ya giza imewashwa",
+    "settings.darkModeOff": "Hali ya giza imezimwa",
+    "settings.languageChanged": "Lugha: {lang}",
+    "settings.currencyChanged": "Sarafu: {curr}",
+    "settings.cacheCleared": "Kashe imefutwa",
+    "settings.chooseLanguage": "Chagua lugha",
+    "settings.chooseCurrency": "Chagua sarafu",
+    "settings.confirmLogout": "Una uhakika unataka kutoka?",
+    "settings.confirmClearCache": "Una uhakika unataka kufuta faili zote za kashe?",
+    "profile.editProfile": "Hariri wasifu",
+    "profile.bookingHistory": "Historia ya uwekaji",
+    "profile.notifications": "Arifa",
+    "profile.becomeOwner": "Kuwa mwenye nyumba",
+    "profile.becomeTechnician": "Kuwa fundi",
+    "profile.member": "Mwanachama tangu",
+    "profile.helpSupport": "Msaada na Usaidizi"
+  },
+  /* ─── LINGÁLA (LINGALA) ─── */
+  ln: {
+    "nav.home": "Ndako",
+    "nav.trips": "Mibembo",
+    "nav.messages": "Bansango",
+    "nav.profile": "Profil",
+    "nav.publish": "Bimisa",
+    "common.save": "Bomba",
+    "common.cancel": "Tika",
+    "common.confirm": "Ndimisa",
+    "common.back": "Zonga",
+    "common.close": "Kanga",
+    "common.continue": "Kobá",
+    "common.delete": "Limwisa",
+    "common.edit": "Bongisa",
+    "common.search": "Luka",
+    "common.loading": "Ezali kotambola...",
+    "common.yes": "Iyo",
+    "common.no": "Te",
+    "common.logout": "Bima",
+    "common.next": "Oyo elandi",
+    "common.previous": "Oyo eleki",
+    "common.send": "Tinda",
+    "common.share": "Kabola",
+    "common.add": "Bakisa",
+    "settings.title": "Bisalelo",
+    "settings.preferences": "Bolingo",
+    "settings.language": "Lokota",
+    "settings.notifications": "Bansango ya push",
+    "settings.darkMode": "Mode ya molili",
+    "settings.currency": "Mbongo",
+    "settings.data": "Données",
+    "settings.clearCache": "Limwisa cache",
+    "settings.offlineDownloads": "Bokitisi hors-ligne",
+    "settings.security": "Libateli",
+    "settings.changePassword": "Bongola mot de passe",
+    "settings.twoFactor": "Bondimisi ya makonzi mibale",
+    "settings.devices": "Bisaleli ekangani",
+    "settings.help": "Lisalisi & Support",
+    "settings.helpCenter": "Esika ya lisalisi",
+    "settings.about": "Mpo na",
+    "settings.appVersion": "Version ya app",
+    "settings.terms": "Mibeko ya kosalela",
+    "settings.privacy": "Politique ya bonkutu",
+    "settings.licenses": "Licences open source",
+    "settings.deleteAccount": "Limwisa compte na ngai",
+    "settings.darkModeOn": "Mode ya molili efungami",
+    "settings.darkModeOff": "Mode ya molili ekangami",
+    "settings.languageChanged": "Lokota: {lang}",
+    "settings.currencyChanged": "Mbongo: {curr}",
+    "settings.cacheCleared": "Cache elimwami malamu",
+    "settings.chooseLanguage": "Pona lokota",
+    "settings.chooseCurrency": "Pona mbongo",
+    "settings.confirmLogout": "Olingi solo kobima?",
+    "settings.confirmClearCache": "Olingi solo kolimwisa ba cache nyonso?",
+    "profile.editProfile": "Bongisa profil",
+    "profile.bookingHistory": "Histoire ya réservations",
+    "profile.notifications": "Bansango",
+    "profile.becomeOwner": "Komá bailleur",
+    "profile.becomeTechnician": "Komá technicien",
+    "profile.member": "Membre kobanda",
+    "profile.helpSupport": "Lisalisi & Support"
+  },
+  /* ─── WOLOF ─── */
+  wo: {
+    "nav.home": "Kër",
+    "nav.trips": "Tukki",
+    "nav.messages": "Bataaxal",
+    "nav.profile": "Profil",
+    "nav.publish": "Génne",
+    "common.save": "Denc",
+    "common.cancel": "Dëdduwoo",
+    "common.confirm": "Dëgëral",
+    "common.back": "Delluwaat",
+    "common.close": "Tëj",
+    "common.continue": "Jëlle",
+    "common.delete": "Far",
+    "common.edit": "Soppi",
+    "common.search": "Seet",
+    "common.loading": "Yenge...",
+    "common.yes": "Waaw",
+    "common.no": "Déedéet",
+    "common.logout": "Génn",
+    "common.next": "Bi ci topp",
+    "common.previous": "Bi jiitu",
+    "common.send": "Yónnee",
+    "common.share": "Séddoo",
+    "common.add": "Yokk",
+    "settings.title": "Tànneef",
+    "settings.preferences": "Cërcër",
+    "settings.language": "Làkk",
+    "settings.notifications": "Notifications push",
+    "settings.darkMode": "Mode lëndëm",
+    "settings.currency": "Xaalis",
+    "settings.data": "Données",
+    "settings.clearCache": "Far cache",
+    "settings.offlineDownloads": "Téléchargements offline",
+    "settings.security": "Kaaraange",
+    "settings.changePassword": "Soppi mot de passe",
+    "settings.twoFactor": "Vérification ñaari étape",
+    "settings.devices": "Appareils yi ko ëmb",
+    "settings.help": "Ndimbal & Support",
+    "settings.helpCenter": "Bérébu ndimbal",
+    "settings.about": "Ci",
+    "settings.appVersion": "Version app",
+    "settings.terms": "Conditions d'utilisation",
+    "settings.privacy": "Politique confidentialité",
+    "settings.licenses": "Licences open source",
+    "settings.deleteAccount": "Far sama compte",
+    "settings.darkModeOn": "Mode lëndëm dafa tax",
+    "settings.darkModeOff": "Mode lëndëm dafa fey",
+    "settings.languageChanged": "Làkk: {lang}",
+    "settings.currencyChanged": "Xaalis: {curr}",
+    "settings.cacheCleared": "Cache far na",
+    "settings.chooseLanguage": "Tànn làkk",
+    "settings.chooseCurrency": "Tànn xaalis",
+    "settings.confirmLogout": "Bëgg nga génn dëgg dëgg?",
+    "settings.confirmClearCache": "Bëgg nga far cache yi?",
+    "profile.editProfile": "Soppi profil",
+    "profile.bookingHistory": "Histoire bu réservations",
+    "profile.notifications": "Notifications",
+    "profile.becomeOwner": "Doon bailleur",
+    "profile.becomeTechnician": "Doon technicien",
+    "profile.member": "Membre tàmbalee",
+    "profile.helpSupport": "Ndimbal & Support"
+  },
+  /* ─── HAUSA ─── */
+  ha: {
+    "nav.home": "Gida",
+    "nav.trips": "Tafiye-tafiye",
+    "nav.messages": "Sakonni",
+    "nav.profile": "Bayanin",
+    "nav.publish": "Buga",
+    "common.save": "Ajiye",
+    "common.cancel": "Soke",
+    "common.confirm": "Tabbatar",
+    "common.back": "Komawa",
+    "common.close": "Rufe",
+    "common.continue": "Cigaba",
+    "common.delete": "Share",
+    "common.edit": "Gyara",
+    "common.search": "Bincike",
+    "common.loading": "Ana lodi...",
+    "common.yes": "I",
+    "common.no": "A'a",
+    "common.logout": "Fita",
+    "common.next": "Na gaba",
+    "common.previous": "Na baya",
+    "common.send": "Aika",
+    "common.share": "Raba",
+    "common.add": "Kara",
+    "settings.title": "Saituna",
+    "settings.preferences": "Abubuwan da kuke so",
+    "settings.language": "Harshe",
+    "settings.notifications": "Sanarwa push",
+    "settings.darkMode": "Yanayin duhu",
+    "settings.currency": "Kudi",
+    "settings.data": "Bayanai",
+    "settings.clearCache": "Share cache",
+    "settings.offlineDownloads": "Saukewa ba tare da intanet ba",
+    "settings.security": "Tsaro",
+    "settings.changePassword": "Canza kalmar sirri",
+    "settings.twoFactor": "Tabbatarwa ta matakai biyu",
+    "settings.devices": "Na'urori da aka hada",
+    "settings.help": "Taimako & Support",
+    "settings.helpCenter": "Cibiyar taimako",
+    "settings.about": "Game da",
+    "settings.appVersion": "Sigar manhaja",
+    "settings.terms": "Sharudda na sabis",
+    "settings.privacy": "Manufar sirri",
+    "settings.licenses": "Lasisin open source",
+    "settings.deleteAccount": "Share asusuna",
+    "settings.darkModeOn": "An kunna yanayin duhu",
+    "settings.darkModeOff": "An kashe yanayin duhu",
+    "settings.languageChanged": "Harshe: {lang}",
+    "settings.currencyChanged": "Kudi: {curr}",
+    "settings.cacheCleared": "An share cache cikin nasara",
+    "settings.chooseLanguage": "Zabi harshe",
+    "settings.chooseCurrency": "Zabi kudi",
+    "settings.confirmLogout": "Kuna tabbatar kuna son fita?",
+    "settings.confirmClearCache": "Kuna tabbatar kuna son share cache?",
+    "profile.editProfile": "Gyara bayanin",
+    "profile.bookingHistory": "Tarihin ajiya",
+    "profile.notifications": "Sanarwa",
+    "profile.becomeOwner": "Zama mai gida",
+    "profile.becomeTechnician": "Zama fasaha",
+    "profile.member": "Memba tun",
+    "profile.helpSupport": "Taimako & Support"
+  },
+  /* ─── BAMANANKAN (BAMBARA) ─── */
+  bm: {
+    "nav.home": "So",
+    "nav.trips": "Taamaw",
+    "nav.messages": "Bataki",
+    "nav.profile": "Profili",
+    "nav.publish": "Bilali",
+    "common.save": "Mara",
+    "common.cancel": "A bila",
+    "common.confirm": "A sɛmɛ",
+    "common.back": "Segin",
+    "common.close": "A datugu",
+    "common.continue": "Taa ɲɛ",
+    "common.delete": "A bɔ",
+    "common.edit": "A jɔn",
+    "common.search": "Ɲini",
+    "common.loading": "A bɛ taa...",
+    "common.yes": "Ɔnhɔn",
+    "common.no": "Ayi",
+    "common.logout": "Bɔ",
+    "common.next": "Nata",
+    "common.previous": "Tɛmɛnen",
+    "common.send": "Ci",
+    "common.share": "Tila",
+    "common.add": "Fara",
+    "settings.title": "Sigili",
+    "settings.preferences": "Latigɛw",
+    "settings.language": "Kan",
+    "settings.notifications": "Notifikasyon push",
+    "settings.darkMode": "Dibi mode",
+    "settings.currency": "Wari",
+    "settings.data": "Données",
+    "settings.clearCache": "Cache bɔ",
+    "settings.offlineDownloads": "Téléchargement offline",
+    "settings.security": "Lakana",
+    "settings.changePassword": "Mot de passe Caman",
+    "settings.twoFactor": "Vérifikasyon hakɛ fila",
+    "settings.devices": "Minanw minnu sɛrɛn",
+    "settings.help": "Dɛmɛ & Support",
+    "settings.helpCenter": "Dɛmɛ ya sigili",
+    "settings.about": "A kan",
+    "settings.appVersion": "Aplikasyon ka version",
+    "settings.terms": "Kuma sariyaw",
+    "settings.privacy": "Gundo politiki",
+    "settings.licenses": "Lisanci open source",
+    "settings.deleteAccount": "N ka konti bɔ",
+    "settings.darkModeOn": "Dibi mode bɛ baara la",
+    "settings.darkModeOff": "Dibi mode tɛ baara la",
+    "settings.languageChanged": "Kan: {lang}",
+    "settings.currencyChanged": "Wari: {curr}",
+    "settings.cacheCleared": "Cache bɔra ka ɲɛ",
+    "settings.chooseLanguage": "Kan sugandi",
+    "settings.chooseCurrency": "Wari sugandi",
+    "settings.confirmLogout": "I b'a fɛ ka bɔ tiɲɛ na?",
+    "settings.confirmClearCache": "I b'a fɛ ka cache fɛnw bɛɛ bɔ?",
+    "profile.editProfile": "Profili Caman",
+    "profile.bookingHistory": "Réservation tariku",
+    "profile.notifications": "Notifikasyon",
+    "profile.becomeOwner": "Kɛ bailleur ye",
+    "profile.becomeTechnician": "Kɛ technicien ye",
+    "profile.member": "Membre ka tile",
+    "profile.helpSupport": "Dɛmɛ & Support"
+  }
+};
+
+/* ── Resolution langue native (label "Francais") -> code ISO ── */
+function I18N_codeFromLabel(label) {
+  const found = I18N_LANGUAGES.find(l => l.native === label || l.label === label);
+  return found ? found.code : "fr";
+}
+function I18N_labelFromCode(code) {
+  const found = I18N_LANGUAGES.find(l => l.code === code);
+  return found ? found.native : "Français";
+}
+
+/* ── Etat global de la langue (lu depuis localStorage) ── */
+window.byerI18n = window.byerI18n || {};
+window.byerI18n.LANGUAGES = I18N_LANGUAGES;
+window.byerI18n.DICT = I18N_DICT;
+
+/* La langue stockee est sous forme native ("Francais"), on la convertit en code. */
+(function initI18nLang() {
+  let stored = "Français";
+  try {
+    if (typeof byerStorage !== "undefined") stored = byerStorage.get("language", "Français");
+  } catch (e) {}
+  window.byerI18n.code = I18N_codeFromLabel(stored);
+})();
+
+/* ── t(key, params) ── traduit avec fallback fr -> en -> key ── */
+function t(key, params) {
+  const code = window.byerI18n.code || "fr";
+  const dict = I18N_DICT[code] || I18N_DICT.fr;
+  let val = dict[key];
+  if (val === undefined) val = I18N_DICT.en && I18N_DICT.en[key];
+  if (val === undefined) val = I18N_DICT.fr && I18N_DICT.fr[key];
+  if (val === undefined) val = key;
+  if (params && typeof params === "object") {
+    Object.keys(params).forEach(k => {
+      val = val.replace(new RegExp("\\{" + k + "\\}", "g"), params[k]);
+    });
+  }
+  return val;
+}
+window.byerI18n.t = t;
+
+/* ── Helper pour changer de langue (declenche un re-render via event) ── */
+window.byerI18n.setLanguage = function (codeOrNative) {
+  const code = I18N_LANGUAGES.find(l => l.code === codeOrNative) ? codeOrNative : I18N_codeFromLabel(codeOrNative);
+  window.byerI18n.code = code;
+  window.dispatchEvent(new CustomEvent("byer-language-changed", {
+    detail: {
+      code
+    }
+  }));
+};
+
+/* ── useLangTick : hook React qui force un re-render lors d'un
+   changement de langue. A appeler en haut de chaque composant
+   racine qui rend des chaines traduites (ByerApp, SettingsScreen...).
+   Les composants enfants se re-rendent automatiquement par cascade. */
+function useLangTick() {
+  const [tick, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const handler = () => setTick(n => n + 1);
+    window.addEventListener("byer-language-changed", handler);
+    return () => window.removeEventListener("byer-language-changed", handler);
+  }, []);
+  return tick;
+}
+window.byerI18n.useLangTick = useLangTick;
+
 /* ═══ js/styles.js ═══ */
 "use strict";
 
@@ -11598,7 +13047,16 @@ function ProfileScreen({
       gap: 8,
       marginBottom: 2
     }
-  }, /*#__PURE__*/React.createElement("span", {
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 16,
+      fontWeight: 700,
+      color: C.black,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, USER.name), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 10,
       fontWeight: 700,
@@ -11617,16 +13075,7 @@ function ProfileScreen({
       fontSize: 10,
       lineHeight: 1
     }
-  }, "\u2605"), rewardsTier), /*#__PURE__*/React.createElement("p", {
-    style: {
-      fontSize: 16,
-      fontWeight: 700,
-      color: C.black,
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap"
-    }
-  }, USER.name)), /*#__PURE__*/React.createElement("p", {
+  }, "\u2605"), rewardsTier)), /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 12,
       color: C.light,
@@ -24841,6 +26290,8 @@ function SettingsScreen({
   onLogout,
   onDeleteAccount
 }) {
+  // Hook i18n : force le re-render quand la langue change globalement.
+  window.byerI18n.useLangTick();
   const [pushNotifications, setPushNotifications] = useState(() => byerStorage.get("pushNotifications", true));
   const [darkMode, setDarkMode] = useState(() => byerStorage.get("darkMode", false));
   const [offlineDownloads, setOfflineDownloads] = useState(() => byerStorage.get("offlineDownloads", false));
@@ -24848,7 +26299,6 @@ function SettingsScreen({
   const [language, setLanguage] = useState(() => byerStorage.get("language", "Français"));
   const [currency, setCurrency] = useState(() => byerStorage.get("currency", "FCFA"));
   const [showClearCacheConfirm, setShowClearCacheConfirm] = useState(false);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showLanguagePicker, setShowLanguagePicker] = useState(false);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
@@ -24872,6 +26322,8 @@ function SettingsScreen({
   }, [twoFactorAuth]);
   React.useEffect(() => {
     byerStorage.set("language", language);
+    // Notifie le systeme i18n + force le re-render global de l'app
+    window.byerI18n.setLanguage(language);
   }, [language]);
   React.useEffect(() => {
     byerStorage.set("currency", currency);
@@ -24883,10 +26335,16 @@ function SettingsScreen({
   };
   const handleDarkModeToggle = value => {
     setDarkMode(value);
-    showToastMsg(value ? "Mode sombre activé" : "Mode sombre désactivé");
+    showToastMsg(value ? t("settings.darkModeOn") : t("settings.darkModeOff"));
   };
-  const LANGUAGES = ["Français", "English", "Español"];
-  const CURRENCIES = ["FCFA", "EUR", "USD"];
+
+  // Liste complete des langues (20 langues, noms natifs avec drapeaux)
+  const LANGUAGES = window.byerI18n.LANGUAGES.map(l => `${l.flag} ${l.native}`);
+  // Helper : extrait le nom natif depuis "🇫🇷 Francais" pour comparaison
+  const stripFlag = s => s.replace(/^[\u{1F1E6}-\u{1F1FF}]{2}\s*/u, "").trim();
+  const currentLangDisplay = window.byerI18n.LANGUAGES.find(l => l.native === language || l.label === language);
+  const languageDisplay = currentLangDisplay ? `${currentLangDisplay.flag} ${currentLangDisplay.native}` : language;
+  const CURRENCIES = ["FCFA", "EUR", "USD", "GBP", "CAD", "CHF", "JPY", "CNY", "NGN", "ZAR"];
   const DEVICES = [{
     id: "this",
     name: navigator.userAgent.includes("Chrome") ? "Chrome (cet appareil)" : "Cet appareil",
@@ -25036,7 +26494,7 @@ function SettingsScreen({
       cursor: "pointer",
       fontFamily: "DM Sans"
     }
-  }, "Annuler"), /*#__PURE__*/React.createElement("button", {
+  }, t("common.cancel")), /*#__PURE__*/React.createElement("button", {
     onClick: onConfirm,
     style: {
       flex: 1,
@@ -25050,7 +26508,7 @@ function SettingsScreen({
       cursor: "pointer",
       fontFamily: "DM Sans"
     }
-  }, "Confirmer"))));
+  }, t("common.confirm")))));
   const Toast = ({
     message
   }) => /*#__PURE__*/React.createElement("div", {
@@ -25107,77 +26565,77 @@ function SettingsScreen({
       color: C.dark,
       fontFamily: "DM Sans"
     }
-  }, "Param\xE8tres")), /*#__PURE__*/React.createElement("div", {
+  }, t("settings.title"))), /*#__PURE__*/React.createElement("div", {
     style: {
       ...S.scroll,
       paddingBottom: 80
     }
   }, /*#__PURE__*/React.createElement(SectionHeader, {
-    title: "Pr\xE9f\xE9rences"
+    title: t("settings.preferences")
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "Langue",
+    label: t("settings.language"),
     rightElement: /*#__PURE__*/React.createElement(DisplayValue, {
-      value: language
+      value: languageDisplay
     }),
     onPress: () => setShowLanguagePicker(true)
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "Notifications push",
+    label: t("settings.notifications"),
     rightElement: /*#__PURE__*/React.createElement(ToggleSwitch, {
       value: pushNotifications,
       onChange: setPushNotifications
     })
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "Mode sombre",
+    label: t("settings.darkMode"),
     rightElement: /*#__PURE__*/React.createElement(ToggleSwitch, {
       value: darkMode,
       onChange: handleDarkModeToggle
     })
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "Devise",
+    label: t("settings.currency"),
     rightElement: /*#__PURE__*/React.createElement(DisplayValue, {
       value: currency
     }),
     onPress: () => setShowCurrencyPicker(true)
   }), /*#__PURE__*/React.createElement(SectionHeader, {
-    title: "Donn\xE9es"
+    title: t("settings.data")
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "Vider le cache",
+    label: t("settings.clearCache"),
     rightElement: /*#__PURE__*/React.createElement(ChevronElement, null),
     onPress: () => setShowClearCacheConfirm(true)
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "T\xE9l\xE9chargements hors-ligne",
+    label: t("settings.offlineDownloads"),
     rightElement: /*#__PURE__*/React.createElement(ToggleSwitch, {
       value: offlineDownloads,
       onChange: setOfflineDownloads
     })
   }), /*#__PURE__*/React.createElement(SectionHeader, {
-    title: "S\xE9curit\xE9"
+    title: t("settings.security")
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "Changer le mot de passe",
+    label: t("settings.changePassword"),
     rightElement: /*#__PURE__*/React.createElement(ChevronElement, null),
     onPress: onOpenForgotPassword
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "V\xE9rification en 2 \xE9tapes",
+    label: t("settings.twoFactor"),
     rightElement: /*#__PURE__*/React.createElement(ToggleSwitch, {
       value: twoFactorAuth,
       onChange: setTwoFactorAuth
     })
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "Appareils connect\xE9s",
+    label: t("settings.devices"),
     rightElement: /*#__PURE__*/React.createElement(DisplayValue, {
-      value: `${DEVICES.length} appareil${DEVICES.length > 1 ? "s" : ""}`
+      value: `${DEVICES.length}`
     }),
     onPress: () => setShowDevicesSheet(true)
   }), /*#__PURE__*/React.createElement(SectionHeader, {
-    title: "Aide & Support"
+    title: t("settings.help")
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "Centre d'aide",
+    label: t("settings.helpCenter"),
     rightElement: /*#__PURE__*/React.createElement(ChevronElement, null),
     onPress: onOpenSupport
   }), /*#__PURE__*/React.createElement(SectionHeader, {
-    title: "\xC0 propos"
+    title: t("settings.about")
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "Version de l'app",
+    label: t("settings.appVersion"),
     rightElement: /*#__PURE__*/React.createElement("span", {
       style: {
         color: C.light,
@@ -25185,43 +26643,25 @@ function SettingsScreen({
       }
     }, "2.1.0")
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "Conditions d'utilisation",
+    label: t("settings.terms"),
     rightElement: /*#__PURE__*/React.createElement(ChevronElement, null),
     onPress: onOpenTerms
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "Politique de confidentialit\xE9",
+    label: t("settings.privacy"),
     rightElement: /*#__PURE__*/React.createElement(ChevronElement, null),
     onPress: onOpenPrivacy
   }), /*#__PURE__*/React.createElement(RowItem, {
-    label: "Licences open source",
+    label: t("settings.licenses"),
     rightElement: /*#__PURE__*/React.createElement(ChevronElement, null),
     onPress: () => {
-      setToastMessage("Liste des licences disponibles sur byer.cm/licences");
+      setToastMessage("byer.cm/licences");
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2500);
     }
   }), /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: "24px 16px 16px"
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: () => setShowLogoutConfirm(true),
-    style: {
-      width: "100%",
-      padding: "14px 16px",
-      backgroundColor: C.coral,
-      border: "none",
-      borderRadius: 8,
-      color: C.white,
-      fontSize: 16,
-      fontWeight: 600,
-      cursor: "pointer",
-      fontFamily: "DM Sans"
-    }
-  }, "Se d\xE9connecter"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: "center",
-      marginTop: 16
+      padding: "24px 16px 16px",
+      textAlign: "center"
     }
   }, /*#__PURE__*/React.createElement("span", {
     onClick: () => setShowDeleteConfirm(true),
@@ -25233,50 +26673,49 @@ function SettingsScreen({
       textDecoration: "underline",
       fontFamily: "DM Sans"
     }
-  }, "Supprimer mon compte")))), showClearCacheConfirm && /*#__PURE__*/React.createElement(ConfirmDialog, {
-    title: "Vider le cache",
-    message: "\xCAtes-vous s\xFBr de vouloir supprimer tous les fichiers en cache ? Cela ne supprimera pas vos donn\xE9es.",
+  }, "Supprimer mon compte"))), showClearCacheConfirm && /*#__PURE__*/React.createElement(ConfirmDialog, {
+    title: t("settings.clearCache"),
+    message: t("settings.confirmClearCache"),
     onConfirm: () => {
       setShowClearCacheConfirm(false);
-      setToastMessage("Cache vidé avec succès");
+      setToastMessage(t("settings.cacheCleared"));
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
     },
     onCancel: () => setShowClearCacheConfirm(false)
-  }), showLogoutConfirm && /*#__PURE__*/React.createElement(ConfirmDialog, {
-    title: "Se d\xE9connecter",
-    message: "\xCAtes-vous s\xFBr de vouloir vous d\xE9connecter ?",
-    onConfirm: () => {
-      setShowLogoutConfirm(false);
-      onLogout?.();
-    },
-    onCancel: () => setShowLogoutConfirm(false)
   }), showDeleteConfirm && /*#__PURE__*/React.createElement(ConfirmDialog, {
-    title: "Supprimer mon compte",
-    message: "Cette action est irr\xE9versible. Toutes vos donn\xE9es seront supprim\xE9es.",
+    title: t("settings.deleteAccount"),
+    message: t("common.confirm") + " ?",
     onConfirm: () => {
       setShowDeleteConfirm(false);
       onDeleteAccount?.();
     },
     onCancel: () => setShowDeleteConfirm(false)
   }), showLanguagePicker && /*#__PURE__*/React.createElement(PickerSheet, {
-    title: "Choisir la langue",
+    title: t("settings.chooseLanguage"),
     options: LANGUAGES,
-    selected: language,
+    selected: languageDisplay,
     onSelect: v => {
-      setLanguage(v);
+      // v = "🇫🇷 Francais" → on stocke uniquement le nom natif
+      const native = stripFlag(v);
+      setLanguage(native);
       setShowLanguagePicker(false);
-      showToastMsg(`Langue : ${v}`);
+      // Le toast utilise la nouvelle langue (re-render synchrone via setLanguage above)
+      setTimeout(() => showToastMsg(t("settings.languageChanged", {
+        lang: native
+      })), 50);
     },
     onClose: () => setShowLanguagePicker(false)
   }), showCurrencyPicker && /*#__PURE__*/React.createElement(PickerSheet, {
-    title: "Choisir la devise",
+    title: t("settings.chooseCurrency"),
     options: CURRENCIES,
     selected: currency,
     onSelect: v => {
       setCurrency(v);
       setShowCurrencyPicker(false);
-      showToastMsg(`Devise : ${v}`);
+      showToastMsg(t("settings.currencyChanged", {
+        curr: v
+      }));
     },
     onClose: () => setShowCurrencyPicker(false)
   }), showDevicesSheet && /*#__PURE__*/React.createElement("div", {
@@ -25314,7 +26753,7 @@ function SettingsScreen({
       color: C.dark,
       marginBottom: 16
     }
-  }, "Appareils connect\xE9s"), DEVICES.map(d => /*#__PURE__*/React.createElement("div", {
+  }, t("settings.devices")), DEVICES.map(d => /*#__PURE__*/React.createElement("div", {
     key: d.id,
     style: {
       display: "flex",
@@ -25344,8 +26783,8 @@ function SettingsScreen({
       padding: "4px 8px",
       borderRadius: 6
     }
-  }, "ACTUEL") : /*#__PURE__*/React.createElement("button", {
-    onClick: () => showToastMsg("Appareil déconnecté"),
+  }, "\u2713") : /*#__PURE__*/React.createElement("button", {
+    onClick: () => showToastMsg(t("common.logout")),
     style: {
       background: "none",
       border: `1px solid ${C.coral}`,
@@ -25357,7 +26796,7 @@ function SettingsScreen({
       cursor: "pointer",
       fontFamily: "DM Sans"
     }
-  }, "D\xE9connecter"))), /*#__PURE__*/React.createElement("button", {
+  }, t("common.logout")))), /*#__PURE__*/React.createElement("button", {
     onClick: () => setShowDevicesSheet(false),
     style: {
       width: "100%",
@@ -25372,7 +26811,7 @@ function SettingsScreen({
       cursor: "pointer",
       fontFamily: "DM Sans"
     }
-  }, "Fermer"))), showToast && /*#__PURE__*/React.createElement(Toast, {
+  }, t("common.close")))), showToast && /*#__PURE__*/React.createElement(Toast, {
     message: toastMessage
   }));
 }
@@ -28709,6 +30148,10 @@ function adaptListing(row) {
 function ByerApp({
   onLogout
 }) {
+  /* i18n : tick d'invalidation. Quand la langue change dans Settings,
+     ce hook bump un counter, ce qui re-rend ByerApp et toute sa
+     descendance avec les nouvelles traductions via t(). */
+  window.byerI18n.useLangTick();
   const [tab, setTab] = useState("home");
   const [segment, setSegment] = useState("property");
   const [propType, setPropType] = useState("all");
@@ -28937,8 +30380,11 @@ function ByerApp({
   /* Hide nav bar dans certains contextes immersifs :
      - Conversation chat (UX plein écran)
      - Galerie photo plein écran
-     - Scanner QR overlay (caméra plein écran) */
-  const hideGlobalNav = chatActive || !!gallery || qrScanOpen;
+     - Scanner QR overlay (caméra plein écran)
+     - TOUT écran secondaire (Settings, Publish, Dashboard, Detail, etc.)
+       → la nav bar ne doit apparaître QUE sur les 5 onglets principaux. */
+  const onSecondaryScreen = !!detail || !!gallery || !!allReviewsItem || rentOpen || !!ownerProfile || !!buildingDetail || dashboardOpen || !!listAllFilter || techsOpen || prosOpen || boostOpen || notifsOpen || publishOpen || settingsOpen || termsOpen || privacyOpen || forgotOpen || supportOpen || editProfileOpen || !!bookingItem || reviewsOpen || historyOpen;
+  const hideGlobalNav = chatActive || !!gallery || qrScanOpen || onSecondaryScreen;
 
   /* renderScreen : sélectionne l'écran courant. Une seule sortie pour
      que le nav bar soit toujours rendu en dessous (au niveau racine). */
@@ -29313,23 +30759,23 @@ function BottomNavBar({
   const nav = [{
     id: "home",
     icon: "home",
-    label: "Accueil"
+    label: t("nav.home")
   }, {
     id: "saved",
     icon: "heart",
-    label: "Favoris"
+    label: t("nav.favorites") === "nav.favorites" ? "Favoris" : t("nav.favorites")
   }, {
     id: "trips",
     icon: "trips",
-    label: "Voyages"
+    label: t("nav.trips")
   }, {
     id: "messages",
     icon: "message",
-    label: "Messages"
+    label: t("nav.messages")
   }, {
     id: "profile",
     icon: "user",
-    label: "Profil"
+    label: t("nav.profile")
   }];
   return /*#__PURE__*/React.createElement("nav", {
     style: S.nav

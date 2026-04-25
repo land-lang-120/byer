@@ -128,34 +128,39 @@ input[type=date]::-webkit-calendar-picker-indicator {
 }
 
 /* ═══════════════════════════════════════════════════
-   DARK MODE — Inversion globale (approche pragmatique)
-   Le code React utilise des couleurs en inline-style via l'objet C.
-   Pour éviter de réécrire 12k lignes, on inverse l'image rendue
-   et on contre-inverse les images/vidéos pour qu'elles restent
-   normales. Approche utilisée dans de nombreuses extensions de
-   dark mode (Dark Reader, etc.).
+   DARK MODE — Mode sombre DOUX (gris foncé, pas noir pur)
+   On atténue l'inversion (0.88 au lieu de 1) et on baisse
+   la luminosité globale pour obtenir un fond gris anthracite
+   confortable plutôt qu'un noir agressif. Approche similaire
+   aux modes sombres "soft" de Twitter/X et GitHub.
    ═══════════════════════════════════════════════════ */
 html.byer-dark {
-  background: #0a0a0a;
+  background: #1c1c1e;
 }
 
 html.byer-dark body {
-  filter: invert(1) hue-rotate(180deg);
-  background: #0a0a0a;
+  /* invert(0.88) = inversion adoucie (au lieu de 1.0 = inversion totale)
+     hue-rotate(180deg) = rétablit les couleurs (rouge reste rouge, etc.)
+     contrast(0.88) = baisse le contraste pour un rendu moins agressif
+     brightness(0.95) = légère atténuation globale
+     Résultat : fond gris anthracite (~#222), texte gris très clair (~#E0E0E0) */
+  filter: invert(0.88) hue-rotate(180deg) contrast(0.88) brightness(0.95);
+  background: #1c1c1e;
 }
 
 /* Contre-inverse les images, vidéos et iframes pour qu'elles
-   conservent leurs couleurs naturelles. */
+   conservent leurs couleurs naturelles. On applique exactement
+   l'inverse du filtre du body pour annuler complètement l'effet. */
 html.byer-dark img,
 html.byer-dark video,
 html.byer-dark iframe,
 html.byer-dark canvas,
 html.byer-dark [data-no-invert],
 html.byer-dark .face-avatar {
-  filter: invert(1) hue-rotate(180deg);
+  filter: invert(0.88) hue-rotate(180deg) contrast(1.14) brightness(1.05);
 }
 
 /* Loader (avant React mount) */
 html.byer-dark #byer-loading {
-  background: #0a0a0a;
+  background: #1c1c1e;
 }

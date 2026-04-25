@@ -11,6 +11,7 @@ const FILES = [
   'js/config.js',
   'js/supabase-client.js',
   'js/data.js',
+  'js/i18n.js',
   'js/styles.js',
   'js/components.js',
   'js/auth.js',

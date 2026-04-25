@@ -144,15 +144,14 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
         )}
       </div>
 
-      {/* Avatar card — l'édition se fait via le menu 3-points du header.
-          Le tier Bronze/Argent/Or apparaît AVANT le nom de l'utilisateur
-          (juste à côté de l'avatar) pour donner immédiatement le contexte
-          de fidélité — le menu 3-points dans le header au-dessus le
-          surplombe naturellement (cf. demande utilisateur). */}
+      {/* Avatar card — l'edition se fait via le menu 3-points du header.
+          Ordre : NOM en premier, puis badge tier (Bronze/Argent/Or) APRES.
+          La fidelite reste visible mais l'identite (le nom) est mise en avant. */}
       <div style={{margin:"0 16px 12px",background:C.white,borderRadius:16,padding:"18px 16px",display:"flex",alignItems:"center",gap:14,boxShadow:`0 1px 8px rgba(0,0,0,.05)`}}>
         <FaceAvatar photo={USER.photo} avatar={USER.avatar} bg={USER.bg} size={56} radius={28}/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
+            <p style={{fontSize:16,fontWeight:700,color:C.black,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{USER.name}</p>
             <span style={{
               fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:8,
               background:tierBg,color:tierColor,flexShrink:0,
@@ -161,7 +160,6 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
             }}>
               <span style={{fontSize:10,lineHeight:1}}>★</span>{rewardsTier}
             </span>
-            <p style={{fontSize:16,fontWeight:700,color:C.black,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{USER.name}</p>
           </div>
           <p style={{fontSize:12,color:C.light,marginTop:2}}>{USER.city} · Membre {USER.since}</p>
         </div>

@@ -1,4 +1,7 @@
 function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPassword, onOpenSupport, onLogout, onDeleteAccount }) {
+  // Hook i18n : force le re-render quand la langue change globalement.
+  window.byerI18n.useLangTick();
+
   const [pushNotifications, setPushNotifications] = useState(() => byerStorage.get("pushNotifications", true));
   const [darkMode, setDarkMode]                   = useState(() => byerStorage.get("darkMode", false));
   const [offlineDownloads, setOfflineDownloads]   = useState(() => byerStorage.get("offlineDownloads", false));
@@ -6,7 +9,6 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
   const [language, setLanguage]                   = useState(() => byerStorage.get("language", "Français"));
   const [currency, setCurrency]                   = useState(() => byerStorage.get("currency", "FCFA"));
   const [showClearCacheConfirm, setShowClearCacheConfirm] = useState(false);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showLanguagePicker, setShowLanguagePicker] = useState(false);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
@@ -23,7 +25,11 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
   React.useEffect(() => { byerStorage.set("pushNotifications", pushNotifications); }, [pushNotifications]);
   React.useEffect(() => { byerStorage.set("offlineDownloads", offlineDownloads); }, [offlineDownloads]);
   React.useEffect(() => { byerStorage.set("twoFactorAuth", twoFactorAuth); }, [twoFactorAuth]);
-  React.useEffect(() => { byerStorage.set("language", language); }, [language]);
+  React.useEffect(() => {
+    byerStorage.set("language", language);
+    // Notifie le systeme i18n + force le re-render global de l'app
+    window.byerI18n.setLanguage(language);
+  }, [language]);
   React.useEffect(() => { byerStorage.set("currency", currency); }, [currency]);
 
   const showToastMsg = (msg, ms = 2000) => {
@@ -34,11 +40,16 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
 
   const handleDarkModeToggle = (value) => {
     setDarkMode(value);
-    showToastMsg(value ? "Mode sombre activé" : "Mode sombre désactivé");
+    showToastMsg(value ? t("settings.darkModeOn") : t("settings.darkModeOff"));
   };
 
-  const LANGUAGES   = ["Français", "English", "Español"];
-  const CURRENCIES  = ["FCFA", "EUR", "USD"];
+  // Liste complete des langues (20 langues, noms natifs avec drapeaux)
+  const LANGUAGES   = window.byerI18n.LANGUAGES.map(l => `${l.flag} ${l.native}`);
+  // Helper : extrait le nom natif depuis "🇫🇷 Francais" pour comparaison
+  const stripFlag = (s) => s.replace(/^[\u{1F1E6}-\u{1F1FF}]{2}\s*/u, "").trim();
+  const currentLangDisplay = window.byerI18n.LANGUAGES.find(l => l.native === language || l.label === language);
+  const languageDisplay = currentLangDisplay ? `${currentLangDisplay.flag} ${currentLangDisplay.native}` : language;
+  const CURRENCIES  = ["FCFA", "EUR", "USD", "GBP", "CAD", "CHF", "JPY", "CNY", "NGN", "ZAR"];
   const DEVICES = [
     { id:"this", name: navigator.userAgent.includes("Chrome") ? "Chrome (cet appareil)" : "Cet appareil", lastSeen:"En ligne", current:true },
   ];
@@ -181,7 +192,7 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
               fontFamily: "DM Sans",
             }}
           >
-            Annuler
+            {t("common.cancel")}
           </button>
           <button
             onClick={onConfirm}
@@ -198,7 +209,7 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
               fontFamily: "DM Sans",
             }}
           >
-            Confirmer
+            {t("common.confirm")}
           </button>
         </div>
       </div>
@@ -252,21 +263,21 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
             fontFamily: "DM Sans",
           }}
         >
-          Paramètres
+          {t("settings.title")}
         </div>
       </div>
 
       {/* Content */}
       <div style={{ ...S.scroll, paddingBottom: 80 }}>
         {/* Préférences Section */}
-        <SectionHeader title="Préférences" />
+        <SectionHeader title={t("settings.preferences")} />
         <RowItem
-          label="Langue"
-          rightElement={<DisplayValue value={language} />}
+          label={t("settings.language")}
+          rightElement={<DisplayValue value={languageDisplay} />}
           onPress={() => setShowLanguagePicker(true)}
         />
         <RowItem
-          label="Notifications push"
+          label={t("settings.notifications")}
           rightElement={
             <ToggleSwitch
               value={pushNotifications}
@@ -275,7 +286,7 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
           }
         />
         <RowItem
-          label="Mode sombre"
+          label={t("settings.darkMode")}
           rightElement={
             <ToggleSwitch
               value={darkMode}
@@ -284,20 +295,20 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
           }
         />
         <RowItem
-          label="Devise"
+          label={t("settings.currency")}
           rightElement={<DisplayValue value={currency} />}
           onPress={() => setShowCurrencyPicker(true)}
         />
 
         {/* Données Section */}
-        <SectionHeader title="Données" />
+        <SectionHeader title={t("settings.data")} />
         <RowItem
-          label="Vider le cache"
+          label={t("settings.clearCache")}
           rightElement={<ChevronElement />}
           onPress={() => setShowClearCacheConfirm(true)}
         />
         <RowItem
-          label="Téléchargements hors-ligne"
+          label={t("settings.offlineDownloads")}
           rightElement={
             <ToggleSwitch
               value={offlineDownloads}
@@ -307,14 +318,14 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
         />
 
         {/* Sécurité Section */}
-        <SectionHeader title="Sécurité" />
+        <SectionHeader title={t("settings.security")} />
         <RowItem
-          label="Changer le mot de passe"
+          label={t("settings.changePassword")}
           rightElement={<ChevronElement />}
           onPress={onOpenForgotPassword}
         />
         <RowItem
-          label="Vérification en 2 étapes"
+          label={t("settings.twoFactor")}
           rightElement={
             <ToggleSwitch
               value={twoFactorAuth}
@@ -323,92 +334,74 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
           }
         />
         <RowItem
-          label="Appareils connectés"
-          rightElement={<DisplayValue value={`${DEVICES.length} appareil${DEVICES.length>1?"s":""}`} />}
+          label={t("settings.devices")}
+          rightElement={<DisplayValue value={`${DEVICES.length}`} />}
           onPress={() => setShowDevicesSheet(true)}
         />
 
         {/* Aide & Support Section */}
-        <SectionHeader title="Aide & Support" />
+        <SectionHeader title={t("settings.help")} />
         <RowItem
-          label="Centre d'aide"
+          label={t("settings.helpCenter")}
           rightElement={<ChevronElement />}
           onPress={onOpenSupport}
         />
 
         {/* À propos Section */}
-        <SectionHeader title="À propos" />
+        <SectionHeader title={t("settings.about")} />
         <RowItem
-          label="Version de l'app"
+          label={t("settings.appVersion")}
           rightElement={
             <span style={{ color: C.light, fontSize: 14 }}>2.1.0</span>
           }
         />
         <RowItem
-          label="Conditions d'utilisation"
+          label={t("settings.terms")}
           rightElement={<ChevronElement />}
           onPress={onOpenTerms}
         />
         <RowItem
-          label="Politique de confidentialité"
+          label={t("settings.privacy")}
           rightElement={<ChevronElement />}
           onPress={onOpenPrivacy}
         />
         <RowItem
-          label="Licences open source"
+          label={t("settings.licenses")}
           rightElement={<ChevronElement />}
           onPress={() => {
-            setToastMessage("Liste des licences disponibles sur byer.cm/licences");
+            setToastMessage("byer.cm/licences");
             setShowToast(true);
             setTimeout(() => setShowToast(false), 2500);
           }}
         />
 
-        {/* Bottom Actions */}
-        <div style={{ padding: "24px 16px 16px" }}>
-          <button
-            onClick={() => setShowLogoutConfirm(true)}
+        {/* Bottom Actions — bouton deconnexion retire (deja dans Profil).
+            Conserve seulement le lien "Supprimer mon compte". */}
+        <div style={{ padding: "24px 16px 16px", textAlign: "center" }}>
+          <span
+            onClick={() => setShowDeleteConfirm(true)}
             style={{
-              width: "100%",
-              padding: "14px 16px",
-              backgroundColor: C.coral,
-              border: "none",
-              borderRadius: 8,
-              color: C.white,
-              fontSize: 16,
-              fontWeight: 600,
+              color: "#D32F2F",
+              fontSize: 13,
+              fontWeight: 500,
               cursor: "pointer",
+              textDecoration: "underline",
               fontFamily: "DM Sans",
             }}
           >
-            Se déconnecter
-          </button>
-          <div style={{ textAlign: "center", marginTop: 16 }}>
-            <span
-              onClick={() => setShowDeleteConfirm(true)}
-              style={{
-                color: "#D32F2F",
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: "pointer",
-                textDecoration: "underline",
-                fontFamily: "DM Sans",
-              }}
-            >
-              Supprimer mon compte
-            </span>
-          </div>
+            Supprimer mon compte
+          </span>
         </div>
       </div>
 
       {/* Dialogs */}
       {showClearCacheConfirm && (
         <ConfirmDialog
-          title="Vider le cache"
-          message="Êtes-vous sûr de vouloir supprimer tous les fichiers en cache ? Cela ne supprimera pas vos données."
+          title={t("settings.clearCache")}
+          message={t("settings.confirmClearCache")}
           onConfirm={() => {
             setShowClearCacheConfirm(false);
-            setToastMessage("Cache vidé avec succès");
+            setToastMessage(t("settings.cacheCleared"));
             setShowToast(true);
             setTimeout(() => setShowToast(false), 2000);
           }}
@@ -416,22 +409,10 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
         />
       )}
 
-      {showLogoutConfirm && (
-        <ConfirmDialog
-          title="Se déconnecter"
-          message="Êtes-vous sûr de vouloir vous déconnecter ?"
-          onConfirm={() => {
-            setShowLogoutConfirm(false);
-            onLogout?.();
-          }}
-          onCancel={() => setShowLogoutConfirm(false)}
-        />
-      )}
-
       {showDeleteConfirm && (
         <ConfirmDialog
-          title="Supprimer mon compte"
-          message="Cette action est irréversible. Toutes vos données seront supprimées."
+          title={t("settings.deleteAccount")}
+          message={t("common.confirm") + " ?"}
           onConfirm={() => {
             setShowDeleteConfirm(false);
             onDeleteAccount?.();
@@ -440,13 +421,20 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
         />
       )}
 
-      {/* Picker — Langue */}
+      {/* Picker — Langue (20 langues avec drapeau) */}
       {showLanguagePicker && (
         <PickerSheet
-          title="Choisir la langue"
+          title={t("settings.chooseLanguage")}
           options={LANGUAGES}
-          selected={language}
-          onSelect={(v) => { setLanguage(v); setShowLanguagePicker(false); showToastMsg(`Langue : ${v}`); }}
+          selected={languageDisplay}
+          onSelect={(v) => {
+            // v = "🇫🇷 Francais" → on stocke uniquement le nom natif
+            const native = stripFlag(v);
+            setLanguage(native);
+            setShowLanguagePicker(false);
+            // Le toast utilise la nouvelle langue (re-render synchrone via setLanguage above)
+            setTimeout(() => showToastMsg(t("settings.languageChanged", { lang: native })), 50);
+          }}
           onClose={() => setShowLanguagePicker(false)}
         />
       )}
@@ -454,10 +442,10 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
       {/* Picker — Devise */}
       {showCurrencyPicker && (
         <PickerSheet
-          title="Choisir la devise"
+          title={t("settings.chooseCurrency")}
           options={CURRENCIES}
           selected={currency}
-          onSelect={(v) => { setCurrency(v); setShowCurrencyPicker(false); showToastMsg(`Devise : ${v}`); }}
+          onSelect={(v) => { setCurrency(v); setShowCurrencyPicker(false); showToastMsg(t("settings.currencyChanged", { curr: v })); }}
           onClose={() => setShowCurrencyPicker(false)}
         />
       )}
@@ -474,7 +462,7 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
             style={{ width:"100%", background:C.white, borderRadius:"16px 16px 0 0", padding:"20px 16px 32px", fontFamily:"DM Sans" }}
           >
             <div style={{ width:40, height:4, background:C.border, borderRadius:2, margin:"0 auto 16px" }} />
-            <div style={{ fontSize:18, fontWeight:700, color:C.dark, marginBottom:16 }}>Appareils connectés</div>
+            <div style={{ fontSize:18, fontWeight:700, color:C.dark, marginBottom:16 }}>{t("settings.devices")}</div>
             {DEVICES.map((d) => (
               <div key={d.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 0", borderBottom:`1px solid ${C.border}` }}>
                 <div>
@@ -482,13 +470,13 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
                   <div style={{ fontSize:12, color:C.light, marginTop:2 }}>{d.lastSeen}</div>
                 </div>
                 {d.current ? (
-                  <span style={{ fontSize:11, fontWeight:700, color:"#0A8754", background:"#E6F4EC", padding:"4px 8px", borderRadius:6 }}>ACTUEL</span>
+                  <span style={{ fontSize:11, fontWeight:700, color:"#0A8754", background:"#E6F4EC", padding:"4px 8px", borderRadius:6 }}>✓</span>
                 ) : (
                   <button
-                    onClick={() => showToastMsg("Appareil déconnecté")}
+                    onClick={() => showToastMsg(t("common.logout"))}
                     style={{ background:"none", border:`1px solid ${C.coral}`, color:C.coral, fontSize:12, fontWeight:600, padding:"6px 12px", borderRadius:6, cursor:"pointer", fontFamily:"DM Sans" }}
                   >
-                    Déconnecter
+                    {t("common.logout")}
                   </button>
                 )}
               </div>
@@ -497,7 +485,7 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
               onClick={() => setShowDevicesSheet(false)}
               style={{ width:"100%", marginTop:16, padding:"12px 16px", background:C.bg, border:"none", borderRadius:8, color:C.dark, fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"DM Sans" }}
             >
-              Fermer
+              {t("common.close")}
             </button>
           </div>
         </div>
