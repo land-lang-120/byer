@@ -18,7 +18,7 @@
 
 ---
 
-## 2️⃣ Exécuter les 5 migrations SQL
+## 2️⃣ Exécuter les 6 migrations SQL
 
 Dès que le projet est prêt :
 
@@ -36,6 +36,9 @@ Dès que le projet est prêt :
 7. **Migration 5** : nouveau **"New query"** → colle `0005_listings_optimizations.sql` → **Run**
    - ✅ `Success. No rows returned`
    - 🏠 Cette migration ajoute : colonnes `general_amenities`, `child_entities` (jsonb compo Bâtiment), `house_rules`, `custom_rules` sur `listings`, colonne `tag` sur `listing_photos`, contraintes métier (prix ≥ 0, lat/lng valides, subtype enum strict), full-text search pondéré (titre>ville>description), index GIN sur amenities + house_rules + child_entities, index spatial pour proximité, triggers auto `rating_avg`/`review_count`/`is_superhost`, RPC `search_listings`, `nearby_listings`, `toggle_listing_active`.
+8. **Migration 6** : nouveau **"New query"** → colle `0006_bookings_optimizations.sql` → **Run**
+   - ✅ `Success. No rows returned`
+   - 🛏️ Cette migration ajoute : extension `btree_gist`, **contrainte EXCLUDE qui empêche les doubles réservations** sur la même annonce aux dates qui se chevauchent, décomposition prix (`price_base`/`service`/`dossier`/`taxes`/`caution`), `rental_mode` (night/day/week/month), QR token UUID inviolable + `qr_validated_at`, politique d'annulation (flexible/moderate/strict) + remboursement auto, payout host (commission, montant net), audit paiement (téléphone MoMo/OM, ref transaction), RPC `is_listing_available`, `get_blocked_dates`, `cancel_booking`, `verify_booking_qr`, `validate_arrival`, `auto_complete_bookings`, triggers notifications auto guest/host.
 
 > Si une migration échoue : copie-colle le message d'erreur dans le chat et je te corrige ça en 30 secondes.
 
