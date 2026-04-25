@@ -365,6 +365,28 @@ const OWNERS = {
         ],
       },
     ],
+    /* Véhicules détenus par ce bailleur — affichés dans le Dashboard
+       section "Mes Véhicules" (séparée des biens immobiliers).        */
+    vehicles: [
+      {
+        id:"V1", brand:"Toyota", model:"Land Cruiser V8", year:2022,
+        propType:"suv", city:"Douala", img:"https://images.unsplash.com/photo-1568844293986-8d0400bd4745?w=600&q=80",
+        nightPrice:45000, monthPrice:900000, fuel:"Diesel", trans:"Automatique",
+        seats:7, available:true, plate:"LT-447-DO",
+      },
+      {
+        id:"V2", brand:"Mercedes", model:"Classe E 200", year:2021,
+        propType:"sedan", city:"Douala", img:"https://images.unsplash.com/photo-1606664515524-ed2f786a0bd6?w=600&q=80",
+        nightPrice:38000, monthPrice:780000, fuel:"Essence", trans:"Automatique",
+        seats:5, available:false, availableFrom:"30 mars 2025", plate:"CE-220-DO",
+      },
+      {
+        id:"V3", brand:"Hyundai", model:"Tucson", year:2023,
+        propType:"suv", city:"Douala", img:"https://images.unsplash.com/photo-1616422285623-13ff0162193c?w=600&q=80",
+        nightPrice:28000, monthPrice:560000, fuel:"Essence", trans:"Manuelle",
+        seats:5, available:true, plate:"HT-309-DO",
+      },
+    ],
   },
   "Fouda R.": {
     id:"O2", name:"Fouda R.", since:"2021", city:"Yaoundé",

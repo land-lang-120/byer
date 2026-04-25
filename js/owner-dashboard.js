@@ -7,6 +7,8 @@
 function OwnerDashboardScreen({ onBack, onViewBuilding, onManageTechs, onManagePros, onBoost, onAddListing }) {
   const [activeOwner] = useState("Ekwalla M.");
   const [chartPeriod, setChartPeriod] = useState("6m"); // 3m | 6m | 12m
+  /* Filtre ville/région — "all" = tout Cameroun, sinon nom de la ville */
+  const [cityFilter, setCityFilter] = useState("all");
   /* Delegation state — sheet ouvert pour quel building */
   const [delegationFor, setDelegationFor] = useState(null);
   const [delegationsMap, setDelegationsMap] = useState(() => delegations.getAll());
@@ -15,11 +17,35 @@ function OwnerDashboardScreen({ onBack, onViewBuilding, onManageTechs, onManageP
   const owner = OWNERS[activeOwner];
   if (!owner) return null;
 
-  const totalUnits   = owner.buildings.reduce((s,b)=>s+b.units.length,0);
-  const availUnits   = owner.buildings.reduce((s,b)=>s+b.units.filter(u=>u.available).length,0);
+  /* Liste de toutes les villes présentes dans le portefeuille (immo + véhicules)
+     pour construire les chips de filtre dynamiquement. */
+  const allCitiesSet = new Set();
+  owner.buildings.forEach(b => {
+    const c = (b.address || "").split(",").pop().trim() || owner.city;
+    allCitiesSet.add(c);
+  });
+  (owner.vehicles || []).forEach(v => v.city && allCitiesSet.add(v.city));
+  const allCities = Array.from(allCitiesSet);
+
+  /* Helper : extrait la ville d'un building depuis son address (dernier segment) */
+  const cityOf = (b) => (b.address || "").split(",").pop().trim() || owner.city;
+
+  /* Buildings filtrés selon la ville sélectionnée */
+  const filteredBuildings = cityFilter === "all"
+    ? owner.buildings
+    : owner.buildings.filter(b => cityOf(b) === cityFilter);
+
+  /* Véhicules filtrés selon la ville sélectionnée */
+  const ownerVehicles = owner.vehicles || [];
+  const filteredVehicles = cityFilter === "all"
+    ? ownerVehicles
+    : ownerVehicles.filter(v => v.city === cityFilter);
+
+  const totalUnits   = filteredBuildings.reduce((s,b)=>s+b.units.length,0);
+  const availUnits   = filteredBuildings.reduce((s,b)=>s+b.units.filter(u=>u.available).length,0);
   const occupiedUnits= totalUnits - availUnits;
   const occupancyPct = totalUnits>0 ? Math.round((occupiedUnits/totalUnits)*100) : 0;
-  const totalRevenue = owner.buildings.reduce((s,b)=>s+b.units.reduce((ss,u)=>ss+(u.monthPrice||u.nightPrice*20),0),0);
+  const totalRevenue = filteredBuildings.reduce((s,b)=>s+b.units.reduce((ss,u)=>ss+(u.monthPrice||u.nightPrice*20),0),0);
 
   /* Synthèse revenus mensuels — généré à partir du portfolio
      Chaque mois oscille autour de la moyenne, simulant occupation variable.
@@ -44,9 +70,9 @@ function OwnerDashboardScreen({ onBack, onViewBuilding, onManageTechs, onManageP
   const chartTotal = monthlyChart.reduce((s,m) => s + m.value, 0);
   const chartAvg   = Math.round(chartTotal / monthlyChart.length);
 
-  /* Group buildings by type for category slides */
+  /* Group buildings by type for category slides (utilise la liste filtrée) */
   const typeGroups = {};
-  owner.buildings.forEach(b => {
+  filteredBuildings.forEach(b => {
     if (!typeGroups[b.type]) typeGroups[b.type] = [];
     typeGroups[b.type].push(b);
   });
@@ -78,6 +104,36 @@ function OwnerDashboardScreen({ onBack, onViewBuilding, onManageTechs, onManageP
             <span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,background:"#FFF5F5",color:C.coral}}>Superhost</span>
           )}
         </div>
+
+        {/* City filter chips — filtre tout le dashboard par ville */}
+        {allCities.length > 1 && (
+          <div style={{display:"flex",gap:6,padding:"0 16px 12px",overflowX:"auto",alignItems:"center"}}>
+            <span style={{fontSize:11,fontWeight:700,color:C.light,textTransform:"uppercase",letterSpacing:.4,marginRight:4,flexShrink:0}}>📍 Ville :</span>
+            <button
+              onClick={()=>setCityFilter("all")}
+              style={{
+                flexShrink:0,padding:"6px 12px",borderRadius:18,cursor:"pointer",
+                border:`1.5px solid ${cityFilter==="all"?C.coral:C.border}`,
+                background:cityFilter==="all"?"#FFF5F5":C.white,
+                color:cityFilter==="all"?C.coral:C.mid,
+                fontSize:12,fontWeight:700,fontFamily:"'DM Sans',sans-serif",
+              }}
+            >Toutes</button>
+            {allCities.map(city => (
+              <button
+                key={city}
+                onClick={()=>setCityFilter(city)}
+                style={{
+                  flexShrink:0,padding:"6px 12px",borderRadius:18,cursor:"pointer",
+                  border:`1.5px solid ${cityFilter===city?C.coral:C.border}`,
+                  background:cityFilter===city?"#FFF5F5":C.white,
+                  color:cityFilter===city?C.coral:C.mid,
+                  fontSize:12,fontWeight:700,fontFamily:"'DM Sans',sans-serif",
+                }}
+              >{city}</button>
+            ))}
+          </div>
+        )}
 
         {/* Stats cards */}
         <div style={{display:"flex",gap:8,padding:"0 16px",marginBottom:16,overflowX:"auto"}}>
@@ -330,6 +386,81 @@ function OwnerDashboardScreen({ onBack, onViewBuilding, onManageTechs, onManageP
             </div>
           </div>
         ))}
+
+        {/* ─── Mes Véhicules — section dédiée ───────────────
+            Affiche les véhicules détenus par le bailleur, séparés des
+            biens immobiliers. Filtré par ville comme le reste. */}
+        {filteredVehicles.length > 0 && (
+          <div style={{marginBottom:20}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:18}}>🚗</span>
+                <p style={{fontSize:15,fontWeight:700,color:C.black}}>Mes Véhicules</p>
+                <span style={{fontSize:11,fontWeight:600,color:C.light,background:C.bg,padding:"2px 8px",borderRadius:10}}>{filteredVehicles.length}</span>
+              </div>
+              <button
+                onClick={()=>onAddListing?.("vehicle")}
+                style={{background:"none",border:"none",fontSize:12,fontWeight:600,color:"#2563EB",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+              >
+                + Ajouter
+              </button>
+            </div>
+
+            {/* Horizontal scroll de cartes véhicules */}
+            <div style={{display:"flex",gap:12,padding:"0 16px",overflowX:"auto"}}>
+              {filteredVehicles.map(vehicle => (
+                <div key={vehicle.id}
+                  style={{flexShrink:0,width:240,background:C.white,borderRadius:16,overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,.07)"}}
+                >
+                  {/* Image + status badge */}
+                  <div style={{position:"relative",height:120,overflow:"hidden"}}>
+                    <img src={vehicle.img} alt={vehicle.brand} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                    <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,.55) 0%,transparent 50%)"}}/>
+                    <span style={{
+                      position:"absolute",top:8,right:8,
+                      fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:10,
+                      background: vehicle.available ? "rgba(22,163,74,.95)" : "rgba(239,68,68,.95)",
+                      color:"white",
+                    }}>
+                      {vehicle.available ? "Disponible" : "Loué"}
+                    </span>
+                    <div style={{position:"absolute",bottom:8,left:10,right:10}}>
+                      <p style={{fontSize:13,fontWeight:700,color:"white"}}>{vehicle.brand} {vehicle.model}</p>
+                      <p style={{fontSize:10,color:"rgba(255,255,255,.85)",marginTop:1}}>{vehicle.year} · {vehicle.plate}</p>
+                    </div>
+                  </div>
+                  {/* Info row */}
+                  <div style={{padding:"10px 12px"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                      <p style={{fontSize:11,color:C.light,display:"flex",alignItems:"center",gap:4}}>
+                        <ByerPin size={11}/> {vehicle.city}
+                      </p>
+                      <p style={{fontSize:13,fontWeight:700,color:C.black}}>
+                        {fmt(vehicle.nightPrice)} <span style={{fontSize:10,fontWeight:500,color:C.light}}>F/j</span>
+                      </p>
+                    </div>
+                    <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                      <span style={{fontSize:10,fontWeight:500,padding:"2px 7px",borderRadius:8,background:C.bg,color:C.mid}}>
+                        {vehicle.fuel}
+                      </span>
+                      <span style={{fontSize:10,fontWeight:500,padding:"2px 7px",borderRadius:8,background:C.bg,color:C.mid}}>
+                        {vehicle.trans}
+                      </span>
+                      <span style={{fontSize:10,fontWeight:500,padding:"2px 7px",borderRadius:8,background:C.bg,color:C.mid}}>
+                        {vehicle.seats} pl.
+                      </span>
+                    </div>
+                    {!vehicle.available && vehicle.availableFrom && (
+                      <p style={{fontSize:10,color:C.coral,marginTop:6,fontWeight:600}}>
+                        Libre le {vehicle.availableFrom}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Occupancy summary */}
         <div style={{margin:"0 16px 24px",background:C.white,borderRadius:16,padding:"16px",boxShadow:"0 1px 8px rgba(0,0,0,.05)"}}>

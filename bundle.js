@@ -1693,6 +1693,55 @@ const OWNERS = {
         available: true,
         availableFrom: null
       }]
+    }],
+    /* Véhicules détenus par ce bailleur — affichés dans le Dashboard
+       section "Mes Véhicules" (séparée des biens immobiliers).        */
+    vehicles: [{
+      id: "V1",
+      brand: "Toyota",
+      model: "Land Cruiser V8",
+      year: 2022,
+      propType: "suv",
+      city: "Douala",
+      img: "https://images.unsplash.com/photo-1568844293986-8d0400bd4745?w=600&q=80",
+      nightPrice: 45000,
+      monthPrice: 900000,
+      fuel: "Diesel",
+      trans: "Automatique",
+      seats: 7,
+      available: true,
+      plate: "LT-447-DO"
+    }, {
+      id: "V2",
+      brand: "Mercedes",
+      model: "Classe E 200",
+      year: 2021,
+      propType: "sedan",
+      city: "Douala",
+      img: "https://images.unsplash.com/photo-1606664515524-ed2f786a0bd6?w=600&q=80",
+      nightPrice: 38000,
+      monthPrice: 780000,
+      fuel: "Essence",
+      trans: "Automatique",
+      seats: 5,
+      available: false,
+      availableFrom: "30 mars 2025",
+      plate: "CE-220-DO"
+    }, {
+      id: "V3",
+      brand: "Hyundai",
+      model: "Tucson",
+      year: 2023,
+      propType: "suv",
+      city: "Douala",
+      img: "https://images.unsplash.com/photo-1616422285623-13ff0162193c?w=600&q=80",
+      nightPrice: 28000,
+      monthPrice: 560000,
+      fuel: "Essence",
+      trans: "Manuelle",
+      seats: 5,
+      available: true,
+      plate: "HT-309-DO"
     }]
   },
   "Fouda R.": {
@@ -15326,6 +15375,8 @@ function OwnerDashboardScreen({
 }) {
   const [activeOwner] = useState("Ekwalla M.");
   const [chartPeriod, setChartPeriod] = useState("6m"); // 3m | 6m | 12m
+  /* Filtre ville/région — "all" = tout Cameroun, sinon nom de la ville */
+  const [cityFilter, setCityFilter] = useState("all");
   /* Delegation state — sheet ouvert pour quel building */
   const [delegationFor, setDelegationFor] = useState(null);
   const [delegationsMap, setDelegationsMap] = useState(() => delegations.getAll());
@@ -15333,11 +15384,31 @@ function OwnerDashboardScreen({
   const refreshDelegations = () => setDelegationsMap(delegations.getAll());
   const owner = OWNERS[activeOwner];
   if (!owner) return null;
-  const totalUnits = owner.buildings.reduce((s, b) => s + b.units.length, 0);
-  const availUnits = owner.buildings.reduce((s, b) => s + b.units.filter(u => u.available).length, 0);
+
+  /* Liste de toutes les villes présentes dans le portefeuille (immo + véhicules)
+     pour construire les chips de filtre dynamiquement. */
+  const allCitiesSet = new Set();
+  owner.buildings.forEach(b => {
+    const c = (b.address || "").split(",").pop().trim() || owner.city;
+    allCitiesSet.add(c);
+  });
+  (owner.vehicles || []).forEach(v => v.city && allCitiesSet.add(v.city));
+  const allCities = Array.from(allCitiesSet);
+
+  /* Helper : extrait la ville d'un building depuis son address (dernier segment) */
+  const cityOf = b => (b.address || "").split(",").pop().trim() || owner.city;
+
+  /* Buildings filtrés selon la ville sélectionnée */
+  const filteredBuildings = cityFilter === "all" ? owner.buildings : owner.buildings.filter(b => cityOf(b) === cityFilter);
+
+  /* Véhicules filtrés selon la ville sélectionnée */
+  const ownerVehicles = owner.vehicles || [];
+  const filteredVehicles = cityFilter === "all" ? ownerVehicles : ownerVehicles.filter(v => v.city === cityFilter);
+  const totalUnits = filteredBuildings.reduce((s, b) => s + b.units.length, 0);
+  const availUnits = filteredBuildings.reduce((s, b) => s + b.units.filter(u => u.available).length, 0);
   const occupiedUnits = totalUnits - availUnits;
   const occupancyPct = totalUnits > 0 ? Math.round(occupiedUnits / totalUnits * 100) : 0;
-  const totalRevenue = owner.buildings.reduce((s, b) => s + b.units.reduce((ss, u) => ss + (u.monthPrice || u.nightPrice * 20), 0), 0);
+  const totalRevenue = filteredBuildings.reduce((s, b) => s + b.units.reduce((ss, u) => ss + (u.monthPrice || u.nightPrice * 20), 0), 0);
 
   /* Synthèse revenus mensuels — généré à partir du portfolio
      Chaque mois oscille autour de la moyenne, simulant occupation variable.
@@ -15366,9 +15437,9 @@ function OwnerDashboardScreen({
   const chartTotal = monthlyChart.reduce((s, m) => s + m.value, 0);
   const chartAvg = Math.round(chartTotal / monthlyChart.length);
 
-  /* Group buildings by type for category slides */
+  /* Group buildings by type for category slides (utilise la liste filtrée) */
   const typeGroups = {};
-  owner.buildings.forEach(b => {
+  filteredBuildings.forEach(b => {
     if (!typeGroups[b.type]) typeGroups[b.type] = [];
     typeGroups[b.type].push(b);
   });
@@ -15452,7 +15523,54 @@ function OwnerDashboardScreen({
       background: "#FFF5F5",
       color: C.coral
     }
-  }, "Superhost")), /*#__PURE__*/React.createElement("div", {
+  }, "Superhost")), allCities.length > 1 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      padding: "0 16px 12px",
+      overflowX: "auto",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      fontWeight: 700,
+      color: C.light,
+      textTransform: "uppercase",
+      letterSpacing: .4,
+      marginRight: 4,
+      flexShrink: 0
+    }
+  }, "\uD83D\uDCCD Ville :"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setCityFilter("all"),
+    style: {
+      flexShrink: 0,
+      padding: "6px 12px",
+      borderRadius: 18,
+      cursor: "pointer",
+      border: `1.5px solid ${cityFilter === "all" ? C.coral : C.border}`,
+      background: cityFilter === "all" ? "#FFF5F5" : C.white,
+      color: cityFilter === "all" ? C.coral : C.mid,
+      fontSize: 12,
+      fontWeight: 700,
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, "Toutes"), allCities.map(city => /*#__PURE__*/React.createElement("button", {
+    key: city,
+    onClick: () => setCityFilter(city),
+    style: {
+      flexShrink: 0,
+      padding: "6px 12px",
+      borderRadius: 18,
+      cursor: "pointer",
+      border: `1.5px solid ${cityFilter === city ? C.coral : C.border}`,
+      background: cityFilter === city ? "#FFF5F5" : C.white,
+      color: cityFilter === city ? C.coral : C.mid,
+      fontSize: 12,
+      fontWeight: 700,
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, city))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -16116,7 +16234,198 @@ function OwnerDashboardScreen({
         fontSize: 13
       }
     }, "\uD83D\uDECE\uFE0F"), /*#__PURE__*/React.createElement("span", null, "Confier \xE0 un ", delegationLabel.toLowerCase()))));
-  })))), /*#__PURE__*/React.createElement("div", {
+  })))), filteredVehicles.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "0 16px",
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 18
+    }
+  }, "\uD83D\uDE97"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 15,
+      fontWeight: 700,
+      color: C.black
+    }
+  }, "Mes V\xE9hicules"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      fontWeight: 600,
+      color: C.light,
+      background: C.bg,
+      padding: "2px 8px",
+      borderRadius: 10
+    }
+  }, filteredVehicles.length)), /*#__PURE__*/React.createElement("button", {
+    onClick: () => onAddListing?.("vehicle"),
+    style: {
+      background: "none",
+      border: "none",
+      fontSize: 12,
+      fontWeight: 600,
+      color: "#2563EB",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      gap: 4
+    }
+  }, "+ Ajouter")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 12,
+      padding: "0 16px",
+      overflowX: "auto"
+    }
+  }, filteredVehicles.map(vehicle => /*#__PURE__*/React.createElement("div", {
+    key: vehicle.id,
+    style: {
+      flexShrink: 0,
+      width: 240,
+      background: C.white,
+      borderRadius: 16,
+      overflow: "hidden",
+      boxShadow: "0 2px 12px rgba(0,0,0,.07)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative",
+      height: 120,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("img", {
+    src: vehicle.img,
+    alt: vehicle.brand,
+    style: {
+      width: "100%",
+      height: "100%",
+      objectFit: "cover"
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      inset: 0,
+      background: "linear-gradient(to top,rgba(0,0,0,.55) 0%,transparent 50%)"
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      position: "absolute",
+      top: 8,
+      right: 8,
+      fontSize: 10,
+      fontWeight: 700,
+      padding: "3px 8px",
+      borderRadius: 10,
+      background: vehicle.available ? "rgba(22,163,74,.95)" : "rgba(239,68,68,.95)",
+      color: "white"
+    }
+  }, vehicle.available ? "Disponible" : "Loué"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      bottom: 8,
+      left: 10,
+      right: 10
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 13,
+      fontWeight: 700,
+      color: "white"
+    }
+  }, vehicle.brand, " ", vehicle.model), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 10,
+      color: "rgba(255,255,255,.85)",
+      marginTop: 1
+    }
+  }, vehicle.year, " \xB7 ", vehicle.plate))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 12px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: C.light,
+      display: "flex",
+      alignItems: "center",
+      gap: 4
+    }
+  }, /*#__PURE__*/React.createElement(ByerPin, {
+    size: 11
+  }), " ", vehicle.city), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 13,
+      fontWeight: 700,
+      color: C.black
+    }
+  }, fmt(vehicle.nightPrice), " ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      fontWeight: 500,
+      color: C.light
+    }
+  }, "F/j"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 5,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      fontWeight: 500,
+      padding: "2px 7px",
+      borderRadius: 8,
+      background: C.bg,
+      color: C.mid
+    }
+  }, vehicle.fuel), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      fontWeight: 500,
+      padding: "2px 7px",
+      borderRadius: 8,
+      background: C.bg,
+      color: C.mid
+    }
+  }, vehicle.trans), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      fontWeight: 500,
+      padding: "2px 7px",
+      borderRadius: 8,
+      background: C.bg,
+      color: C.mid
+    }
+  }, vehicle.seats, " pl.")), !vehicle.available && vehicle.availableFrom && /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 10,
+      color: C.coral,
+      marginTop: 6,
+      fontWeight: 600
+    }
+  }, "Libre le ", vehicle.availableFrom)))))), /*#__PURE__*/React.createElement("div", {
     style: {
       margin: "0 16px 24px",
       background: C.white,
@@ -26392,6 +26701,18 @@ function ByerApp({
   const [notifsOpen, setNotifsOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishSegment, setPublishSegment] = useState(null); // null | "property" | "vehicle"
+  /* returnToDashboard : flag pour réafficher le Dashboard quand on quitte
+     un sous-écran ouvert depuis le Dashboard (Techniciens, Pros, Boost,
+     Publish). Sans ça, on retombait sur l'onglet courant (Profil/Accueil)
+     ce qui cassait le flux de navigation bailleur. */
+  const [returnToDashboard, setReturnToDashboard] = useState(false);
+  const closeAndMaybeReturnToDashboard = closer => {
+    closer(false);
+    if (returnToDashboard) {
+      setDashboardOpen(true);
+      setReturnToDashboard(false);
+    }
+  };
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [bookingItem, setBookingItem] = useState(null);
@@ -26490,44 +26811,55 @@ function ByerApp({
   /* New feature screens */
   if (buildingDetail) return /*#__PURE__*/React.createElement(BuildingDetailScreen, {
     building: buildingDetail,
-    onBack: () => setBuildingDetail(null)
+    onBack: () => {
+      setBuildingDetail(null);
+      if (returnToDashboard) {
+        setDashboardOpen(true);
+        setReturnToDashboard(false);
+      }
+    }
   });
   if (dashboardOpen) return /*#__PURE__*/React.createElement(OwnerDashboardScreen, {
     onBack: () => setDashboardOpen(false),
     onViewBuilding: b => {
       setDashboardOpen(false);
       setBuildingDetail(b);
+      setReturnToDashboard(true);
     },
     onManageTechs: () => {
       setDashboardOpen(false);
       setTechsRole("bailleur");
       setTechsOpen(true);
+      setReturnToDashboard(true);
     },
     onManagePros: () => {
       setDashboardOpen(false);
       setProsRole("bailleur");
       setProsOpen(true);
+      setReturnToDashboard(true);
     },
     onBoost: () => {
       setDashboardOpen(false);
       setBoostOpen(true);
+      setReturnToDashboard(true);
     },
     onAddListing: seg => {
       setDashboardOpen(false);
       setPublishSegment(seg);
       setPublishOpen(true);
+      setReturnToDashboard(true);
     }
   });
   if (techsOpen) return /*#__PURE__*/React.createElement(TechniciansScreen, {
-    onBack: () => setTechsOpen(false),
+    onBack: () => closeAndMaybeReturnToDashboard(setTechsOpen),
     role: techsRole
   });
   if (prosOpen) return /*#__PURE__*/React.createElement(ProfessionalsScreen, {
-    onBack: () => setProsOpen(false),
+    onBack: () => closeAndMaybeReturnToDashboard(setProsOpen),
     role: prosRole
   });
   if (boostOpen) return /*#__PURE__*/React.createElement(BoostScreen, {
-    onBack: () => setBoostOpen(false)
+    onBack: () => closeAndMaybeReturnToDashboard(setBoostOpen)
   });
   if (notifsOpen) return /*#__PURE__*/React.createElement(NotificationsScreen, {
     onBack: () => setNotifsOpen(false),
@@ -26560,6 +26892,10 @@ function ByerApp({
     onBack: () => {
       setPublishOpen(false);
       setPublishSegment(null);
+      if (returnToDashboard) {
+        setDashboardOpen(true);
+        setReturnToDashboard(false);
+      }
     },
     initialSegment: publishSegment
   });

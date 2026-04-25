@@ -148,6 +148,15 @@ function ByerApp({ onLogout }) {
   const [notifsOpen, setNotifsOpen]       = useState(false);
   const [publishOpen, setPublishOpen]     = useState(false);
   const [publishSegment, setPublishSegment] = useState(null); // null | "property" | "vehicle"
+  /* returnToDashboard : flag pour réafficher le Dashboard quand on quitte
+     un sous-écran ouvert depuis le Dashboard (Techniciens, Pros, Boost,
+     Publish). Sans ça, on retombait sur l'onglet courant (Profil/Accueil)
+     ce qui cassait le flux de navigation bailleur. */
+  const [returnToDashboard, setReturnToDashboard] = useState(false);
+  const closeAndMaybeReturnToDashboard = (closer) => {
+    closer(false);
+    if (returnToDashboard) { setDashboardOpen(true); setReturnToDashboard(false); }
+  };
   const [settingsOpen, setSettingsOpen]   = useState(false);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [bookingItem, setBookingItem]     = useState(null);
@@ -206,18 +215,18 @@ function ByerApp({ onLogout }) {
   if (ownerProfile) return <OwnerProfileScreen ownerName={ownerProfile} onBack={()=>setOwnerProfile(null)}/>;
 
   /* New feature screens */
-  if (buildingDetail) return <BuildingDetailScreen building={buildingDetail} onBack={()=>setBuildingDetail(null)}/>;
+  if (buildingDetail) return <BuildingDetailScreen building={buildingDetail} onBack={()=>{ setBuildingDetail(null); if (returnToDashboard) { setDashboardOpen(true); setReturnToDashboard(false); } }}/>;
   if (dashboardOpen)  return <OwnerDashboardScreen
                                 onBack={()=>setDashboardOpen(false)}
-                                onViewBuilding={b=>{setDashboardOpen(false);setBuildingDetail(b);}}
-                                onManageTechs={()=>{setDashboardOpen(false);setTechsRole("bailleur");setTechsOpen(true);}}
-                                onManagePros={()=>{setDashboardOpen(false);setProsRole("bailleur");setProsOpen(true);}}
-                                onBoost={()=>{setDashboardOpen(false);setBoostOpen(true);}}
-                                onAddListing={(seg)=>{setDashboardOpen(false);setPublishSegment(seg);setPublishOpen(true);}}
+                                onViewBuilding={b=>{setDashboardOpen(false);setBuildingDetail(b);setReturnToDashboard(true);}}
+                                onManageTechs={()=>{setDashboardOpen(false);setTechsRole("bailleur");setTechsOpen(true);setReturnToDashboard(true);}}
+                                onManagePros={()=>{setDashboardOpen(false);setProsRole("bailleur");setProsOpen(true);setReturnToDashboard(true);}}
+                                onBoost={()=>{setDashboardOpen(false);setBoostOpen(true);setReturnToDashboard(true);}}
+                                onAddListing={(seg)=>{setDashboardOpen(false);setPublishSegment(seg);setPublishOpen(true);setReturnToDashboard(true);}}
                               />;
-  if (techsOpen)      return <TechniciansScreen onBack={()=>setTechsOpen(false)} role={techsRole}/>;
-  if (prosOpen)       return <ProfessionalsScreen onBack={()=>setProsOpen(false)} role={prosRole}/>;
-  if (boostOpen)      return <BoostScreen onBack={()=>setBoostOpen(false)}/>;
+  if (techsOpen)      return <TechniciansScreen onBack={()=>closeAndMaybeReturnToDashboard(setTechsOpen)} role={techsRole}/>;
+  if (prosOpen)       return <ProfessionalsScreen onBack={()=>closeAndMaybeReturnToDashboard(setProsOpen)} role={prosRole}/>;
+  if (boostOpen)      return <BoostScreen onBack={()=>closeAndMaybeReturnToDashboard(setBoostOpen)}/>;
   if (notifsOpen)      return <NotificationsScreen
                                 onBack={()=>setNotifsOpen(false)}
                                 onOpenBookings={()=>{ setNotifsOpen(false); setTab("trips"); }}
@@ -228,7 +237,10 @@ function ByerApp({ onLogout }) {
                                 onOpenReviews={()=>{ setNotifsOpen(false); setReviewsOpen(true); }}
                               />;
   if (publishOpen)     return <PublishScreen
-                                onBack={()=>{setPublishOpen(false);setPublishSegment(null);}}
+                                onBack={()=>{
+                                  setPublishOpen(false);setPublishSegment(null);
+                                  if (returnToDashboard) { setDashboardOpen(true); setReturnToDashboard(false); }
+                                }}
                                 initialSegment={publishSegment}
                               />;
   if (settingsOpen)    return <SettingsScreen
