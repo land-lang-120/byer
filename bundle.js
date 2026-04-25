@@ -25456,6 +25456,7 @@ const MOCK_REVIEWS = [{
 }];
 const MOCK_BOOKINGS_HIST = [{
   id: 1,
+  kind: "property",
   title: "Studio Akwa Palace",
   city: "Douala",
   zone: "Akwa",
@@ -25468,6 +25469,7 @@ const MOCK_BOOKINGS_HIST = [{
   ref: "BYR-482916"
 }, {
   id: 2,
+  kind: "property",
   title: "Villa Bonanjo",
   city: "Douala",
   zone: "Bonanjo",
@@ -25480,6 +25482,7 @@ const MOCK_BOOKINGS_HIST = [{
   ref: "BYR-371845"
 }, {
   id: 3,
+  kind: "vehicle",
   title: "Toyota Hilux 4x4",
   city: "Douala",
   zone: "Bonapriso",
@@ -25492,6 +25495,7 @@ const MOCK_BOOKINGS_HIST = [{
   ref: "BYR-259173"
 }, {
   id: 4,
+  kind: "property",
   title: "Appart Bastos Luxe",
   city: "Yaoundé",
   zone: "Bastos",
@@ -25502,6 +25506,32 @@ const MOCK_BOOKINGS_HIST = [{
   total: 45000,
   method: "OM",
   ref: "BYR-184562"
+}, {
+  id: 5,
+  kind: "vehicle",
+  title: "Mercedes Classe E",
+  city: "Yaoundé",
+  zone: "Centre",
+  img: "https://images.unsplash.com/photo-1617531653332-bd46c24f2068?w=400",
+  checkin: "2026-04-05",
+  checkout: "2026-04-07",
+  status: "active",
+  total: 90000,
+  method: "MoMo",
+  ref: "BYR-571208"
+}, {
+  id: 6,
+  kind: "vehicle",
+  title: "Hyundai Tucson SUV",
+  city: "Douala",
+  zone: "Akwa",
+  img: "https://images.unsplash.com/photo-1605559424843-9e4c228bf1c2?w=400",
+  checkin: "2026-01-22",
+  checkout: "2026-01-25",
+  status: "completed",
+  total: 135000,
+  method: "OM",
+  ref: "BYR-309417"
 }];
 
 /* ─── REVIEWS SCREEN ──────────────────────────────── */
@@ -25837,6 +25867,8 @@ function ReviewsScreen({
 function BookingHistoryScreen({
   onBack
 }) {
+  // Segment Immo/Véhicules + tabs status secondaires
+  const [segment, setSegment] = useState("property"); // 'property' | 'vehicle'
   const [tab, setTab] = useState("Toutes");
   const [detailItem, setDetailItem] = useState(null);
   const [reviewToast, setReviewToast] = useState("");
@@ -25856,7 +25888,13 @@ function BookingHistoryScreen({
     "Terminées": "completed",
     "Annulées": "cancelled"
   };
-  const filtered = tab === "Toutes" ? MOCK_BOOKINGS_HIST : MOCK_BOOKINGS_HIST.filter(b => b.status === tabFilter[tab]);
+
+  // Segment immobilier vs véhicules : count par segment pour les badges
+  const propCount = MOCK_BOOKINGS_HIST.filter(b => b.kind === "property").length;
+  const vehCount = MOCK_BOOKINGS_HIST.filter(b => b.kind === "vehicle").length;
+
+  // Filtre combiné segment + status tab
+  const filtered = MOCK_BOOKINGS_HIST.filter(b => b.kind === segment).filter(b => tab === "Toutes" || b.status === tabFilter[tab]);
   const MONTHS = ["jan", "fév", "mar", "avr", "mai", "juin", "juil", "aoû", "sep", "oct", "nov", "déc"];
   const fmtRange = (cin, cout) => {
     const a = new Date(cin),
@@ -25897,6 +25935,63 @@ function BookingHistoryScreen({
     }
   })), /*#__PURE__*/React.createElement("div", {
     style: {
+      padding: "4px 16px 14px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      background: C.bg,
+      borderRadius: 14,
+      padding: 4,
+      gap: 0,
+      border: `1px solid ${C.border}`
+    }
+  }, [{
+    id: "property",
+    label: "🏠 Immobilier",
+    count: propCount
+  }, {
+    id: "vehicle",
+    label: "🚗 Véhicules",
+    count: vehCount
+  }].map(s => {
+    const active = segment === s.id;
+    return /*#__PURE__*/React.createElement("button", {
+      key: s.id,
+      onClick: () => {
+        setSegment(s.id);
+        setTab("Toutes");
+      },
+      style: {
+        flex: 1,
+        padding: "10px 12px",
+        border: "none",
+        background: active ? C.white : "transparent",
+        color: active ? C.coral : C.mid,
+        borderRadius: 10,
+        cursor: "pointer",
+        fontSize: 13,
+        fontWeight: 700,
+        fontFamily: "'DM Sans',sans-serif",
+        boxShadow: active ? "0 1px 6px rgba(0,0,0,.08)" : "none",
+        transition: "all .18s",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("span", null, s.label), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        fontWeight: 600,
+        color: active ? C.coral : C.light,
+        background: active ? "#FFF5F5" : C.white,
+        padding: "1px 7px",
+        borderRadius: 10
+      }
+    }, s.count));
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
       display: "flex",
       borderBottom: `1px solid ${C.border}`,
       padding: "0 16px",
@@ -25927,7 +26022,7 @@ function BookingHistoryScreen({
     }
   }, filtered.length === 0 && /*#__PURE__*/React.createElement(EmptyState, {
     icon: "trips",
-    text: "Aucune r\xE9servation"
+    text: segment === "vehicle" ? "Aucune location de véhicule dans cette catégorie" : "Aucune réservation immobilière dans cette catégorie"
   }), filtered.map(b => /*#__PURE__*/React.createElement("div", {
     key: b.id,
     style: {
