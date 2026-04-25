@@ -240,13 +240,13 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
 
   return (
     <div style={{ ...S.shell, backgroundColor: C.bg }}>
-      {/* Header */}
+      {/* Header — titre CENTRÉ comme dans les autres écrans (back gauche,
+          spacer droit de même largeur pour équilibrer le centre optique) */}
       <div
         style={{
           ...S.rentHeader,
           display: "flex",
           alignItems: "center",
-          gap: 12,
           padding: "var(--top-pad) 16px 12px",
           backgroundColor: C.white,
           borderBottom: `1px solid ${C.border}`,
@@ -257,6 +257,8 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
         </button>
         <div
           style={{
+            flex: 1,
+            textAlign: "center",
             fontSize: 18,
             fontWeight: 700,
             color: C.dark,
@@ -265,6 +267,8 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
         >
           {t("settings.title")}
         </div>
+        {/* Spacer = même largeur que le bouton back (icon 20 + padding 8*2 = 36) */}
+        <div style={{width: 36}}/>
       </div>
 
       {/* Content */}

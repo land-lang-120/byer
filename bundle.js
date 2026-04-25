@@ -26604,7 +26604,6 @@ function SettingsScreen({
       ...S.rentHeader,
       display: "flex",
       alignItems: "center",
-      gap: 12,
       padding: "var(--top-pad) 16px 12px",
       backgroundColor: C.white,
       borderBottom: `1px solid ${C.border}`
@@ -26626,12 +26625,18 @@ function SettingsScreen({
     stroke: 2.5
   })), /*#__PURE__*/React.createElement("div", {
     style: {
+      flex: 1,
+      textAlign: "center",
       fontSize: 18,
       fontWeight: 700,
       color: C.dark,
       fontFamily: "DM Sans"
     }
-  }, t("settings.title"))), /*#__PURE__*/React.createElement("div", {
+  }, t("settings.title")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 36
+    }
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       ...S.scroll,
       paddingBottom: 80
