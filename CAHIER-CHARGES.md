@@ -64,7 +64,13 @@
 - 3.C — `OwnerDashboard` : adapter `buildOwnerFromDb(currentProfile, dbMyListings)` qui remplace `OWNERS["Ekwalla M."]` par un owner virtuel. Listings groupées par city → "buildings virtuels". Vehicles séparés. Owner card = vrais nom/photo/since/city du profil. Fallback mock si pas encore d'annonce.
 - 3.D — `data.js` : `TODAY = new Date()` (était figé `"2025-03-22"` → cassait DAYS_LEFT/WARN en 2026). `DEADLINE_1` = dernier jour du mois courant calculé dynamiquement.
 - 3.E — `messages.js` : retiré l'enrichissement bailleur avec contacts hardcodés (`Caroline N.`, `David M.`, `Aïcha B.`, `Junior K.`, `Sandrine T.`). Si user authentifié, les vraies conversations Supabase remplacent les mocks ; sinon empty state via démo neutre.
-- 3.F — Script `scripts/cleanup-demo-listings.sql` : `delete from listings where title like 'DEMO %'` (preview + delete commenté pour confirmation manuelle). À exécuter manuellement quand Pino veut nettoyer le seed mig 0010.
+- 3.F — Script `scripts/cleanup-demo-listings.sql` : `delete from listings where title like 'DEMO %'` (preview + delete commenté pour confirmation manuelle). À exécuter manuellement quand Pino veut nettoyer le seed mig 0010. **Décision Pino 2026-04-27** : on garde les DEMO pour remplir l'app le temps d'avoir des vraies annonces — script disponible mais pas exécuté.
+
+**Phase 3 (audit follow-up — bundle v50)**
+- 3.G — `EditProfileScreen` : `<FaceAvatar>` du formulaire utilise `profileSource.photo_url/avatar_letter/avatar_bg` au lieu de `USER.*` mock (avant : photo de Pino apparaissait dans le formulaire d'édition de TOUS les utilisateurs).
+- 3.H — `OwnerListAllScreen` : reçoit `currentProfile` + `dbMyListings`, utilise `buildOwnerFromDb` pour bâtir l'owner virtuel quand `usingRealData=true`. "Voir tout" sur Owner Dashboard ne montre plus systématiquement les biens d'Ekwalla.
+- 3.I — `OwnerProfileScreen` : accepte un payload objet `{name, photo, since, verified, isSupabase, ownerId}` en plus du string mock historique. Quand on clique sur l'hôte d'une fiche Supabase, on voit un profil minimal cohérent (nom + photo + badge "Identité vérifiée") au lieu de "Profil non trouvé".
+- `DetailScreen` : appelle `onViewOwner(ownerPayload)` avec un objet enrichi quand `item._supabase=true`, sinon string mock pour rétro-compat.
 
 ### 🔄 En cours (Phase 3 → branchement OwnerDashboard sur DB réelle)
 

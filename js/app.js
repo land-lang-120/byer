@@ -567,6 +567,8 @@ function ByerApp({ onLogout }) {
                     />;
   } else if (listAllFilter) {
     screenContent = <OwnerListAllScreen
+                      currentProfile={currentProfile}
+                      dbMyListings={dbMyListings}
                       filter={listAllFilter}
                       onBack={()=>{ setListAllFilter(null); if (returnToDashboard) { setDashboardOpen(true); setReturnToDashboard(false); } }}
                       onViewBuilding={b=>{ setListAllFilter(null); setBuildingDetail(b); setReturnToDashboard(true); }}

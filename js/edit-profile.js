@@ -425,9 +425,12 @@ function EditProfileScreen({ currentProfile, currentUserId, onSaved, onBack }) {
         <div style={avatarSectionStyle}>
           <div style={avatarContainerStyle}>
             <FaceAvatar
-              photo={USER.photo}
-              avatar={USER.avatar}
-              bg={USER.bg}
+              /* Audit Phase 3.G : avatar dans formulaire d'édition utilise
+                 le profil Supabase (avant : USER mock pour tous → la photo
+                 de Pino apparaissait dans tous les comptes). */
+              photo={profileSource.photo_url || USER.photo}
+              avatar={profileSource.avatar_letter || USER.avatar}
+              bg={profileSource.avatar_bg || USER.bg}
               size={80}
               radius={40}
             />

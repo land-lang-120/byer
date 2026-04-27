@@ -9915,6 +9915,20 @@ function DetailScreen({
   const ownerName = ownerEntry?.name || item._supabase && item.ownerName // si l'adapter remplit ownerName plus tard
   || "Hôte"; // neutre, plus de "Ekwalla M." par défaut
 
+  // Payload owner pour OwnerProfileScreen — accepte soit une string (mock)
+  // soit un objet { name, photo, since, verified, isSupabase, ownerId } pour
+  // les vraies fiches Supabase qui n'ont pas d'entrée dans OWNERS.
+  // Phase 3.I — audit 2026-04-27.
+  const ownerPayload = ownerEntry ? ownerName // string : OwnerProfileScreen lookup mock
+  : {
+    name: ownerName,
+    photo: item._supabase ? item.ownerPhoto : null,
+    verified: item._supabase ? !!item.ownerVerified : false,
+    since: item._supabase ? item.ownerSince : null,
+    isSupabase: !!item._supabase,
+    ownerId: item._supabase ? item.ownerId : null
+  };
+
   // Tarif calculé via helper (gère vehicle day/week/month et property night/month)
   const {
     price,
@@ -10282,7 +10296,7 @@ function DetailScreen({
       width: "100%",
       textAlign: "left"
     },
-    onClick: () => onViewOwner && onViewOwner(ownerName)
+    onClick: () => onViewOwner && onViewOwner(ownerPayload)
   }, /*#__PURE__*/React.createElement(FaceAvatar, {
     photo: ownerEntry?.photo,
     avatar: ownerEntry?.avatar || "?",
@@ -14563,11 +14577,39 @@ function ProfileScreen({
 }
 
 /* ─── OWNER PROFILE SCREEN ──────────────────────── */
+// Phase 3.I — accepte ownerName en string (lookup mock OWNERS) OU en
+// objet payload {name, photo, since, verified, isSupabase, ownerId}
+// pour les vraies fiches Supabase. Avant : "Profil non trouvé" pour
+// tout listing Supabase (audit 2026-04-27).
 function OwnerProfileScreen({
   ownerName,
   onBack
 }) {
-  const owner = OWNERS[ownerName];
+  const isPayload = ownerName && typeof ownerName === "object";
+  const lookupKey = isPayload ? ownerName.name : ownerName;
+  const mockOwner = OWNERS[lookupKey];
+
+  // Construire un owner minimal depuis le payload Supabase si pas de mock
+  // Les champs absents (rating, reviews, about, superhost, buildings) sont
+  // fournis avec des valeurs neutres pour ne pas casser le rendu.
+  const supabaseOwner = isPayload && !mockOwner ? {
+    id: ownerName.ownerId || "supa-owner",
+    name: ownerName.name || "Hôte",
+    since: ownerName.since ? new Date(ownerName.since).getFullYear().toString() : "récemment",
+    city: ownerName.city || "Cameroun",
+    avatar: (ownerName.name || "U").charAt(0).toUpperCase(),
+    avatarBg: "#6366F1",
+    photo: ownerName.photo || null,
+    superhost: false,
+    rating: 0,
+    reviews: 0,
+    about: ownerName.verified ? "Identité vérifiée par Byer." : "Profil utilisateur Byer.",
+    buildings: [],
+    // pas de listing à montrer dans cette vue minimale
+    vehicles: [],
+    _supabase: true
+  } : null;
+  const owner = mockOwner || supabaseOwner;
   const [expanded, setExpanded] = useState({});
   const toggleBuilding = id => setExpanded(p => ({
     ...p,
@@ -19784,12 +19826,18 @@ function DelegationSheet({
    - kind="vehicle" → tous les véhicules
 ─────────────────────────────────────────────────── */
 function OwnerListAllScreen({
+  currentProfile,
+  dbMyListings,
   filter,
   onBack,
   onViewBuilding
 }) {
-  const [activeOwner] = useState("Ekwalla M.");
-  const owner = OWNERS[activeOwner];
+  /* Phase 3.H — même logique que OwnerDashboardScreen : on construit
+     l'owner depuis le profil + listings réels si dispo, sinon mock.
+     Sans ça, "Voir tout" affichait toujours les biens d'Ekwalla. */
+  const realOwner = buildOwnerFromDb(currentProfile, dbMyListings);
+  const usingRealData = !!(realOwner && (realOwner.buildings.length > 0 || realOwner.vehicles.length > 0));
+  const owner = usingRealData ? realOwner : OWNERS["Ekwalla M."];
   if (!owner || !filter) return null;
   const isVehicle = filter.kind === "vehicle";
   const items = isVehicle ? owner.vehicles || [] : (owner.buildings || []).filter(b => b.type === filter.type);
@@ -29417,10 +29465,13 @@ function EditProfileScreen({
     style: avatarSectionStyle
   }, /*#__PURE__*/React.createElement("div", {
     style: avatarContainerStyle
-  }, /*#__PURE__*/React.createElement(FaceAvatar, {
-    photo: USER.photo,
-    avatar: USER.avatar,
-    bg: USER.bg,
+  }, /*#__PURE__*/React.createElement(FaceAvatar
+  /* Audit Phase 3.G : avatar dans formulaire d'édition utilise
+     le profil Supabase (avant : USER mock pour tous → la photo
+     de Pino apparaissait dans tous les comptes). */, {
+    photo: profileSource.photo_url || USER.photo,
+    avatar: profileSource.avatar_letter || USER.avatar,
+    bg: profileSource.avatar_bg || USER.bg,
     size: 80,
     radius: 40
   }), /*#__PURE__*/React.createElement("div", {
@@ -34050,6 +34101,8 @@ function ByerApp({
     });
   } else if (listAllFilter) {
     screenContent = /*#__PURE__*/React.createElement(OwnerListAllScreen, {
+      currentProfile: currentProfile,
+      dbMyListings: dbMyListings,
       filter: listAllFilter,
       onBack: () => {
         setListAllFilter(null);

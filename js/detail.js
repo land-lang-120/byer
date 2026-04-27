@@ -38,6 +38,21 @@ function DetailScreen({ item, saved, toggleSave, onBack, openGallery, duration, 
     || (item._supabase && item.ownerName)   // si l'adapter remplit ownerName plus tard
     || "Hôte";                              // neutre, plus de "Ekwalla M." par défaut
 
+  // Payload owner pour OwnerProfileScreen — accepte soit une string (mock)
+  // soit un objet { name, photo, since, verified, isSupabase, ownerId } pour
+  // les vraies fiches Supabase qui n'ont pas d'entrée dans OWNERS.
+  // Phase 3.I — audit 2026-04-27.
+  const ownerPayload = ownerEntry
+    ? ownerName  // string : OwnerProfileScreen lookup mock
+    : {
+        name:       ownerName,
+        photo:      item._supabase ? item.ownerPhoto : null,
+        verified:   item._supabase ? !!item.ownerVerified : false,
+        since:      item._supabase ? item.ownerSince : null,
+        isSupabase: !!item._supabase,
+        ownerId:    item._supabase ? item.ownerId : null,
+      };
+
   // Tarif calculé via helper (gère vehicle day/week/month et property night/month)
   const { price, unit } = priceFor(item, localDur);
 
@@ -173,7 +188,7 @@ function DetailScreen({ item, saved, toggleSave, onBack, openGallery, duration, 
           <Divider/>
 
           {/* Host */}
-          <button style={{...S.hostRow, cursor:"pointer", width:"100%", textAlign:"left"}} onClick={()=>onViewOwner&&onViewOwner(ownerName)}>
+          <button style={{...S.hostRow, cursor:"pointer", width:"100%", textAlign:"left"}} onClick={()=>onViewOwner&&onViewOwner(ownerPayload)}>
             <FaceAvatar photo={ownerEntry?.photo} avatar={ownerEntry?.avatar||"?"} bg={ownerEntry?.avatarBg} size={46}/>
             <div style={{flex:1}}>
               <p style={{fontSize:14,fontWeight:600,color:C.black}}>{item.type==="property"?"Hébergé par":"Proposé par"} {ownerName}</p>

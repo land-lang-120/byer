@@ -756,9 +756,13 @@ function DelegationSheet({ building, delegatedIds, onAdd, onRemove, onClose }) {
    - kind="property" + type="immeuble"|"villa"|"hotel"|"motel" → tous les buildings de ce type
    - kind="vehicle" → tous les véhicules
 ─────────────────────────────────────────────────── */
-function OwnerListAllScreen({ filter, onBack, onViewBuilding }) {
-  const [activeOwner] = useState("Ekwalla M.");
-  const owner = OWNERS[activeOwner];
+function OwnerListAllScreen({ currentProfile, dbMyListings, filter, onBack, onViewBuilding }) {
+  /* Phase 3.H — même logique que OwnerDashboardScreen : on construit
+     l'owner depuis le profil + listings réels si dispo, sinon mock.
+     Sans ça, "Voir tout" affichait toujours les biens d'Ekwalla. */
+  const realOwner = buildOwnerFromDb(currentProfile, dbMyListings);
+  const usingRealData = !!(realOwner && (realOwner.buildings.length > 0 || realOwner.vehicles.length > 0));
+  const owner = usingRealData ? realOwner : OWNERS["Ekwalla M."];
   if (!owner || !filter) return null;
 
   const isVehicle = filter.kind === "vehicle";

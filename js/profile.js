@@ -579,8 +579,40 @@ function ProfileScreen({ role, setRole, currentProfile, onOpenRent, onOpenDashbo
 }
 
 /* ─── OWNER PROFILE SCREEN ──────────────────────── */
+// Phase 3.I — accepte ownerName en string (lookup mock OWNERS) OU en
+// objet payload {name, photo, since, verified, isSupabase, ownerId}
+// pour les vraies fiches Supabase. Avant : "Profil non trouvé" pour
+// tout listing Supabase (audit 2026-04-27).
 function OwnerProfileScreen({ ownerName, onBack }) {
-  const owner = OWNERS[ownerName];
+  const isPayload = ownerName && typeof ownerName === "object";
+  const lookupKey = isPayload ? ownerName.name : ownerName;
+  const mockOwner = OWNERS[lookupKey];
+
+  // Construire un owner minimal depuis le payload Supabase si pas de mock
+  // Les champs absents (rating, reviews, about, superhost, buildings) sont
+  // fournis avec des valeurs neutres pour ne pas casser le rendu.
+  const supabaseOwner = isPayload && !mockOwner ? {
+    id:        ownerName.ownerId || "supa-owner",
+    name:      ownerName.name || "Hôte",
+    since:     ownerName.since
+                 ? new Date(ownerName.since).getFullYear().toString()
+                 : "récemment",
+    city:      ownerName.city || "Cameroun",
+    avatar:    (ownerName.name || "U").charAt(0).toUpperCase(),
+    avatarBg:  "#6366F1",
+    photo:     ownerName.photo || null,
+    superhost: false,
+    rating:    0,
+    reviews:   0,
+    about:     ownerName.verified
+                 ? "Identité vérifiée par Byer."
+                 : "Profil utilisateur Byer.",
+    buildings: [],   // pas de listing à montrer dans cette vue minimale
+    vehicles:  [],
+    _supabase: true,
+  } : null;
+
+  const owner = mockOwner || supabaseOwner;
   const [expanded, setExpanded] = useState({});
 
   const toggleBuilding = (id) => setExpanded(p => ({...p,[id]:!p[id]}));
