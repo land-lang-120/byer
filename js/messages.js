@@ -229,12 +229,15 @@ function MessagesScreen({ role, onChatActiveChange, onOpenListing }) {
            ferme le chat → cohérent avec le bouton retour téléphone. Un seul
            chemin de sortie pour les deux affordances (cf. useEffect popstate). */
         onBack={() => window.history.back()}
-        /* "Voir le logement" du menu chat → ferme le chat (history.back) puis
-           ouvre la fiche détail du listing résolu par app.js depuis la conv. */
-        onOpenListing={onOpenListing ? (() => {
-          window.history.back();
-          onOpenListing(conv);
-        }) : null}
+        /* "Voir le logement" du menu chat → ouvre directement la fiche détail.
+           ⚠️ NE PAS appeler window.history.back() ici : ByerApp a son PROPRE
+           popstate listener qui appelle closeAllOverlays() (incluant
+           setDetail(null)). Si on faisait back(), le détail serait set ET
+           immédiatement reset par le popstate → bug v54 case (c).
+           Solution : juste setDetail. ByerApp gère ensuite la pile d'historique
+           overlay automatiquement (useEffect [onSecondaryScreen]). Le chat est
+           masqué visuellement par le DetailScreen (MessagesScreen unmount). */
+        onOpenListing={onOpenListing ? (() => onOpenListing(conv)) : null}
         onToggleBlock={() => toggleBlock(openChat)}
         onSendMessage={async (text) => {
           // Optimistic UI : on ajoute tout de suite, on "ré-aligne" via Realtime
@@ -533,7 +536,7 @@ function ChatScreen({ conv, onBack, onToggleBlock, onSendMessage, onOpenListing 
               <button style={S.chatMenuItem} onClick={()=>{
                 setShowMenu(false);
                 if (onOpenListing) {
-                  onOpenListing();   // ferme le chat + ouvre la fiche
+                  onOpenListing();   // setDetail(item) — DetailScreen masque le chat
                 } else {
                   // Fallback démo si app.js n'a pas câblé le prop
                   flashChat(`Logement : ${conv.logement}`);

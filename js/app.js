@@ -743,11 +743,7 @@ function ByerApp({ onLogout }) {
                                 if (!item && conv.logement) {
                                   item = candidates.find(i => i.title === conv.logement) || null;
                                 }
-                                if (item) {
-                                  setDetail(item);
-                                  // Si on était sur l'onglet messages, on bascule pas la nav
-                                  // — DetailScreen est un overlay rendu au-dessus.
-                                }
+                                if (item) setDetail(item);
                               }}
                             />}
       {tab==="profile"  && <ProfileScreen role={role} setRole={setRole} currentProfile={currentProfile} onOpenRent={() => setRentOpen(true)} onOpenDashboard={()=>setDashboardOpen(true)} onOpenTechs={()=>{setTechsRole(role);setTechsOpen(true);}} onOpenPros={()=>{setProsRole(role);setProsOpen(true);}} onOpenPublish={()=>{setPublishSegment(null);setPublishOpen(true);}} onOpenSettings={()=>setSettingsOpen(true)} onOpenEditProfile={()=>setEditProfileOpen(true)} onOpenReviews={()=>setReviewsOpen(true)} onOpenHistory={()=>setHistoryOpen(true)} onLogout={onLogout}/>}
