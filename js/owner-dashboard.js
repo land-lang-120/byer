@@ -140,7 +140,10 @@ function OwnerDashboardScreen({ currentProfile, dbMyListings, ownerStats, onBack
     const baseMonthly = totalRevenue * (occupancyPct / 100); // revenu mensuel attendu
     const labels = ["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sep","Oct","Nov","Déc"];
     const now = new Date();
-    const seed = activeOwner.charCodeAt(0);
+    // Phase 3 fix : activeOwner state retiré (vestige du mock OWNERS lookup).
+    // On utilise owner.name en seed déterministe pour conserver des chiffres
+    // stables d'une session à l'autre, peu importe qui visualise.
+    const seed = (owner.name || "byer").charCodeAt(0);
     const data = [];
     for (let i = monthsCount - 1; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);

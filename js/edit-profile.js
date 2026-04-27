@@ -19,6 +19,82 @@ function EditProfileScreen({ currentProfile, currentUserId, onSaved, onBack }) {
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  // Photo de profil : ref vers l'input file caché + state d'upload + URL
+  // optimiste affichée pendant l'upload pour feedback instantané.
+  const photoFileRef = React.useRef(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState(profileSource.photo_url || null);
+  // Sync quand le profil parent change (ex: après save/refresh)
+  useEffect(() => { setPhotoUrl(profileSource.photo_url || null); }, [profileSource.photo_url]);
+
+  const showToastMsg = (msg, ms = 2200) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), ms);
+  };
+
+  const handlePhotoClick = () => {
+    if (uploadingPhoto) return;
+    photoFileRef.current?.click();
+  };
+
+  const handlePhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // reset pour pouvoir re-uploader le même fichier
+    if (!file) return;
+
+    // Validation côté client
+    if (!file.type.startsWith("image/")) {
+      showToastMsg("Format invalide. Utilisez une image (JPG, PNG, WEBP).");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToastMsg("Image trop lourde (max 5 Mo).");
+      return;
+    }
+
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady || !currentUserId) {
+      showToastMsg("Connexion requise pour changer la photo.");
+      return;
+    }
+
+    setUploadingPhoto(true);
+    // Preview optimiste (data URL pour afficher avant que l'URL prod soit dispo)
+    try {
+      const reader = new FileReader();
+      reader.onload = (ev) => setPhotoUrl(ev.target.result);
+      reader.readAsDataURL(file);
+    } catch (e) { /* preview best-effort */ }
+
+    try {
+      // 1) Upload vers le bucket avatars (mig 0003 + 0012 : INSERT + UPDATE policies)
+      const { data: up, error: upErr } = await db.storage.uploadAvatar(file, currentUserId);
+      if (upErr || !up?.url) {
+        setUploadingPhoto(false);
+        showToastMsg(`Échec upload : ${upErr?.message || "réessayez"}`);
+        setPhotoUrl(profileSource.photo_url || null); // rollback preview
+        return;
+      }
+      // 2) Mise à jour de la colonne profiles.photo_url
+      // Cache-bust : on append ?t=timestamp pour forcer le refetch côté navigateurs
+      // (Supabase Storage met un Cache-Control: public, max-age=3600 par défaut).
+      const cacheBustedUrl = `${up.url}?t=${Date.now()}`;
+      const { error: updErr } = await db.profiles.update(currentUserId, { photo_url: cacheBustedUrl });
+      setUploadingPhoto(false);
+      if (updErr) {
+        showToastMsg(`Photo uploadée mais profil non mis à jour : ${updErr.message}`);
+        return;
+      }
+      setPhotoUrl(cacheBustedUrl);
+      showToastMsg("Photo de profil mise à jour !");
+      if (typeof onSaved === "function") onSaved();
+    } catch (err) {
+      setUploadingPhoto(false);
+      showToastMsg("Erreur réseau, réessayez");
+      setPhotoUrl(profileSource.photo_url || null);
+    }
+  };
+
   // Sheet KYC : ouverture depuis le bouton "Vérifier" de la section Identité.
   const [kycOpen, setKycOpen] = useState(false);
 
@@ -423,24 +499,45 @@ function EditProfileScreen({ currentProfile, currentUserId, onSaved, onBack }) {
 
       <div style={contentStyle}>
         <div style={avatarSectionStyle}>
-          <div style={avatarContainerStyle}>
+          <div style={{...avatarContainerStyle, cursor: uploadingPhoto ? "wait" : "pointer"}} onClick={handlePhotoClick}>
             <FaceAvatar
-              /* Audit Phase 3.G : avatar dans formulaire d'édition utilise
-                 le profil Supabase (avant : USER mock pour tous → la photo
-                 de Pino apparaissait dans tous les comptes). */
-              photo={profileSource.photo_url || USER.photo}
+              /* Phase 3.G + photo upload : avatar reflète photoUrl (state local
+                 mis à jour optimistiquement pendant l'upload). Fallback profil
+                 Supabase, puis USER mock (mode démo offline). */
+              photo={photoUrl || profileSource.photo_url || USER.photo}
               avatar={profileSource.avatar_letter || USER.avatar}
               bg={profileSource.avatar_bg || USER.bg}
               size={80}
               radius={40}
             />
-            <div style={cameraButtonStyle}>
-              <svg width="16" height="16" fill="none" stroke={C.white} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-                <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>
-              </svg>
+            <div style={{...cameraButtonStyle, opacity: uploadingPhoto ? 0.5 : 1}}>
+              {uploadingPhoto ? (
+                <div style={{
+                  width:14, height:14, border:"2px solid white",
+                  borderTopColor:"transparent", borderRadius:"50%",
+                  animation:"spin .8s linear infinite",
+                }}/>
+              ) : (
+                <svg width="16" height="16" fill="none" stroke={C.white} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                  <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>
+                </svg>
+              )}
             </div>
           </div>
-          <div style={changePhotoTextStyle}>Changer la photo</div>
+          {/* Input file caché — déclenché par le clic sur l'avatar/camera */}
+          <input
+            ref={photoFileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={handlePhotoChange}
+            style={{display:"none"}}
+          />
+          <div
+            style={{...changePhotoTextStyle, cursor: uploadingPhoto ? "wait" : "pointer"}}
+            onClick={handlePhotoClick}
+          >
+            {uploadingPhoto ? "Upload en cours…" : "Changer la photo"}
+          </div>
         </div>
 
         <div style={formWrapperStyle}>
