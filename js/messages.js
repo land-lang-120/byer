@@ -466,6 +466,19 @@ function ChatScreen({ conv, onBack, onToggleBlock, onSendMessage }) {
 
   const flashChat = (msg) => { setChatToast(msg); setTimeout(()=>setChatToast(""), 2200); };
 
+  // v52 : sortie chat multi-canaux. Avant : seul le bouton retour (souvent
+  // peu visible) permettait de quitter. Ajout :
+  //  - Touche Escape (clavier desktop)
+  //  - Item "Fermer la conversation" dans le menu 3-points
+  //  - Le bouton retour reste évidemment fonctionnel
+  React.useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === "Escape") onBack?.();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onBack]);
+
   const sendMsg = () => {
     if (!input.trim() || isBlocked) return;
     onSendMessage?.(input.trim());
@@ -507,6 +520,15 @@ function ChatScreen({ conv, onBack, onToggleBlock, onSendMessage }) {
               <button style={S.chatMenuItem} onClick={()=>{ setShowMenu(false); flashChat(`Logement : ${conv.logement}`); }}>
                 <Icon name="home" size={16} color={C.dark} stroke={1.8}/>
                 <span>Voir le logement</span>
+              </button>
+              <div style={{height:1,background:C.border,margin:"2px 0"}}/>
+              {/* v52 : sortie alternative depuis le menu (en plus de la flèche
+                  retour) — UX accessibilité améliorée. */}
+              <button style={S.chatMenuItem} onClick={()=>{ setShowMenu(false); onBack?.(); }}>
+                <svg width="16" height="16" fill="none" stroke={C.dark} strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+                <span>Fermer la conversation</span>
               </button>
               <div style={{height:1,background:C.border,margin:"2px 0"}}/>
               <button

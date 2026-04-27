@@ -5,6 +5,11 @@
    ═══════════════════════════════════════════════════ */
 
 /* ─── TECHNICIANS LIST SCREEN ────────────────────── */
+// v1 : feature flag — recrutement DB (table listing_assignments) prévu V2.
+// Tant que pas implémenté, "Recruter" et "Demander devis" affichent un toast
+// "Bientôt disponible". "Devenir technicien" reste fonctionnel (localStorage).
+const TECH_RECRUITMENT_ENABLED = false;
+
 function TechniciansScreen({ onBack, role }) {
   const [category, setCategory] = useState("all");
   const [selectedTech, setSelectedTech] = useState(null);
@@ -14,6 +19,12 @@ function TechniciansScreen({ onBack, role }) {
   const [userTechs, setUserTechs] = useState(() => userProfiles.getTechs());
   const [becomeOpen, setBecomeOpen] = useState(false);
   const [becomeSuccess, setBecomeSuccess] = useState(false);
+  /* Toast léger "Bientôt" partagé par Recruter et Demander devis */
+  const [soonToast, setSoonToast] = useState("");
+  const flashSoon = (msg) => {
+    setSoonToast(msg);
+    setTimeout(() => setSoonToast(""), 2400);
+  };
 
   const isBailleur = role === "bailleur";
 
@@ -43,11 +54,25 @@ function TechniciansScreen({ onBack, role }) {
     window.open("tel:"+phone.replace(/\s/g,""), "_self");
   };
 
-  const addTech = (id) => setAssignedIds(p=>[...p,id]);
+  const addTech = (id) => {
+    if (!TECH_RECRUITMENT_ENABLED) {
+      flashSoon("Recrutement bientôt disponible — V2");
+      return;
+    }
+    setAssignedIds(p=>[...p,id]);
+  };
   const removeTech = (id) => { setAssignedIds(p=>p.filter(x=>x!==id)); setConfirmRemove(null); };
 
   const [quoteOpen, setQuoteOpen] = useState(null); // tech | null
   const [quoteSent, setQuoteSent] = useState(null); // techId | null
+
+  const handleRequestQuote = (tech) => {
+    if (!TECH_RECRUITMENT_ENABLED) {
+      flashSoon("Demande de devis bientôt disponible — V2");
+      return;
+    }
+    setQuoteOpen(tech);
+  };
 
   if (selectedTech) return (
     <TechProfileScreen
@@ -58,8 +83,9 @@ function TechniciansScreen({ onBack, role }) {
       onAssign={()=>addTech(selectedTech.id)}
       onRemove={()=>removeTech(selectedTech.id)}
       onCall={()=>callPhone(selectedTech.phone)}
-      onRequestQuote={()=>setQuoteOpen(selectedTech)}
+      onRequestQuote={()=>handleRequestQuote(selectedTech)}
       quoteSent={quoteSent===selectedTech.id}
+      soonEnabled={!TECH_RECRUITMENT_ENABLED}
     />
   );
 
@@ -224,12 +250,26 @@ function TechniciansScreen({ onBack, role }) {
           </div>
         </>
       )}
+
+      {/* Toast "Bientôt" — affiché lors d'un clic sur Recruter/Demander devis
+          tant que TECH_RECRUITMENT_ENABLED=false (v1). */}
+      {soonToast && (
+        <div style={{
+          position:"fixed", bottom:80, left:16, right:16,
+          background:C.dark, color:C.white, padding:"12px 16px",
+          borderRadius:12, textAlign:"center",
+          fontSize:13, fontWeight:600, fontFamily:"'DM Sans',sans-serif",
+          boxShadow:"0 8px 24px rgba(0,0,0,.25)", zIndex:300,
+        }}>
+          🚧 {soonToast}
+        </div>
+      )}
     </div>
   );
 }
 
 /* ─── TECH CARD ──────────────────────────────────── */
-function TechCard({ tech, onTap, onCall, isBailleur, isAssigned, onAdd, onRemove }) {
+function TechCard({ tech, onTap, onCall, isBailleur, isAssigned, onAdd, onRemove, soonEnabled = false }) {
   const cat = TECH_CATEGORIES.find(c=>c.id===tech.category);
   return (
     <div style={{background:C.white,borderRadius:16,padding:"14px",marginBottom:10,boxShadow:"0 1px 8px rgba(0,0,0,.05)",cursor:"pointer"}} onClick={onTap}>
@@ -273,8 +313,9 @@ function TechCard({ tech, onTap, onCall, isBailleur, isAssigned, onAdd, onRemove
           <span style={{fontSize:12,fontWeight:600,color:"#16A34A"}}>Appeler</span>
         </button>
         {isBailleur && !isAssigned && onAdd && (
-          <button onClick={onAdd} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px",borderRadius:10,background:C.coral,border:"none",cursor:"pointer"}}>
-            <span style={{fontSize:12,color:"white",fontWeight:600}}>+ Recruter</span>
+          /* v1 : recrutement réel pas encore branché DB → label "Bientôt" + toast. */
+          <button onClick={onAdd} title="Bientôt disponible" style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px",borderRadius:10,background:"#9CA3AF",border:"none",cursor:"pointer"}}>
+            <span style={{fontSize:12,color:"white",fontWeight:600}}>Recruter · Bientôt</span>
           </button>
         )}
         {isBailleur && isAssigned && onRemove && (
@@ -288,7 +329,7 @@ function TechCard({ tech, onTap, onCall, isBailleur, isAssigned, onAdd, onRemove
 }
 
 /* ─── TECH PROFILE SCREEN ────────────────────────── */
-function TechProfileScreen({ tech, onBack, isBailleur, isAssigned, onAssign, onRemove, onCall, onRequestQuote, quoteSent }) {
+function TechProfileScreen({ tech, onBack, isBailleur, isAssigned, onAssign, onRemove, onCall, onRequestQuote, quoteSent, soonEnabled = false }) {
   const cat = TECH_CATEGORIES.find(c=>c.id===tech.category);
   return (
     <div style={S.shell}>
@@ -352,13 +393,15 @@ function TechProfileScreen({ tech, onBack, isBailleur, isAssigned, onAssign, onR
             </button>
           </div>
 
-          {/* Demander un devis : action principale pour locataires */}
+          {/* Demander un devis : action principale pour locataires
+              v1 : flag soonEnabled → "Bientôt" car flow non branché DB */}
           {!isBailleur && (
             <button
               onClick={onRequestQuote}
+              title={soonEnabled ? "Bientôt disponible" : ""}
               style={{
                 ...S.payBtn,
-                background: quoteSent ? "#16A34A" : C.coral,
+                background: quoteSent ? "#16A34A" : (soonEnabled ? "#9CA3AF" : C.coral),
                 marginBottom:16,
                 display:"flex",alignItems:"center",justifyContent:"center",gap:8,
               }}
@@ -371,21 +414,21 @@ function TechProfileScreen({ tech, onBack, isBailleur, isAssigned, onAssign, onR
               ) : (
                 <>
                   <span style={{fontSize:14}}>📝</span>
-                  <span>Demander un devis gratuit</span>
+                  <span>{soonEnabled ? "Demander un devis · Bientôt" : "Demander un devis gratuit"}</span>
                 </>
               )}
             </button>
           )}
 
-          {/* Bailleur actions */}
+          {/* Bailleur actions — soonEnabled grise le bouton Recruter */}
           {isBailleur && (
             isAssigned ? (
               <button onClick={onRemove} style={{...S.payBtn,background:C.dark,marginBottom:16}}>
                 Mettre fin à la collaboration
               </button>
             ) : (
-              <button onClick={onAssign} style={{...S.payBtn,marginBottom:16}}>
-                + Recruter ce technicien
+              <button onClick={onAssign} title="Bientôt disponible" style={{...S.payBtn,marginBottom:16,background:"#9CA3AF"}}>
+                Recruter ce technicien · Bientôt
               </button>
             )
           )}

@@ -56,6 +56,12 @@ function ByerPin({ size = 22 }) {
 function FaceAvatar({ photo, avatar, bg, size=46, radius, blocked=false }) {
   const r = radius ?? size/2;
   const [err, setErr] = useState(false);
+  // Bug fix v52 : si la photo prop change (ex: après upload de nouvelle photo
+  // de profil), il faut reset l'erreur pour que la nouvelle image se charge.
+  // Sans ça, une photo qui a 404'é au render précédent reste avec err=true et
+  // ne tente pas de re-fetch même si l'URL change. Pino l'a vu : sa nouvelle
+  // photo n'apparaissait pas dans Profil après upload.
+  React.useEffect(() => { setErr(false); }, [photo]);
   if (blocked) return (
     <div style={{width:size,height:size,borderRadius:r,background:C.border,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
       <svg width={size*.4} height={size*.4} fill="none" stroke={C.mid} strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24">

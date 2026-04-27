@@ -6,6 +6,13 @@
    ═══════════════════════════════════════════════════ */
 
 /* ─── PROFESSIONALS LIST SCREEN ──────────────────── */
+// v1 : feature flag — le recrutement réel via DB (table listing_assignments,
+// chat 1:1 avec le pro, audit log) est prévu pour V2 (cf. cahier 3.5).
+// Tant que ce n'est pas implémenté, "Recruter" et "Contacter" affichent
+// une notification "Bientôt disponible". Les boutons "Devenir [pro]" pour
+// créer son propre profil restent fonctionnels (localStorage v1, DB en V2).
+const PRO_RECRUITMENT_ENABLED = false;
+
 function ProfessionalsScreen({ onBack, role }) {
   const [category, setCategory] = useState("all");
   const [selectedPro, setSelectedPro] = useState(null);
@@ -17,6 +24,12 @@ function ProfessionalsScreen({ onBack, role }) {
   const [userPros, setUserPros] = useState(() => userProfiles.getPros());
   const [becomeOpen, setBecomeOpen] = useState(false);
   const [becomeSuccess, setBecomeSuccess] = useState(false);
+  /* Toast léger "Bientôt" partagé par Recruter et Contacter */
+  const [soonToast, setSoonToast] = useState("");
+  const flashSoon = (msg) => {
+    setSoonToast(msg);
+    setTimeout(() => setSoonToast(""), 2400);
+  };
 
   const isBailleur = role === "bailleur";
 
@@ -35,8 +48,21 @@ function ProfessionalsScreen({ onBack, role }) {
     window.open("tel:"+phone.replace(/\s/g,""), "_self");
   };
 
-  const addPro = (id) => setAssignedIds(p=>[...p,id]);
+  const addPro = (id) => {
+    if (!PRO_RECRUITMENT_ENABLED) {
+      flashSoon("Recrutement bientôt disponible — V2");
+      return;
+    }
+    setAssignedIds(p=>[...p,id]);
+  };
   const removePro = (id) => { setAssignedIds(p=>p.filter(x=>x!==id)); setConfirmRemove(null); };
+  const handleContact = (pro) => {
+    if (!PRO_RECRUITMENT_ENABLED) {
+      flashSoon("Messagerie bientôt disponible — V2");
+      return;
+    }
+    setContactOpen(pro);
+  };
 
   if (selectedPro) return (
     <ProProfileScreen
@@ -47,8 +73,9 @@ function ProfessionalsScreen({ onBack, role }) {
       onAssign={()=>addPro(selectedPro.id)}
       onRemove={()=>removePro(selectedPro.id)}
       onCall={()=>callPhone(selectedPro.phone)}
-      onContact={()=>setContactOpen(selectedPro)}
+      onContact={()=>handleContact(selectedPro)}
       contactSent={contactSent===selectedPro.id}
+      soonEnabled={!PRO_RECRUITMENT_ENABLED}
     />
   );
 
@@ -224,6 +251,20 @@ function ProfessionalsScreen({ onBack, role }) {
           </div>
         </>
       )}
+
+      {/* Toast "Bientôt" — affiché lors d'un clic sur Recruter/Contacter
+          tant que PRO_RECRUITMENT_ENABLED=false (v1). Disparaît seul après 2.4s. */}
+      {soonToast && (
+        <div style={{
+          position:"fixed", bottom:80, left:16, right:16,
+          background:C.dark, color:C.white, padding:"12px 16px",
+          borderRadius:12, textAlign:"center",
+          fontSize:13, fontWeight:600, fontFamily:"'DM Sans',sans-serif",
+          boxShadow:"0 8px 24px rgba(0,0,0,.25)", zIndex:300,
+        }}>
+          🚧 {soonToast}
+        </div>
+      )}
     </div>
   );
 }
@@ -276,8 +317,10 @@ function ProCard({ pro, onTap, onCall, isBailleur, isAssigned, onAdd, onRemove }
           <span style={{fontSize:12,fontWeight:600,color:"#16A34A"}}>Appeler</span>
         </button>
         {isBailleur && !isAssigned && onAdd && (
-          <button onClick={onAdd} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px",borderRadius:10,background:C.coral,border:"none",cursor:"pointer"}}>
-            <span style={{fontSize:12,color:"white",fontWeight:600}}>+ Recruter</span>
+          /* v1 : recrutement réel pas encore branché DB → label "Bientôt" + toast.
+             onClick reste actif pour que l'utilisateur découvre la feature. */
+          <button onClick={onAdd} title="Bientôt disponible" style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px",borderRadius:10,background:"#9CA3AF",border:"none",cursor:"pointer"}}>
+            <span style={{fontSize:12,color:"white",fontWeight:600}}>Recruter · Bientôt</span>
           </button>
         )}
         {isBailleur && isAssigned && onRemove && (
@@ -291,7 +334,7 @@ function ProCard({ pro, onTap, onCall, isBailleur, isAssigned, onAdd, onRemove }
 }
 
 /* ─── PRO PROFILE SCREEN ─────────────────────────── */
-function ProProfileScreen({ pro, onBack, isBailleur, isAssigned, onAssign, onRemove, onCall, onContact, contactSent }) {
+function ProProfileScreen({ pro, onBack, isBailleur, isAssigned, onAssign, onRemove, onCall, onContact, contactSent, soonEnabled = false }) {
   const cat = PRO_CATEGORIES.find(c=>c.id===pro.category);
 
   /* ── Vue inverse : entités déléguées à ce pro ─────────
@@ -482,13 +525,15 @@ function ProProfileScreen({ pro, onBack, isBailleur, isAssigned, onAssign, onRem
               Mettre fin
             </button>
           ) : (
-            <button onClick={onAssign} disabled={!pro.available} style={{flex:1,padding:"12px",borderRadius:12,background:pro.available?C.coral:C.border,border:"none",cursor:pro.available?"pointer":"not-allowed",fontSize:13,fontWeight:700,color:"white"}}>
-              + Recruter
+            /* v1 : "Bientôt" tant que le système d'assignment listing_assignments
+               (mig 0014 V2) n'est pas en place. Visuel grisé pour signal clair. */
+            <button onClick={onAssign} title="Bientôt disponible" style={{flex:1,padding:"12px",borderRadius:12,background:"#9CA3AF",border:"none",cursor:"pointer",fontSize:13,fontWeight:700,color:"white"}}>
+              Recruter · Bientôt
             </button>
           )
         ) : (
-          <button onClick={onContact} disabled={!pro.available || contactSent} style={{flex:1,padding:"12px",borderRadius:12,background:(!pro.available||contactSent)?C.border:C.coral,border:"none",cursor:(!pro.available||contactSent)?"not-allowed":"pointer",fontSize:13,fontWeight:700,color:"white"}}>
-            {contactSent ? "Envoyée ✓" : "Contacter"}
+          <button onClick={onContact} title={soonEnabled ? "Bientôt disponible" : ""} style={{flex:1,padding:"12px",borderRadius:12,background:soonEnabled?"#9CA3AF":(contactSent?C.border:C.coral),border:"none",cursor:"pointer",fontSize:13,fontWeight:700,color:"white"}}>
+            {contactSent ? "Envoyée ✓" : (soonEnabled ? "Contacter · Bientôt" : "Contacter")}
           </button>
         )}
       </div>

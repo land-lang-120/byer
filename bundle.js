@@ -6778,6 +6778,14 @@ function FaceAvatar({
 }) {
   const r = radius ?? size / 2;
   const [err, setErr] = useState(false);
+  // Bug fix v52 : si la photo prop change (ex: après upload de nouvelle photo
+  // de profil), il faut reset l'erreur pour que la nouvelle image se charge.
+  // Sans ça, une photo qui a 404'é au render précédent reste avec err=true et
+  // ne tente pas de re-fetch même si l'URL change. Pino l'a vu : sa nouvelle
+  // photo n'apparaissait pas dans Profil après upload.
+  React.useEffect(() => {
+    setErr(false);
+  }, [photo]);
   if (blocked) return /*#__PURE__*/React.createElement("div", {
     style: {
       width: size,
@@ -13076,6 +13084,19 @@ function ChatScreen({
     setChatToast(msg);
     setTimeout(() => setChatToast(""), 2200);
   };
+
+  // v52 : sortie chat multi-canaux. Avant : seul le bouton retour (souvent
+  // peu visible) permettait de quitter. Ajout :
+  //  - Touche Escape (clavier desktop)
+  //  - Item "Fermer la conversation" dans le menu 3-points
+  //  - Le bouton retour reste évidemment fonctionnel
+  React.useEffect(() => {
+    const handleKey = e => {
+      if (e.key === "Escape") onBack?.();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onBack]);
   const sendMsg = () => {
     if (!input.trim() || isBlocked) return;
     onSendMessage?.(input.trim());
@@ -13162,6 +13183,36 @@ function ChatScreen({
     color: C.dark,
     stroke: 1.8
   }), /*#__PURE__*/React.createElement("span", null, "Voir le logement")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 1,
+      background: C.border,
+      margin: "2px 0"
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    style: S.chatMenuItem,
+    onClick: () => {
+      setShowMenu(false);
+      onBack?.();
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    width: "16",
+    height: "16",
+    fill: "none",
+    stroke: C.dark,
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    viewBox: "0 0 24 24"
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: "18",
+    y1: "6",
+    x2: "6",
+    y2: "18"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "6",
+    y1: "6",
+    x2: "18",
+    y2: "18"
+  })), /*#__PURE__*/React.createElement("span", null, "Fermer la conversation")), /*#__PURE__*/React.createElement("div", {
     style: {
       height: 1,
       background: C.border,
@@ -20440,6 +20491,10 @@ function BuildingDetailScreen({
    ═══════════════════════════════════════════════════ */
 
 /* ─── TECHNICIANS LIST SCREEN ────────────────────── */
+// v1 : feature flag — recrutement DB (table listing_assignments) prévu V2.
+// Tant que pas implémenté, "Recruter" et "Demander devis" affichent un toast
+// "Bientôt disponible". "Devenir technicien" reste fonctionnel (localStorage).
+const TECH_RECRUITMENT_ENABLED = false;
 function TechniciansScreen({
   onBack,
   role
@@ -20452,6 +20507,12 @@ function TechniciansScreen({
   const [userTechs, setUserTechs] = useState(() => userProfiles.getTechs());
   const [becomeOpen, setBecomeOpen] = useState(false);
   const [becomeSuccess, setBecomeSuccess] = useState(false);
+  /* Toast léger "Bientôt" partagé par Recruter et Demander devis */
+  const [soonToast, setSoonToast] = useState("");
+  const flashSoon = msg => {
+    setSoonToast(msg);
+    setTimeout(() => setSoonToast(""), 2400);
+  };
   const isBailleur = role === "bailleur";
 
   /* Liste combinée : profils utilisateur d'abord, puis catalogue de base.
@@ -20476,7 +20537,13 @@ function TechniciansScreen({
   const callPhone = phone => {
     window.open("tel:" + phone.replace(/\s/g, ""), "_self");
   };
-  const addTech = id => setAssignedIds(p => [...p, id]);
+  const addTech = id => {
+    if (!TECH_RECRUITMENT_ENABLED) {
+      flashSoon("Recrutement bientôt disponible — V2");
+      return;
+    }
+    setAssignedIds(p => [...p, id]);
+  };
   const removeTech = id => {
     setAssignedIds(p => p.filter(x => x !== id));
     setConfirmRemove(null);
@@ -20484,6 +20551,13 @@ function TechniciansScreen({
   const [quoteOpen, setQuoteOpen] = useState(null); // tech | null
   const [quoteSent, setQuoteSent] = useState(null); // techId | null
 
+  const handleRequestQuote = tech => {
+    if (!TECH_RECRUITMENT_ENABLED) {
+      flashSoon("Demande de devis bientôt disponible — V2");
+      return;
+    }
+    setQuoteOpen(tech);
+  };
   if (selectedTech) return /*#__PURE__*/React.createElement(TechProfileScreen, {
     tech: selectedTech,
     onBack: () => setSelectedTech(null),
@@ -20492,8 +20566,9 @@ function TechniciansScreen({
     onAssign: () => addTech(selectedTech.id),
     onRemove: () => removeTech(selectedTech.id),
     onCall: () => callPhone(selectedTech.phone),
-    onRequestQuote: () => setQuoteOpen(selectedTech),
-    quoteSent: quoteSent === selectedTech.id
+    onRequestQuote: () => handleRequestQuote(selectedTech),
+    quoteSent: quoteSent === selectedTech.id,
+    soonEnabled: !TECH_RECRUITMENT_ENABLED
   });
   return /*#__PURE__*/React.createElement("div", {
     style: S.shell
@@ -20786,7 +20861,24 @@ function TechniciansScreen({
       ...S.reminderBtn,
       marginTop: 0
     }
-  }, "Annuler")))));
+  }, "Annuler")))), soonToast && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      bottom: 80,
+      left: 16,
+      right: 16,
+      background: C.dark,
+      color: C.white,
+      padding: "12px 16px",
+      borderRadius: 12,
+      textAlign: "center",
+      fontSize: 13,
+      fontWeight: 600,
+      fontFamily: "'DM Sans',sans-serif",
+      boxShadow: "0 8px 24px rgba(0,0,0,.25)",
+      zIndex: 300
+    }
+  }, "\uD83D\uDEA7 ", soonToast));
 }
 
 /* ─── TECH CARD ──────────────────────────────────── */
@@ -20797,7 +20889,8 @@ function TechCard({
   isBailleur,
   isAssigned,
   onAdd,
-  onRemove
+  onRemove,
+  soonEnabled = false
 }) {
   const cat = TECH_CATEGORIES.find(c => c.id === tech.category);
   return /*#__PURE__*/React.createElement("div", {
@@ -20943,8 +21036,12 @@ function TechCard({
       fontWeight: 600,
       color: "#16A34A"
     }
-  }, "Appeler")), isBailleur && !isAssigned && onAdd && /*#__PURE__*/React.createElement("button", {
+  }, "Appeler")), isBailleur && !isAssigned && onAdd &&
+  /*#__PURE__*/
+  /* v1 : recrutement réel pas encore branché DB → label "Bientôt" + toast. */
+  React.createElement("button", {
     onClick: onAdd,
+    title: "Bient\xF4t disponible",
     style: {
       flex: 1,
       display: "flex",
@@ -20953,7 +21050,7 @@ function TechCard({
       gap: 6,
       padding: "9px",
       borderRadius: 10,
-      background: C.coral,
+      background: "#9CA3AF",
       border: "none",
       cursor: "pointer"
     }
@@ -20963,7 +21060,7 @@ function TechCard({
       color: "white",
       fontWeight: 600
     }
-  }, "+ Recruter")), isBailleur && isAssigned && onRemove && /*#__PURE__*/React.createElement("button", {
+  }, "Recruter \xB7 Bient\xF4t")), isBailleur && isAssigned && onRemove && /*#__PURE__*/React.createElement("button", {
     onClick: onRemove,
     title: "Mettre fin \xE0 la collaboration",
     style: {
@@ -20994,7 +21091,8 @@ function TechProfileScreen({
   onRemove,
   onCall,
   onRequestQuote,
-  quoteSent
+  quoteSent,
+  soonEnabled = false
 }) {
   const cat = TECH_CATEGORIES.find(c => c.id === tech.category);
   return /*#__PURE__*/React.createElement("div", {
@@ -21189,9 +21287,10 @@ function TechProfileScreen({
     }
   }, "\uD83D\uDCDE Appeler")), !isBailleur && /*#__PURE__*/React.createElement("button", {
     onClick: onRequestQuote,
+    title: soonEnabled ? "Bientôt disponible" : "",
     style: {
       ...S.payBtn,
-      background: quoteSent ? "#16A34A" : C.coral,
+      background: quoteSent ? "#16A34A" : soonEnabled ? "#9CA3AF" : C.coral,
       marginBottom: 16,
       display: "flex",
       alignItems: "center",
@@ -21207,7 +21306,7 @@ function TechProfileScreen({
     style: {
       fontSize: 14
     }
-  }, "\uD83D\uDCDD"), /*#__PURE__*/React.createElement("span", null, "Demander un devis gratuit"))), isBailleur && (isAssigned ? /*#__PURE__*/React.createElement("button", {
+  }, "\uD83D\uDCDD"), /*#__PURE__*/React.createElement("span", null, soonEnabled ? "Demander un devis · Bientôt" : "Demander un devis gratuit"))), isBailleur && (isAssigned ? /*#__PURE__*/React.createElement("button", {
     onClick: onRemove,
     style: {
       ...S.payBtn,
@@ -21216,11 +21315,13 @@ function TechProfileScreen({
     }
   }, "Mettre fin \xE0 la collaboration") : /*#__PURE__*/React.createElement("button", {
     onClick: onAssign,
+    title: "Bient\xF4t disponible",
     style: {
       ...S.payBtn,
-      marginBottom: 16
+      marginBottom: 16,
+      background: "#9CA3AF"
     }
-  }, "+ Recruter ce technicien"))), /*#__PURE__*/React.createElement("div", {
+  }, "Recruter ce technicien \xB7 Bient\xF4t"))), /*#__PURE__*/React.createElement("div", {
     style: {
       height: 60
     }
@@ -21954,6 +22055,12 @@ function BecomeTechnicianSheet({
    ═══════════════════════════════════════════════════ */
 
 /* ─── PROFESSIONALS LIST SCREEN ──────────────────── */
+// v1 : feature flag — le recrutement réel via DB (table listing_assignments,
+// chat 1:1 avec le pro, audit log) est prévu pour V2 (cf. cahier 3.5).
+// Tant que ce n'est pas implémenté, "Recruter" et "Contacter" affichent
+// une notification "Bientôt disponible". Les boutons "Devenir [pro]" pour
+// créer son propre profil restent fonctionnels (localStorage v1, DB en V2).
+const PRO_RECRUITMENT_ENABLED = false;
 function ProfessionalsScreen({
   onBack,
   role
@@ -21968,6 +22075,12 @@ function ProfessionalsScreen({
   const [userPros, setUserPros] = useState(() => userProfiles.getPros());
   const [becomeOpen, setBecomeOpen] = useState(false);
   const [becomeSuccess, setBecomeSuccess] = useState(false);
+  /* Toast léger "Bientôt" partagé par Recruter et Contacter */
+  const [soonToast, setSoonToast] = useState("");
+  const flashSoon = msg => {
+    setSoonToast(msg);
+    setTimeout(() => setSoonToast(""), 2400);
+  };
   const isBailleur = role === "bailleur";
 
   /* Liste combinée : profils utilisateur d'abord, puis catalogue de base */
@@ -21983,10 +22096,23 @@ function ProfessionalsScreen({
   const callPhone = phone => {
     window.open("tel:" + phone.replace(/\s/g, ""), "_self");
   };
-  const addPro = id => setAssignedIds(p => [...p, id]);
+  const addPro = id => {
+    if (!PRO_RECRUITMENT_ENABLED) {
+      flashSoon("Recrutement bientôt disponible — V2");
+      return;
+    }
+    setAssignedIds(p => [...p, id]);
+  };
   const removePro = id => {
     setAssignedIds(p => p.filter(x => x !== id));
     setConfirmRemove(null);
+  };
+  const handleContact = pro => {
+    if (!PRO_RECRUITMENT_ENABLED) {
+      flashSoon("Messagerie bientôt disponible — V2");
+      return;
+    }
+    setContactOpen(pro);
   };
   if (selectedPro) return /*#__PURE__*/React.createElement(ProProfileScreen, {
     pro: selectedPro,
@@ -21996,8 +22122,9 @@ function ProfessionalsScreen({
     onAssign: () => addPro(selectedPro.id),
     onRemove: () => removePro(selectedPro.id),
     onCall: () => callPhone(selectedPro.phone),
-    onContact: () => setContactOpen(selectedPro),
-    contactSent: contactSent === selectedPro.id
+    onContact: () => handleContact(selectedPro),
+    contactSent: contactSent === selectedPro.id,
+    soonEnabled: !PRO_RECRUITMENT_ENABLED
   });
   return /*#__PURE__*/React.createElement("div", {
     style: S.shell
@@ -22289,7 +22416,24 @@ function ProfessionalsScreen({
       ...S.reminderBtn,
       marginTop: 0
     }
-  }, "Annuler")))));
+  }, "Annuler")))), soonToast && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      bottom: 80,
+      left: 16,
+      right: 16,
+      background: C.dark,
+      color: C.white,
+      padding: "12px 16px",
+      borderRadius: 12,
+      textAlign: "center",
+      fontSize: 13,
+      fontWeight: 600,
+      fontFamily: "'DM Sans',sans-serif",
+      boxShadow: "0 8px 24px rgba(0,0,0,.25)",
+      zIndex: 300
+    }
+  }, "\uD83D\uDEA7 ", soonToast));
 }
 
 /* ─── PRO CARD ───────────────────────────────────── */
@@ -22454,8 +22598,13 @@ function ProCard({
       fontWeight: 600,
       color: "#16A34A"
     }
-  }, "Appeler")), isBailleur && !isAssigned && onAdd && /*#__PURE__*/React.createElement("button", {
+  }, "Appeler")), isBailleur && !isAssigned && onAdd &&
+  /*#__PURE__*/
+  /* v1 : recrutement réel pas encore branché DB → label "Bientôt" + toast.
+     onClick reste actif pour que l'utilisateur découvre la feature. */
+  React.createElement("button", {
     onClick: onAdd,
+    title: "Bient\xF4t disponible",
     style: {
       flex: 1,
       display: "flex",
@@ -22464,7 +22613,7 @@ function ProCard({
       gap: 6,
       padding: "9px",
       borderRadius: 10,
-      background: C.coral,
+      background: "#9CA3AF",
       border: "none",
       cursor: "pointer"
     }
@@ -22474,7 +22623,7 @@ function ProCard({
       color: "white",
       fontWeight: 600
     }
-  }, "+ Recruter")), isBailleur && isAssigned && onRemove && /*#__PURE__*/React.createElement("button", {
+  }, "Recruter \xB7 Bient\xF4t")), isBailleur && isAssigned && onRemove && /*#__PURE__*/React.createElement("button", {
     onClick: onRemove,
     title: "Mettre fin \xE0 la collaboration",
     style: {
@@ -22505,7 +22654,8 @@ function ProProfileScreen({
   onRemove,
   onCall,
   onContact,
-  contactSent
+  contactSent,
+  soonEnabled = false
 }) {
   const cat = PRO_CATEGORIES.find(c => c.id === pro.category);
 
@@ -23032,35 +23182,39 @@ function ProProfileScreen({
       fontWeight: 600,
       color: C.dark
     }
-  }, "Mettre fin") : /*#__PURE__*/React.createElement("button", {
+  }, "Mettre fin") :
+  /*#__PURE__*/
+  /* v1 : "Bientôt" tant que le système d'assignment listing_assignments
+     (mig 0014 V2) n'est pas en place. Visuel grisé pour signal clair. */
+  React.createElement("button", {
     onClick: onAssign,
-    disabled: !pro.available,
+    title: "Bient\xF4t disponible",
     style: {
       flex: 1,
       padding: "12px",
       borderRadius: 12,
-      background: pro.available ? C.coral : C.border,
+      background: "#9CA3AF",
       border: "none",
-      cursor: pro.available ? "pointer" : "not-allowed",
+      cursor: "pointer",
       fontSize: 13,
       fontWeight: 700,
       color: "white"
     }
-  }, "+ Recruter") : /*#__PURE__*/React.createElement("button", {
+  }, "Recruter \xB7 Bient\xF4t") : /*#__PURE__*/React.createElement("button", {
     onClick: onContact,
-    disabled: !pro.available || contactSent,
+    title: soonEnabled ? "Bientôt disponible" : "",
     style: {
       flex: 1,
       padding: "12px",
       borderRadius: 12,
-      background: !pro.available || contactSent ? C.border : C.coral,
+      background: soonEnabled ? "#9CA3AF" : contactSent ? C.border : C.coral,
       border: "none",
-      cursor: !pro.available || contactSent ? "not-allowed" : "pointer",
+      cursor: "pointer",
       fontSize: 13,
       fontWeight: 700,
       color: "white"
     }
-  }, contactSent ? "Envoyée ✓" : "Contacter")));
+  }, contactSent ? "Envoyée ✓" : soonEnabled ? "Contacter · Bientôt" : "Contacter")));
 }
 
 /* ─── CONTACT REQUEST SHEET ──────────────────────── */

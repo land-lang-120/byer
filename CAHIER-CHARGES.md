@@ -1,10 +1,10 @@
 # 📖 Byer — Cahier de charges
 
 > Marketplace de location immobilier + véhicules au Cameroun
-> Version : **3.4** — 2026-04-27 (Phase 3 livrée : OwnerDashboard + Home bailleur branchés DB, RentScreen date dynamique, Messages cleanup)
+> Version : **3.6** — 2026-04-27 (v52 : FaceAvatar fix + ChatScreen exits + mig 0013 multi-rôle + boutons Bientôt + KYC pro hiérarchique)
 > URL prod : https://byer.landonjouajosephpino.workers.dev
-> Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **12 migrations appliquées, 18 RPCs en service, 1 Edge Function déployée**
-> Bundle frontend : `bundle.js?v=49` (Phase 1 + 2 + 3 — toutes les données mockées remplaçables par DB réelle quand l'utilisateur en a)
+> Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **13 migrations (mig 0013 préparation V2 multi-rôle), 18 RPCs en service, 1 Edge Function déployée**
+> Bundle frontend : `bundle.js?v=52`
 > Voir aussi : [PROGRESS.md](PROGRESS.md) (suivi du dev) · [supabase/SETUP.md](supabase/SETUP.md) (procédure migrations)
 
 ---
@@ -136,6 +136,18 @@
 
 > 📖 Checklist senior consolidée en section **0bis** (en haut du document) — à relire systématiquement avant chaque phase.
 
+**v52 — Bug fixes UI + préparation V2 multi-rôle (2026-04-27)**
+
+Bug fixes signalés par Pino post-v51 :
+- **FaceAvatar — photo n'apparaît pas dans Profil après upload** : composant utilisait `useState(false)` pour `err` mais ne le réinitialisait pas quand le prop `photo` change. Si l'ancienne photo avait 404'é (err=true), la nouvelle ne se chargeait jamais. Fix : `useEffect(() => setErr(false), [photo])`.
+- **ChatScreen — sortie possible uniquement via flèche retour** : la nav bar disparaît quand le chat est ouvert, et la flèche peut être manquée. Ajout : (1) handler **Escape** key (desktop), (2) item "Fermer la conversation" dans le menu 3-points avec icône X.
+
+Micro-ajustements pré-V2 :
+- **Migration `0013_profiles_multirole_prep.sql`** : ajout colonne `roles text[]` sur profiles (avec backfill depuis `role` + contrainte CHECK + trigger sync `role` → `roles[]` + REVOKE column-level UPDATE). Permet en V2 qu'un user cumule plusieurs rôles (locataire + bailleur + agent + concierge + technicien + convoyeur). Backward compat préservée.
+- **Boutons "Bientôt"** sur Recruter/Contacter dans `professionals.js` (pour concierges/agents) et `technicians.js` : feature flags `PRO_RECRUITMENT_ENABLED = false` / `TECH_RECRUITMENT_ENABLED = false`. Boutons grisés `#9CA3AF` avec label "Recruter · Bientôt" / "Contacter · Bientôt" / "Demander un devis · Bientôt". Clic → toast `🚧 ... bientôt disponible — V2`. Permet de découvrir la feature sans actions imprévues.
+
+📋 **À FAIRE par Pino** : appliquer mig 0013 dans Supabase SQL Editor (https://supabase.com/dashboard/project/xwqnsovfakzraafiudek/sql/new).
+
 ### 🔄 En cours (Phase 3 → branchement OwnerDashboard sur DB réelle)
 
 **Aucune tâche bloquante en cours actuellement.** L'app est sécurisée en prod, prête pour les tests utilisateur. Phase 3 démarrera après validation QA Pino.
@@ -263,6 +275,14 @@ create table public.assignment_actions (
 - Bailleurs voient les pro_profiles `is_active=true` (lecture publique pour recrutement) + leurs assignements (`bailleur_id = auth.uid()`).
 - Pros peuvent agir sur un listing UNIQUEMENT si une `listing_assignments` `status='active'` lie leur pro_id à ce listing — checké via fonctions RPC SECURITY DEFINER (jamais policy directe sur listings).
 - Logging automatique dans `assignment_actions` via triggers sur les tables impliquées.
+
+**KYC Pro renforcé** (niveau de vérification par type, validé Pino 2026-04-27) :
+- **Concierges** (pour hôtels, motels, auberges) — vérification renforcée car ils accueillent des clients à toute heure. Doivent fournir : CNI + selfie + 1 référence d'un bailleur déjà partenaire OU justificatif de domicile.
+- **Agents Immobiliers** (pour villas, appartements, studios — tout sauf hôtellerie) — vérification renforcée pour gestion de longs séjours et signature contrats. Doivent fournir : CNI + selfie + carte/diplôme professionnel + casier judiciaire (B3) si possible.
+- **Techniciens** (plomberie, électricité, etc.) — vérification critique : "ils peuvent s'avérer être des bandits" (citation Pino). CNI + selfie + 2 références bailleurs OU diplôme/CAP métier + photo en uniforme/atelier.
+- **Convoyeurs véhicules** — niveau standard + permis de conduire valide (catégorie correspondante au véhicule à convoyer).
+- Tous les types : `pro_kyc_level` enum (`basic` / `verified` / `premium`) sur `pro_profiles`. Niveau `verified` requis avant la 1ère mission. `premium` débloqué après 5 missions terminées + note ≥4.5.
+- Les bailleurs voient un badge clair sur chaque profil pro : ✅ Vérifié / ⭐ Premium / ⏳ En cours de vérification.
 
 **Pourquoi V2 (post-Play Store) et pas v1** :
 - Effort : ~12-15 h dev (DB + RLS + UI bailleur + UI pro + flows recrutement/résiliation/audit).
