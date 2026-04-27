@@ -1,10 +1,10 @@
 # 📖 Byer — Cahier de charges
 
 > Marketplace de location immobilier + véhicules au Cameroun
-> Version : **3.2** — 2026-04-27 (audit complet + plan de remédiation Phase 1-5)
+> Version : **3.3** — 2026-04-27 (Phase 1 + 2 livrées en prod : fixes critiques frontend + RLS hardening)
 > URL prod : https://byer.landonjouajosephpino.workers.dev
-> Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **11 migrations appliquées, 18 RPCs en service, 1 Edge Function déployée**
-> Bundle frontend : `bundle.js?v=47` (en cours de remédiation vers v48 pour fix mocks/RLS/crashes)
+> Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **12 migrations appliquées, 18 RPCs en service, 1 Edge Function déployée**
+> Bundle frontend : `bundle.js?v=48` (Phase 1 critique + ErrorBoundary + branchement DB profil/trips/saved/notifs)
 > Voir aussi : [PROGRESS.md](PROGRESS.md) (suivi du dev) · [supabase/SETUP.md](supabase/SETUP.md) (procédure migrations)
 
 ---
@@ -35,49 +35,42 @@
 - UX KYC clarifiée (terme expliqué, bouton coral "Envoyer mes documents", section "Administration (admin uniquement)").
 
 **Infra / DevOps**
-- Bundle v47 live sur Cloudflare Workers (URL prod).
-- GitHub Actions auto-deploy (`push master` → CF en ~1 min).
+- Bundle v48 live sur Cloudflare Workers (URL prod, Version `9b6c50b7-7405-488b-9187-2660deb59b9b`).
+- GitHub Actions auto-deploy (`push master` → CF en ~1 min) avec CLOUDFLARE_API_TOKEN à jour.
 - `.assetsignore` enrichi (.bin, .claude, .wrangler, .vscode, .idea exclus du deploy).
 
-### 🔄 En cours (Phase 2 → application migration 0012 + deploy bundle v48)
+**Phase 1 — 9 fixes critiques frontend (livrée 2026-04-27, bundle v48)**
+- 1.A — 6 mismatches schéma `supabase-client.js` corrigés : `kyc.submitted_at`, `devices.device_label/hash`, suppression `last_message_preview`, `reviews.reply/reply_at`, `rewards.cost_points/tier/is_used+expires_at`.
+- 1.B — `ByerErrorBoundary` (class React) wrap `<Root/>` dans `main.js` avec fallback "Oups + Recharger" (anti white-screen).
+- 1.C — `DetailScreen` : gallery resilient (mocks → `_photos` Supabase → single fallback) + `ownerName` neutre + `adaptListing` enrichi (ownerName/Photo/Verified/Since via FK profiles).
+- 1.D — `currentProfile` + `currentUserId` lifted dans `ByerApp` ; `ProfileScreen` affiche les vraies données utilisateur (avant : "Pino" pour TOUS) ; `EditProfileScreen.handleSave` appelle `db.profiles.update` réel + refresh via `onSaved`.
+- 1.E — `dbBookings` + `adaptBooking()` ; `TripsScreen` branché sur `db.bookings.listMine` (avec flag `dbBookingsLoaded` pour ne pas mélanger DB et mocks) ; `onCancelBooking` route vers RPC `cancel_booking` (atomique).
+- 1.F — `SavedScreen` reçoit la liste fusionnée `dbListings ∪ mocks` dédoublonnée par id.
+- 1.G — `NotificationsScreen` branché sur `db.notifications.listMine` + `markRead`/`markAllRead` persistés en DB ; fallback mocks transparent si offline.
+- 1.H — Bypass démo retiré : `setTimeout(()=>onLogin())` remplacé par message d'erreur clair ; bouton "Découvrir sans compte" caché en prod ; OAuth `signInOAuth` reçoit `redirectTo: window.location.origin` (Google login fix).
+- 1.I — Bandeaux "📊 Données de démonstration" sur `OwnerDashboard` + `HomeScreen` (carte stats bailleur) avec texte explicatif "vraies stats après 1ère annonce".
 
-**Phase 1 livrée 2026-04-27** ✅ — bundle v48 prêt à déployer
-- 1.A — ✅ 6 mismatches schéma `supabase-client.js` corrigés (`kyc.submitted_at`, `devices.device_label/hash`, suppression `last_message_preview`, `reviews.reply/reply_at`, `rewards.cost_points/tier/is_used+expires_at`).
-- 1.B — ✅ `ByerErrorBoundary` (class React) wrap `<Root/>` dans `main.js` avec fallback "Oups + Recharger".
-- 1.C — ✅ `DetailScreen` : gallery resilient (mocks → `_photos` Supabase → single fallback) + `ownerName` neutre (plus "Ekwalla M." par défaut).
-- 1.D — ✅ `currentProfile` + `currentUserId` lifted dans `ByerApp`, `ProfileScreen` consomme `displayName/City/Photo/Avatar` depuis le profil DB, `EditProfileScreen.handleSave` appelle `db.profiles.update` réel + refresh global via `onSaved`.
-- 1.E — ✅ `dbBookings` + `adaptBooking()` dans `app.js`, `TripsScreen` reçoit `dbBookingsLoaded` flag → en mode DB ne mélange plus les vraies résa avec les mocks ; `onCancelBooking` route vers `db.bookings.cancel` (RPC atomique avec refund).
-- 1.F — ✅ `SavedScreen` reçoit la liste fusionnée `dbListings ∪ mocks` dédoublonnée par id.
-- 1.G — ✅ `adaptNotification()` + fetch `db.notifications.listMine` ; `markRead`/`markAllRead` persistés en DB ; fallback mocks si offline (transparent via `usingMock` flag).
-- 1.H — ✅ Bypass démo retiré : `setTimeout(()=>onLogin(), 1400)` remplacé par message d'erreur clair ; bouton "Découvrir sans compte" caché si Supabase ready ; **OAuth `signInOAuth` reçoit `redirectTo: window.location.origin + '/'` (Google login fix)**.
-- 1.I — ✅ Bandeaux "📊 Données de démonstration" sur `OwnerDashboard` (top de page) + `HomeScreen` (carte stats bailleur), avec texte explicatif "vraies stats après 1ère annonce".
+**Phase 2 — Migration `0012_rls_hardening.sql` (livrée 2026-04-27, appliquée prod Supabase)**
+- WITH CHECK ajouté sur 5 policies UPDATE (`listings_owner_update`, `bookings_party_update`, `conversations_party_update`, `reviews_author_update`, `notifs_self_update`) → bloque le transfert de FK vers d'autres users.
+- `listing_photos_owner_write` + nouvelle `listing_photos_owner_update` : path check `(storage.foldername(name))[1]::uuid IN (select id from listings where owner_id = auth.uid())` → bloque l'upload dans le dossier d'un autre listing.
+- `avatars_self_update` + `avatars_self_delete` ajoutées (manquantes — `upsert:true` du client échouait silencieusement avant).
+- REVOKE column-level UPDATE sur `profiles` (`rewards_points`, `referral_count`, `identity_verified`, `email_verified`, `phone_verified`, `role`) → triche points/KYC impossible même si la policy RLS passe.
+- REVOKE column-level UPDATE sur `listings` (`is_superhost`, `rating_avg`, `review_count`) → bloque la triche superhost (calculé par trigger uniquement).
+- `trusted_devices_no_client_insert` (explicite, `with check (false)`) → INSERT direct côté client interdit, force passage par Edge Function.
+- `apply_referral_code` réécrit avec rate limit 5 codes/24h + return `jsonb {ok, error}` + DROP IF EXISTS pour permettre changement de signature.
 
-**Phase 2 (~30 min) — sécurité DB**
-- ✅ **Migration `0012_rls_hardening.sql` créée** (134 lignes) — couvre :
-  - WITH CHECK ajouté sur 5 policies UPDATE (listings, bookings, conversations, reviews, notifications) → bloque le transfert de FK vers d'autres users.
-  - `listing_photos_owner_write` + nouvelle `listing_photos_owner_update` : path check `(storage.foldername(name))[1]::uuid in (select id from listings where owner_id = auth.uid())`.
-  - `avatars_self_update` + `avatars_self_delete` (manquantes — `upsert:true` du client échouait silencieusement).
-  - REVOKE column-level UPDATE sur `profiles.rewards_points/referral_count/identity_verified/email_verified/phone_verified/is_superhost/role` pour `authenticated` → triche points impossible même si la policy passe (defense in depth).
-  - `trusted_devices_no_client_insert` (explicite) → `with check (false)` pour bloquer INSERT direct, force passage par Edge Function.
-  - `apply_referral_code` réécrit avec rate limit 5 codes/24h + return `jsonb {ok, error}`.
-- 📋 **À FAIRE par Pino** : appliquer `0012_rls_hardening.sql` dans Supabase SQL Editor (https://supabase.com/dashboard/project/xwqnsovfakzraafiudek/sql/new).
+### 🔄 En cours (Phase 3 → branchement OwnerDashboard sur DB réelle)
 
-**Phase 3 — Deploy**
-- 📋 Build bundle v48 + `npx wrangler deploy` (auto-trigger via push GitHub).
-- 📋 Tests live : `curl /bundle.js?v=48 | grep -c ByerErrorBoundary` doit être >0.
+**Aucune tâche bloquante en cours actuellement.** L'app est sécurisée en prod, prête pour les tests utilisateur. Phase 3 démarrera après validation QA Pino.
 
 ### 📋 À faire (avant release Play Store)
 
-**Phase 2 — Sécurité DB (migration 0012, ~1 h)**
-- `0012_rls_hardening.sql` : ajout `WITH CHECK (owner_id = auth.uid())` sur `listings_owner_update`, `bookings_party_update`, `reviews_author_update`, `notifs_self_update`, `conversations_party_update`.
-- Storage `listing_photos_owner_write` : check folder = listing owné par auth.uid().
-- `REVOKE UPDATE (rewards_points, referral_count, tier, identity_verified, email_verified, phone_verified) ON public.profiles FROM authenticated` (column-level pour vraiment bloquer triche points).
-- Rate limit `apply_referral_code` (max 5 codes/jour/IP).
-
-**Phase 3 — OAuth + cleanup (~30 min)**
-- `auth.js:71` : passer `redirectTo: window.location.origin` sur `signInOAuth` (sinon Google retombe sur mauvais URL).
-- Retirer mig `0010_seed_demo_listings` en prod (titres "DEMO").
-- Audit `RentScreen` (date figée 2025-03-22 dans `data.js:436`) → soit `new Date()`, soit cacher si pas brancé DB.
+**Phase 3 — Cleanup divers + OwnerDashboard (~2-3 h)**
+- Brancher `OwnerDashboard` + `Home` bailleur stats sur DB réelle (`db.listings.listMine` + agrégations) → retirer les bandeaux "Démo" actuels.
+- Retirer la mig `0010_seed_demo_listings` en prod (les titres "DEMO" Villa Kribi etc. polluent le moteur de recherche). Soit DELETE FROM listings WHERE title LIKE '%DEMO%', soit re-seed avec des données plausibles.
+- Auditer `RentScreen` : date figée `2025-03-22` dans `data.js:436` → remplacer par `new Date()` ou cacher l'écran tant qu'il n'est pas branché DB.
+- Audit `MessagesScreen` mode bailleur : retirer les noms hardcodés (Caroline N., David Mboma, etc.) → si pas de vraies conversations DB, afficher empty state propre.
+- Audit `OWNERS["Ekwalla M."]` : remplacer par `currentProfile` partout dans `owner-dashboard.js` (le bandeau démo est posé mais les chiffres restent ceux de Ekwalla).
 
 **Phase 4 — Paiements (~3-4 h)** — _Stripe non supporté au Cameroun, on bascule sur Flutterwave qui couvre cartes + MoMo + OM dans une seule API_
 - Création compte **Flutterwave** côté Pino (mode TEST d'abord) : https://dashboard.flutterwave.com/signup
