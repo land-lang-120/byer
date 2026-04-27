@@ -31,6 +31,22 @@ function MessagesScreen({ role, onChatActiveChange }) {
     return () => onChatActiveChange?.(false);
   }, [openChat]);
 
+  /* v52 — Bouton retour téléphone (Android hardware back / iOS swipe back) :
+     intégration via History API. Quand le chat s'ouvre, on push un état
+     d'historique. Quand le user appuie sur le bouton retour téléphone OU
+     glisse depuis le bord (gesture iOS), le navigateur déclenche popstate :
+     on intercepte pour fermer le chat AU LIEU de quitter l'app entière.
+     Le bouton flèche en haut du chat appelle history.back() pour passer
+     par le même chemin (cohérence + un seul code path). */
+  React.useEffect(() => {
+    if (!openChat) return;
+    // Push un marker dans l'historique pour avoir une "couche" à dépiler
+    window.history.pushState({ byerChatOpen: true }, "");
+    const handlePop = () => setOpenChat(null);
+    window.addEventListener("popstate", handlePop);
+    return () => window.removeEventListener("popstate", handlePop);
+  }, [openChat]);
+
   /* Charge les vraies conversations depuis Supabase si user connecté.
      Les convs Supabase sont préfixées dans la liste, en complément des mocks
      (ainsi la démo reste vivante même si la BDD est vide). */
@@ -208,7 +224,10 @@ function MessagesScreen({ role, onChatActiveChange }) {
     return (
       <ChatScreen
         conv={conv}
-        onBack={() => setOpenChat(null)}
+        /* La flèche retour appelle history.back() : déclenche popstate qui
+           ferme le chat → cohérent avec le bouton retour téléphone. Un seul
+           chemin de sortie pour les deux affordances (cf. useEffect popstate). */
+        onBack={() => window.history.back()}
         onToggleBlock={() => toggleBlock(openChat)}
         onSendMessage={async (text) => {
           // Optimistic UI : on ajoute tout de suite, on "ré-aligne" via Realtime
@@ -466,19 +485,6 @@ function ChatScreen({ conv, onBack, onToggleBlock, onSendMessage }) {
 
   const flashChat = (msg) => { setChatToast(msg); setTimeout(()=>setChatToast(""), 2200); };
 
-  // v52 : sortie chat multi-canaux. Avant : seul le bouton retour (souvent
-  // peu visible) permettait de quitter. Ajout :
-  //  - Touche Escape (clavier desktop)
-  //  - Item "Fermer la conversation" dans le menu 3-points
-  //  - Le bouton retour reste évidemment fonctionnel
-  React.useEffect(() => {
-    const handleKey = (e) => {
-      if (e.key === "Escape") onBack?.();
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [onBack]);
-
   const sendMsg = () => {
     if (!input.trim() || isBlocked) return;
     onSendMessage?.(input.trim());
@@ -520,15 +526,6 @@ function ChatScreen({ conv, onBack, onToggleBlock, onSendMessage }) {
               <button style={S.chatMenuItem} onClick={()=>{ setShowMenu(false); flashChat(`Logement : ${conv.logement}`); }}>
                 <Icon name="home" size={16} color={C.dark} stroke={1.8}/>
                 <span>Voir le logement</span>
-              </button>
-              <div style={{height:1,background:C.border,margin:"2px 0"}}/>
-              {/* v52 : sortie alternative depuis le menu (en plus de la flèche
-                  retour) — UX accessibilité améliorée. */}
-              <button style={S.chatMenuItem} onClick={()=>{ setShowMenu(false); onBack?.(); }}>
-                <svg width="16" height="16" fill="none" stroke={C.dark} strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-                <span>Fermer la conversation</span>
               </button>
               <div style={{height:1,background:C.border,margin:"2px 0"}}/>
               <button

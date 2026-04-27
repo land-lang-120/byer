@@ -140,7 +140,7 @@
 
 Bug fixes signalés par Pino post-v51 :
 - **FaceAvatar — photo n'apparaît pas dans Profil après upload** : composant utilisait `useState(false)` pour `err` mais ne le réinitialisait pas quand le prop `photo` change. Si l'ancienne photo avait 404'é (err=true), la nouvelle ne se chargeait jamais. Fix : `useEffect(() => setErr(false), [photo])`.
-- **ChatScreen — sortie possible uniquement via flèche retour** : la nav bar disparaît quand le chat est ouvert, et la flèche peut être manquée. Ajout : (1) handler **Escape** key (desktop), (2) item "Fermer la conversation" dans le menu 3-points avec icône X.
+- **ChatScreen — sortie possible uniquement via flèche retour** : la nav bar disparaît quand le chat est ouvert. **v53** (correction Pino) : retiré l'item menu et le handler Escape (Pino : "ON DEVRAIT JUSTE AVOIR LES DEUX POSSIBILITÉS ÉNUMÉRÉES À SAVOIR LA FLÈCHE ET LE BOUTON RETOUR DU TÉLÉPHONE"). Solution finale = intégration **History API** : `pushState({byerChatOpen:true})` quand le chat s'ouvre + listener `popstate` qui ferme le chat. Le bouton retour téléphone (Android hardware back / iOS swipe) déclenche popstate naturellement → ferme le chat sans quitter l'app. La flèche en haut du chat appelle `history.back()` pour passer par le même chemin (single source of truth).
 
 Micro-ajustements pré-V2 :
 - **Migration `0013_profiles_multirole_prep.sql`** : ajout colonne `roles text[]` sur profiles (avec backfill depuis `role` + contrainte CHECK + trigger sync `role` → `roles[]` + REVOKE column-level UPDATE). Permet en V2 qu'un user cumule plusieurs rôles (locataire + bailleur + agent + concierge + technicien + convoyeur). Backward compat préservée.
