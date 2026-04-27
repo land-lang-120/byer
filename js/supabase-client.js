@@ -69,7 +69,14 @@
       return await sb.auth.verifyOtp({ phone, token, type: "sms" });
     },
     signInOAuth: async (provider) => {
-      return await sb.auth.signInWithOAuth({ provider });
+      // redirectTo obligatoire en prod : sans ça, Google retombe sur l'URL
+      // racine du Dashboard Supabase (configurée dans Authentication → URL
+      // Configuration) au lieu de revenir dans l'app. Audit 2026-04-27.
+      // window.location.origin couvre prod (workers.dev) ET local (localhost:3001).
+      return await sb.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: window.location.origin + "/" },
+      });
     },
     resetPassword: async (email) => {
       return await sb.auth.resetPasswordForEmail(email, {
@@ -113,7 +120,7 @@
   const kyc = {
     list: async (userId) => sb.from("kyc_documents")
       .select("*").eq("user_id", userId)
-      .order("uploaded_at", { ascending: false }),
+      .order("submitted_at", { ascending: false }),
 
     upload: async (file, userId, docType) => {
       const ext = file.name.split(".").pop();
@@ -139,19 +146,25 @@
 
   // ──────────────────────────────────────────────────
   //  TRUSTED DEVICES (migration 0004)
+  //  ⚠️ L'INSERT direct côté client est bloqué par RLS (cf. mig 0004 :
+  //  "L'insertion est faite par une edge function"). La méthode register()
+  //  reste exposée pour compatibilité mais retournera une erreur RLS tant
+  //  que l'edge function "register-device" n'existe pas.
+  //  Schéma réel : device_hash (hash stable), device_label (nom humain).
   // ──────────────────────────────────────────────────
   const devices = {
     list: async (userId) => sb.from("trusted_devices")
       .select("*").eq("user_id", userId)
       .order("last_seen_at", { ascending: false }),
 
-    register: async (userId, deviceName, fingerprint) => sb.from("trusted_devices")
+    register: async (userId, deviceLabel, deviceHash, platform) => sb.from("trusted_devices")
       .upsert({
         user_id: userId,
-        device_name: deviceName,
-        fingerprint,
+        device_label: deviceLabel,
+        device_hash: deviceHash,
+        platform: platform || null,
         last_seen_at: new Date().toISOString(),
-      }, { onConflict: "user_id,fingerprint" })
+      }, { onConflict: "user_id,device_hash" })
       .select().single(),
 
     remove: async (id) => sb.from("trusted_devices").delete().eq("id", id),
@@ -331,12 +344,11 @@
         .insert({ conversation_id: conversationId, sender_id: senderId, body })
         .select().single();
       if (!error) {
-        // Bumpe last_message_at + last_message_preview
+        // Bumpe last_message_at uniquement (last_message_preview n'existe pas
+        // dans le schéma — la preview est calculée côté UI via listConversations
+        // qui peut joindre le dernier message si besoin).
         await sb.from("conversations")
-          .update({
-            last_message_at: new Date().toISOString(),
-            last_message_preview: body.slice(0, 200),
-          })
+          .update({ last_message_at: new Date().toISOString() })
           .eq("id", conversationId);
       }
       return { data, error };
@@ -381,11 +393,13 @@
     //   l'auteur n'est pas le guest d'un booking completed.
     create: async (data) => sb.from("reviews").insert(data).select().single(),
 
-    // Réponse hôte (champ host_response, host_response_at)
+    // Réponse hôte (schéma réel : reply, reply_at — cf. mig 0001:177-178)
+    // Le trigger notify_guest_on_review_reply (mig 0007) crée une notification
+    // pour le guest dès que reply passe de NULL à une valeur.
     reply: async (reviewId, replyText) => sb.from("reviews")
       .update({
-        host_response: replyText,
-        host_response_at: new Date().toISOString(),
+        reply: replyText,
+        reply_at: new Date().toISOString(),
       })
       .eq("id", reviewId).select().single(),
   };
@@ -413,14 +427,17 @@
   //  (migrations 0001 + 0007)
   // ──────────────────────────────────────────────────
   const rewards = {
-    // Catalogue éditable depuis dashboard Supabase (table rewards_catalog)
+    // Catalogue éditable depuis dashboard Supabase (table rewards_catalog).
+    // Schéma réel (mig 0007) : cost_points (pas "cost"), position pour ordre.
     listCatalog: async () => sb.from("rewards_catalog")
       .select("*").eq("is_active", true)
-      .order("cost", { ascending: true }),
+      .order("position", { ascending: true })
+      .order("cost_points", { ascending: true }),
 
-    // Solde + tier — lus depuis profile (read-only via API)
+    // Solde + tier — lus depuis profile (read-only via API).
+    // Schéma réel (mig 0001:29-35) : "tier" est generated stored, pas "rewards_tier".
     getBalance: async (userId) => sb.from("profiles")
-      .select("rewards_points, rewards_tier, referral_count")
+      .select("rewards_points, tier, referral_count")
       .eq("id", userId).single(),
 
     // Historique des transactions (gain + débit)
@@ -428,11 +445,13 @@
       .select("*").eq("user_id", userId)
       .order("created_at", { ascending: false }),
 
-    // Coupons générés par échange (filtrable actifs / utilisés / expirés)
+    // Coupons générés par échange (filtrable actifs / utilisés / expirés).
+    // Schéma réel (mig 0001:200-211) : pas de colonne "status" — on filtre via
+    // is_used=false ET expires_at > now() pour "actif".
     listCoupons: async (userId, activeOnly = true) => {
       let q = sb.from("coupons").select("*").eq("user_id", userId);
       if (activeOnly) {
-        q = q.eq("status", "active");
+        q = q.eq("is_used", false).gt("expires_at", new Date().toISOString());
       }
       return await q.order("created_at", { ascending: false });
     },

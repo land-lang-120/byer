@@ -1,7 +1,20 @@
 /* Byer — Profile Screens */
 
 /* ─── PROFILE ───────────────────────────────────── */
-function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs, onOpenPros, onOpenPublish, onOpenSettings, onOpenEditProfile, onOpenReviews, onOpenHistory, onLogout }) {
+function ProfileScreen({ role, setRole, currentProfile, onOpenRent, onOpenDashboard, onOpenTechs, onOpenPros, onOpenPublish, onOpenSettings, onOpenEditProfile, onOpenReviews, onOpenHistory, onLogout }) {
+  // ─────────────────────────────────────────────────────────────
+  // Identité affichée : priorité au profil Supabase chargé par ByerApp,
+  // fallback sur le mock USER si offline ou pas connecté. Sans ça,
+  // tous les users voyaient "Pino" + ville de Pino (audit 2026-04-27).
+  // ─────────────────────────────────────────────────────────────
+  const displayName = currentProfile?.name || USER.name || "Utilisateur";
+  const displayCity = currentProfile?.city || USER.city || "Cameroun";
+  const displaySince = currentProfile?.member_since
+    ? new Date(currentProfile.member_since).toLocaleDateString("fr-FR", { month: "long", year: "numeric" })
+    : USER.since;
+  const displayPhoto = currentProfile?.photo_url || USER.photo;
+  const displayAvatar = currentProfile?.avatar_letter || USER.avatar;
+  const displayBg = currentProfile?.avatar_bg || USER.bg;
   const urgentCount = LOYERS_LOCATAIRE.filter(l => l.statut==="en_attente" && l.rappelActif).length
                     + LOYERS_BAILLEUR.filter(l  => l.statut==="en_attente" && l.joursRestants<=7).length;
 
@@ -47,8 +60,11 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
     setTimeout(() => setToast(""), 2200);
   };
 
-  // Programme parrainage : code de référence stable
-  const referralCode = (USER.name || "BYER").replace(/\s+/g, "").toUpperCase().slice(0, 6) + "24";
+  // Programme parrainage : code de référence stable.
+  // Utilise le code de la DB s'il existe (généré par trigger generate_referral_code
+  // au signup), sinon dérive depuis displayName (compat mock).
+  const referralCode = currentProfile?.referral_code
+    || (displayName || "BYER").replace(/\s+/g, "").toUpperCase().slice(0, 6) + "24";
   const referralLink = `https://byer.cm/r/${referralCode}`;
 
   const handleShareInvite = async () => {
@@ -200,10 +216,10 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
           Ordre : NOM en premier, puis badge tier (Bronze/Argent/Or) APRES.
           La fidelite reste visible mais l'identite (le nom) est mise en avant. */}
       <div style={{margin:"0 16px 12px",background:C.white,borderRadius:16,padding:"18px 16px",display:"flex",alignItems:"center",gap:14,boxShadow:`0 1px 8px rgba(0,0,0,.05)`}}>
-        <FaceAvatar photo={USER.photo} avatar={USER.avatar} bg={USER.bg} size={56} radius={28}/>
+        <FaceAvatar photo={displayPhoto} avatar={displayAvatar} bg={displayBg} size={56} radius={28}/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
-            <p style={{fontSize:16,fontWeight:700,color:C.black,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{USER.name}</p>
+            <p style={{fontSize:16,fontWeight:700,color:C.black,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayName}</p>
             <span style={{
               fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:8,
               background:tierBg,color:tierColor,flexShrink:0,
@@ -213,7 +229,7 @@ function ProfileScreen({ role, setRole, onOpenRent, onOpenDashboard, onOpenTechs
               <span style={{fontSize:10,lineHeight:1}}>★</span>{rewardsTier}
             </span>
           </div>
-          <p style={{fontSize:12,color:C.light,marginTop:2}}>{USER.city} · Membre {USER.since}</p>
+          <p style={{fontSize:12,color:C.light,marginTop:2}}>{displayCity} · Membre {displaySince}</p>
         </div>
       </div>
 

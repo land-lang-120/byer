@@ -1,4 +1,4 @@
-function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPassword, onOpenSupport, onLogout, onDeleteAccount }) {
+function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPassword, onOpenSupport, onLogout, onDeleteAccount, isAdmin, onOpenKycAdmin }) {
   // Hook i18n : force le re-render quand la langue change globalement.
   window.byerI18n.useLangTick();
 
@@ -342,6 +342,20 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
           rightElement={<DisplayValue value={`${DEVICES.length}`} />}
           onPress={() => setShowDevicesSheet(true)}
         />
+
+        {/* Section admin — visible uniquement si l'email est dans ADMIN_EMAILS.
+            Le gating frontend est de courtoisie : la sécurité réelle est côté
+            Edge Function (qui revérifie le JWT vs ADMIN_EMAILS server-side). */}
+        {isAdmin && (
+          <>
+            <SectionHeader title="Administration (admin uniquement)" />
+            <RowItem
+              label="Modérer les pièces d'identité (KYC)"
+              rightElement={<ChevronElement />}
+              onPress={onOpenKycAdmin}
+            />
+          </>
+        )}
 
         {/* Aide & Support Section */}
         <SectionHeader title={t("settings.help")} />

@@ -93,6 +93,28 @@ function OwnerDashboardScreen({ onBack, onViewBuilding, onManageTechs, onManageP
           <div style={{width:38}}/>
         </div>
 
+        {/* Bandeau démo — transparence : les chiffres affichés sont fictifs
+            tant que le bailleur n'a pas publié de vraies annonces. À retirer
+            quand la branche Supabase de listMine + revenus sera câblée
+            (cf. cahier de charges 0.À faire / OwnerDashboard). */}
+        <div style={{
+          margin:"10px 16px 0", padding:"10px 14px",
+          background:"#FFFBEB", border:"1px solid #FDE68A",
+          borderRadius:12, display:"flex", alignItems:"flex-start", gap:10,
+          fontFamily:"'DM Sans',sans-serif",
+        }}>
+          <span style={{fontSize:18, lineHeight:"20px"}}>📊</span>
+          <div style={{flex:1, minWidth:0}}>
+            <p style={{fontSize:12, fontWeight:700, color:"#92400E", margin:0}}>
+              Données de démonstration
+            </p>
+            <p style={{fontSize:11, color:"#78350F", margin:"2px 0 0", lineHeight:1.4}}>
+              Les chiffres ci-dessous sont des exemples. Vos vraies statistiques
+              apparaîtront dès que vous publierez votre première annonce.
+            </p>
+          </div>
+        </div>
+
         {/* Owner card */}
         <div style={{margin:"12px 16px",background:C.white,borderRadius:18,padding:"16px",display:"flex",alignItems:"center",gap:14,boxShadow:"0 2px 12px rgba(0,0,0,.06)"}}>
           <FaceAvatar photo={owner.photo} avatar={owner.avatar} bg={owner.avatarBg} size={52} radius={26}/>

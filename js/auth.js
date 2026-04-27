@@ -175,8 +175,12 @@ function LoginScreen({ onLogin, onSignup, onForgotPassword, onSSO }) {
       return;
     }
 
-    // Fallback mock (Supabase indisponible)
-    setTimeout(()=>{ setLoading(false); onLogin(); }, 1400);
+    // Supabase indisponible → on ne bypass PLUS l'auth en prod (audit 2026-04-27).
+    // Avant : setTimeout(()=>{ setLoading(false); onLogin(); }, 1400) — entrait
+    // dans l'app sans session valide → toutes les requêtes DB échouaient
+    // silencieusement avec des erreurs RLS cryptiques côté UI.
+    setLoading(false);
+    setErr("Service temporairement indisponible. Réessayez dans quelques instants.");
   };
 
   return (
@@ -303,22 +307,25 @@ function LoginScreen({ onLogin, onSignup, onForgotPassword, onSSO }) {
           </button>
         </p>
 
-        {/* Mode démo : entre dans l'app sans authentification.
-            Permet de tester l'UI quand Supabase n'a pas encore confirmé
-            l'email, ou simplement pour explorer avant de créer un compte. */}
-        <button
-          onClick={onLogin}
-          style={{
-            background:"none",border:`1.5px dashed ${C.border}`,
-            width:"100%",padding:"13px",borderRadius:14,marginTop:18,
-            fontSize:13,fontWeight:600,color:C.mid,cursor:"pointer",
-            fontFamily:"'DM Sans',sans-serif",
-            display:"flex",alignItems:"center",justifyContent:"center",gap:8,
-          }}
-        >
-          <span style={{fontSize:14}}>👀</span>
-          Découvrir l'app sans compte
-        </button>
+        {/* Mode démo : visible UNIQUEMENT quand Supabase n'est pas configuré
+            (mode local / dev). En prod, ce bouton ne doit pas apparaître car
+            il fait entrer dans l'app sans session valide → erreurs RLS partout
+            et données mockées affichées (audit 2026-04-27). */}
+        {(!window.byer || !window.byer.db || !window.byer.db.isReady) && (
+          <button
+            onClick={onLogin}
+            style={{
+              background:"none",border:`1.5px dashed ${C.border}`,
+              width:"100%",padding:"13px",borderRadius:14,marginTop:18,
+              fontSize:13,fontWeight:600,color:C.mid,cursor:"pointer",
+              fontFamily:"'DM Sans',sans-serif",
+              display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+            }}
+          >
+            <span style={{fontSize:14}}>👀</span>
+            Découvrir l'app sans compte (mode démo offline)
+          </button>
+        )}
       </div>
     </div>
   );

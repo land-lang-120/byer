@@ -1,7 +1,7 @@
 /* Byer — Home Screen */
 
 /* ─── HOME ──────────────────────────────────────── */
-function HomeScreen({ role, setRole, segment, setSegment, propType, setPropType, duration, setDuration, location, onOpenLocPicker, search, setSearch, activeFilterCount, onOpenFilter, items, saved, toggleSave, openDetail, openGallery, onOpenNotifs, onOpenDashboard, onOpenPublish, onOpenPros, onOpenTechs, onOpenBoost }) {
+function HomeScreen({ role, setRole, segment, setSegment, propType, setPropType, duration, setDuration, location, onOpenLocPicker, search, setSearch, searchLoading, activeFilterCount, onOpenFilter, items, saved, toggleSave, openDetail, openGallery, onOpenNotifs, onOpenDashboard, onOpenPublish, onOpenPros, onOpenTechs, onOpenBoost }) {
   const isBailleur = role === "bailleur";
 
   /* Greeting selon role + segment — aligné à l'app
@@ -16,13 +16,18 @@ function HomeScreen({ role, setRole, segment, setSegment, propType, setPropType,
         ? "Votre logement à portée de main !"
         : "Prêt à prendre la route ?");
 
-  /* Stats du bailleur (mock dérivé des données) */
+  /* Stats du bailleur (mock dérivé des données — sera branché sur Supabase
+     dans une prochaine itération : db.listings.listMine + db.bookings.listMine
+     + agrégation revenue côté serveur). Tant qu'on est en mock, on affiche
+     un bandeau de transparence pour ne pas mentir à l'utilisateur sur ses
+     vraies stats — audit 2026-04-27. */
   const ownerProperties = PROPERTIES.slice(0, 4);   // mes annonces (mock)
   const ownerVehicles   = VEHICLES.slice(0, 3);
   const myListings      = segment==="property" ? ownerProperties : ownerVehicles;
   const incomingReqs    = BOOKINGS.filter(b => b.status === "upcoming").length;
   const activeBookings  = BOOKINGS.filter(b => b.status === "active").length;
   const monthRevenue    = BOOKINGS.reduce((s,b)=>s+(b.price*b.nights),0);
+  const ownerStatsAreMock = true;  // flag pour bandeau "démo"
 
   return (
     <div>
@@ -64,7 +69,10 @@ function HomeScreen({ role, setRole, segment, setSegment, propType, setPropType,
         {/* Search + Duration toggle on same row — pour bailleur : recherche dans MES annonces */}
         <div style={S.searchRow}>
           <div style={S.searchWrap}>
-            <Icon name="search" size={17} color={C.mid}/>
+            {searchLoading
+              ? <div style={{width:17,height:17,border:`2px solid ${C.coral}`,borderTopColor:"transparent",borderRadius:"50%",animation:"spin .8s linear infinite"}}/>
+              : <Icon name="search" size={17} color={C.mid}/>
+            }
             <input
               style={S.searchIn}
               placeholder={isBailleur
@@ -108,6 +116,24 @@ function HomeScreen({ role, setRole, segment, setSegment, propType, setPropType,
       {/* ═══ BAILLEUR OVERVIEW — visible uniquement en mode bailleur ═══ */}
       {isBailleur && (
         <div style={{padding:"12px 16px 0"}}>
+          {/* Bandeau démo : transparence sur la nature des chiffres tant
+              qu'ils ne viennent pas de Supabase. À retirer quand Phase
+              "OwnerDashboard data branchée" sera livrée. */}
+          {ownerStatsAreMock && (
+            <div style={{
+              padding:"8px 12px",
+              background:"#FFFBEB", border:"1px solid #FDE68A",
+              borderRadius:10, marginBottom:10,
+              display:"flex", alignItems:"center", gap:8,
+              fontFamily:"'DM Sans',sans-serif",
+            }}>
+              <span style={{fontSize:14}}>📊</span>
+              <p style={{fontSize:11, color:"#78350F", margin:0, lineHeight:1.4, flex:1}}>
+                <strong>Démo</strong> · Vos vraies stats apparaîtront après votre première annonce.
+              </p>
+            </div>
+          )}
+
           {/* Carte stats */}
           <div style={{
             background:"linear-gradient(135deg,#7E22CE 0%,#A855F7 100%)",

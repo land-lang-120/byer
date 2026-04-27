@@ -4,9 +4,18 @@
 # Dépendances Node (workerd dépasse 25 MiB)
 node_modules/
 
+# Binaires CLI locaux (Supabase CLI 94 MB > limite CF 25 MiB par fichier)
+.bin/
+
 # Métadonnées Git & CI
 .git/
 .github/
+
+# Outils Claude / IDE / wrangler state
+.claude/
+.wrangler/
+.vscode/
+.idea/
 
 # Scripts de build & dev (jamais servis au navigateur)
 build.js

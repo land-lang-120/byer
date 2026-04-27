@@ -394,15 +394,20 @@ begin
     raise exception 'Authentication required';
   end if;
 
-  select b.*, l.owner_id into v_b, v_owner
+  -- Hotfix B-001 (mig.0009 inline) : record + scalaire dans le même INTO interdit en PG15.
+  select * into v_b
     from public.bookings b
-    join public.listings l on l.id = b.listing_id
    where b.qr_token = p_qr_token
-   for update of b;
+   for update;
 
   if v_b.id is null then
     raise exception 'QR token not found';
   end if;
+
+  select l.owner_id into v_owner
+    from public.listings l
+   where l.id = v_b.listing_id;
+
   if v_owner != v_uid then
     raise exception 'Only the host can validate arrival';
   end if;

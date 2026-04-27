@@ -36,6 +36,7 @@ const FILES = [
   'js/booking.js',
   'js/history.js',
   'js/legal.js',
+  'js/kyc.js',
   'js/app.js',
   'js/main.js',
 ];

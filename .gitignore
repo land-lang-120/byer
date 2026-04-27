@@ -13,6 +13,12 @@ android-project/
 # Migrations combinees intermediaires (les vraies sont dans migrations/)
 supabase/_combined_migrations.sql
 
+# Supabase CLI state local (.temp/ contient pooler.pgbouncer.toml, etc.)
+supabase/.temp/
+
 # Logs et tmp
 *.log
 .cache/
+
+# Binaires CLI locaux (Supabase CLI téléchargé pour ne pas polluer le PATH système)
+.bin/

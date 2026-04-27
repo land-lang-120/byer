@@ -136,7 +136,7 @@ function SavedScreen({ role, items, openDetail, toggleSave, saved, openGallery, 
 }
 
 /* ─── TRIPS SCREEN ──────────────────────────────── */
-function TripsScreen({ role, openDetail, userBookings = [], onCancelBooking }) {
+function TripsScreen({ role, openDetail, userBookings = [], dbBookingsLoaded = false, onCancelBooking }) {
   const [filter, setFilter] = useState("all");
   const [mapItem, setMapItem] = useState(null);
   const [cancelTarget, setCancelTarget] = useState(null);
@@ -152,20 +152,43 @@ function TripsScreen({ role, openDetail, userBookings = [], onCancelBooking }) {
 
   const isBailleur = role === "bailleur";
 
-  // Fusion : réservations utilisateur (récentes en premier) + mocks démo
-  // En mode bailleur on simule les réservations entrantes : on enrichit chaque booking avec
-  // un "guest" (le voyageur) pour différencier visuellement.
+  // Source : si Supabase a chargé des réservations (dbBookingsLoaded=true),
+  // on affiche EXCLUSIVEMENT les vraies données. Sinon, on fusionne les
+  // réservations localStorage (offline) + mocks démo pour rester utilisable.
+  // Cette logique évite que les vraies réservations soient mélangées avec
+  // les fakes (sinon "Mes voyages" afficherait BOOKINGS pour tout le monde).
   const allBookings = isBailleur
-    ? BOOKINGS.map((b,i)=>({
-        ...b,
-        guest: ["Caroline N.","David Mboma","Aïcha B.","Junior K.","Sandrine T."][i % 5],
-        guestPhoto: `https://i.pravatar.cc/80?img=${20 + i*4}`,
-        adults: 2 + (i%3),
-        requestedAt: ["Il y a 2h","Il y a 1j","Il y a 3j","Il y a 5j"][i % 4],
-        // En mode bailleur, "upcoming" devient "demandes en attente"
-        bailleurStatus: b.status === "upcoming" ? "pending" : (b.status === "active" ? "in_progress" : "completed"),
-      }))
-    : [...userBookings, ...BOOKINGS];
+    ? (dbBookingsLoaded
+        // Mode bailleur + DB : pour chaque booking on enrichit avec guest +
+        // statut bailleur. Les noms guest sont génériques (à remplacer par
+        // le vrai profile.guest_id quand la jointure sera ajoutée).
+        ? userBookings.map((b, i) => ({
+            ...b,
+            guest: b.guestName || `Voyageur ${i + 1}`,
+            guestPhoto: b.guestPhoto || null,
+            adults: b.guests || 1,
+            requestedAt: b.created_at ? "" : "—",
+            bailleurStatus: b.rawStatus === "pending" ? "pending"
+                          : b.rawStatus === "active" ? "in_progress"
+                          : b.rawStatus === "completed" ? "completed"
+                          : b.rawStatus === "cancelled" ? "completed"
+                          : "pending",
+          }))
+        // Mode bailleur + offline : démo avec mocks enrichis
+        : BOOKINGS.map((b, i) => ({
+            ...b,
+            guest: ["Caroline N.","David Mboma","Aïcha B.","Junior K.","Sandrine T."][i % 5],
+            guestPhoto: `https://i.pravatar.cc/80?img=${20 + i*4}`,
+            adults: 2 + (i%3),
+            requestedAt: ["Il y a 2h","Il y a 1j","Il y a 3j","Il y a 5j"][i % 4],
+            bailleurStatus: b.status === "upcoming" ? "pending"
+                          : (b.status === "active" ? "in_progress" : "completed"),
+          })))
+    : (dbBookingsLoaded
+        // Locataire + DB : on n'utilise QUE les vraies réservations
+        ? userBookings
+        // Locataire + offline : localStorage + mocks démo (rétro-compat)
+        : [...userBookings, ...BOOKINGS]);
 
   const filtered = filter === "all"
     ? allBookings

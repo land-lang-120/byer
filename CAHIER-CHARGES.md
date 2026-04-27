@@ -1,10 +1,144 @@
 # 📖 Byer — Cahier de charges
 
 > Marketplace de location immobilier + véhicules au Cameroun
-> Version : **3.0** — 2026-04-25 (backend Supabase 100 % câblé)
+> Version : **3.2** — 2026-04-27 (audit complet + plan de remédiation Phase 1-5)
 > URL prod : https://byer.landonjouajosephpino.workers.dev
-> Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **9 migrations appliquées, 18 RPCs en service**
+> Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **11 migrations appliquées, 18 RPCs en service, 1 Edge Function déployée**
+> Bundle frontend : `bundle.js?v=47` (en cours de remédiation vers v48 pour fix mocks/RLS/crashes)
 > Voir aussi : [PROGRESS.md](PROGRESS.md) (suivi du dev) · [supabase/SETUP.md](supabase/SETUP.md) (procédure migrations)
+
+---
+
+## 0. 📊 État d'avancement (snapshot 2026-04-27)
+
+> Vue d'ensemble unique. Source de vérité pour répondre à "où en est-on ?".
+
+### ✅ Fait (livré + validé en prod)
+
+**Backend / DB**
+- 11 migrations Supabase appliquées : initial schema, RLS, storage, auth ext, listings/bookings/reviews optimizations, pg_cron, hotfix arrival, seed démo, KYC unique partial.
+- 18 RPCs PostgREST en service (`search_listings`, `nearby_listings`, `is_available`, `cancel_booking`, `validate_arrival`, `redeem_reward`, `apply_referral_code`, `delete_my_account_request`, etc.).
+- Edge Function `kyc-review` déployée + testée prod (`/health` → 200 `{ok:true,admin_count:1}`, `/list-pending` → 401 sans JWT admin = OK).
+- Storage : bucket privé `kyc-documents` + buckets publics `avatars` + `listing-photos` avec policies.
+- Auth Supabase : email/password + magic link + OAuth Google (le redirectTo prod reste à fixer cf. § À faire).
+- Secret `ADMIN_EMAILS=pinolando120@gmail.com` configuré.
+
+**Frontend (bundle v47, déployé Cloudflare Workers 2026-04-27)**
+- Shell 5 onglets (Accueil / Favoris / Voyages / Messages / Profil) + sélecteur de localisation 12 villes.
+- Onboarding 3 slides (logements / véhicules / bailleur).
+- Recherche full-text débouncée 350 ms (RPC `search_listings`).
+- Booking flow Supabase complet (insert + double-réservation bloquée par GiST exclude).
+- Publish flow Supabase complet (insert listings + upload photos parallèle, validation client).
+- KYC : upload utilisateur (modal sheet 4 doc types) + écran admin (list-pending + approve/reject avec motif obligatoire).
+- Realtime chat 1-1 (Supabase realtime, optimistic UI, mark as read).
+- Service Worker auto-update (`SKIP_WAITING` + reload, cache `byer-v47`).
+- UX KYC clarifiée (terme expliqué, bouton coral "Envoyer mes documents", section "Administration (admin uniquement)").
+
+**Infra / DevOps**
+- Bundle v47 live sur Cloudflare Workers (URL prod).
+- GitHub Actions auto-deploy (`push master` → CF en ~1 min).
+- `.assetsignore` enrichi (.bin, .claude, .wrangler, .vscode, .idea exclus du deploy).
+
+### 🔄 En cours (Phase 2 → application migration 0012 + deploy bundle v48)
+
+**Phase 1 livrée 2026-04-27** ✅ — bundle v48 prêt à déployer
+- 1.A — ✅ 6 mismatches schéma `supabase-client.js` corrigés (`kyc.submitted_at`, `devices.device_label/hash`, suppression `last_message_preview`, `reviews.reply/reply_at`, `rewards.cost_points/tier/is_used+expires_at`).
+- 1.B — ✅ `ByerErrorBoundary` (class React) wrap `<Root/>` dans `main.js` avec fallback "Oups + Recharger".
+- 1.C — ✅ `DetailScreen` : gallery resilient (mocks → `_photos` Supabase → single fallback) + `ownerName` neutre (plus "Ekwalla M." par défaut).
+- 1.D — ✅ `currentProfile` + `currentUserId` lifted dans `ByerApp`, `ProfileScreen` consomme `displayName/City/Photo/Avatar` depuis le profil DB, `EditProfileScreen.handleSave` appelle `db.profiles.update` réel + refresh global via `onSaved`.
+- 1.E — ✅ `dbBookings` + `adaptBooking()` dans `app.js`, `TripsScreen` reçoit `dbBookingsLoaded` flag → en mode DB ne mélange plus les vraies résa avec les mocks ; `onCancelBooking` route vers `db.bookings.cancel` (RPC atomique avec refund).
+- 1.F — ✅ `SavedScreen` reçoit la liste fusionnée `dbListings ∪ mocks` dédoublonnée par id.
+- 1.G — ✅ `adaptNotification()` + fetch `db.notifications.listMine` ; `markRead`/`markAllRead` persistés en DB ; fallback mocks si offline (transparent via `usingMock` flag).
+- 1.H — ✅ Bypass démo retiré : `setTimeout(()=>onLogin(), 1400)` remplacé par message d'erreur clair ; bouton "Découvrir sans compte" caché si Supabase ready ; **OAuth `signInOAuth` reçoit `redirectTo: window.location.origin + '/'` (Google login fix)**.
+- 1.I — ✅ Bandeaux "📊 Données de démonstration" sur `OwnerDashboard` (top de page) + `HomeScreen` (carte stats bailleur), avec texte explicatif "vraies stats après 1ère annonce".
+
+**Phase 2 (~30 min) — sécurité DB**
+- ✅ **Migration `0012_rls_hardening.sql` créée** (134 lignes) — couvre :
+  - WITH CHECK ajouté sur 5 policies UPDATE (listings, bookings, conversations, reviews, notifications) → bloque le transfert de FK vers d'autres users.
+  - `listing_photos_owner_write` + nouvelle `listing_photos_owner_update` : path check `(storage.foldername(name))[1]::uuid in (select id from listings where owner_id = auth.uid())`.
+  - `avatars_self_update` + `avatars_self_delete` (manquantes — `upsert:true` du client échouait silencieusement).
+  - REVOKE column-level UPDATE sur `profiles.rewards_points/referral_count/identity_verified/email_verified/phone_verified/is_superhost/role` pour `authenticated` → triche points impossible même si la policy passe (defense in depth).
+  - `trusted_devices_no_client_insert` (explicite) → `with check (false)` pour bloquer INSERT direct, force passage par Edge Function.
+  - `apply_referral_code` réécrit avec rate limit 5 codes/24h + return `jsonb {ok, error}`.
+- 📋 **À FAIRE par Pino** : appliquer `0012_rls_hardening.sql` dans Supabase SQL Editor (https://supabase.com/dashboard/project/xwqnsovfakzraafiudek/sql/new).
+
+**Phase 3 — Deploy**
+- 📋 Build bundle v48 + `npx wrangler deploy` (auto-trigger via push GitHub).
+- 📋 Tests live : `curl /bundle.js?v=48 | grep -c ByerErrorBoundary` doit être >0.
+
+### 📋 À faire (avant release Play Store)
+
+**Phase 2 — Sécurité DB (migration 0012, ~1 h)**
+- `0012_rls_hardening.sql` : ajout `WITH CHECK (owner_id = auth.uid())` sur `listings_owner_update`, `bookings_party_update`, `reviews_author_update`, `notifs_self_update`, `conversations_party_update`.
+- Storage `listing_photos_owner_write` : check folder = listing owné par auth.uid().
+- `REVOKE UPDATE (rewards_points, referral_count, tier, identity_verified, email_verified, phone_verified) ON public.profiles FROM authenticated` (column-level pour vraiment bloquer triche points).
+- Rate limit `apply_referral_code` (max 5 codes/jour/IP).
+
+**Phase 3 — OAuth + cleanup (~30 min)**
+- `auth.js:71` : passer `redirectTo: window.location.origin` sur `signInOAuth` (sinon Google retombe sur mauvais URL).
+- Retirer mig `0010_seed_demo_listings` en prod (titres "DEMO").
+- Audit `RentScreen` (date figée 2025-03-22 dans `data.js:436`) → soit `new Date()`, soit cacher si pas brancé DB.
+
+**Phase 4 — Paiements (~3-4 h)** — _Stripe non supporté au Cameroun, on bascule sur Flutterwave qui couvre cartes + MoMo + OM dans une seule API_
+- Création compte **Flutterwave** côté Pino (mode TEST d'abord) : https://dashboard.flutterwave.com/signup
+- Edge Function `flw-init-payment` : POST avec montant + customer + redirect_url → renvoie `data.link` (URL hosted checkout Flutterwave) qu'on ouvre dans un onglet/iframe.
+- Edge Function `flw-webhook` : reçoit notification post-paiement, vérifie signature `verif-hash` (secret hash configuré dans dashboard FLW), update `bookings.payment_status` + insert `payments`.
+- Migration `0013_payments_flw.sql` : table `payments` (id, booking_id, provider='flw', tx_ref, flw_id, amount, currency='XAF', status, raw_payload jsonb) + colonne `flw_tx_ref` sur `bookings`.
+- Frontend `booking.js` : si méthode paiement choisie → POST `/functions/v1/flw-init-payment` → redirect URL retournée. Au retour (callback URL), polling `payments` ou listening notification realtime.
+- Tests CM : carte test `5531 8866 5214 2950` PIN `3310` OTP `12345`, MoMo MTN `+237 670 000 000`, Orange Money `+237 690 000 000`.
+- Bonus : Flutterwave permet aussi **virement bancaire** (Express Union) via le même endpoint — un seul code couvre toutes les méthodes du Cameroun.
+
+**Phase 5 — Soumission Play Store (~3 h)**
+- Lighthouse + perf audit (mobile 3G, low-end Android).
+- Compte Google Play Developer payé (Pino, 25 USD lifetime).
+- Build APK/AAB via PWABuilder.com (input PWA URL → output AAB signé).
+- Politique de confidentialité (URL publique avec mention KYC + photos + Supabase + Cloudflare + Stripe).
+- Screenshots store (5-8 captures portrait 1080x1920) + icône 512x512 + bannière 1024x500.
+- Description marketplace (FR + EN, ASO keywords).
+- Soumission revue Google Play (24-72 h en moyenne).
+
+### 📅 Prévu plus tard (post-v1)
+
+**Paiements (post-v1, optimisations)**
+- Intégrations natives directes (sans gateway Flutterwave) si volume élevé : MTN MoMo Open API + Orange Money API → réduit les fees ~3% vs aggregateur.
+- Multi-app : un seul compte Flutterwave partagé entre Byer / CarExpress / Pharmadroid / Sequoia, avec `metadata.app` pour ségréguer + vues séparées dashboard.
+- Stripe en backup pour la diaspora (paiement carte international depuis FR/US/UK) — passer par Stripe Atlas (LLC US) ou un agent fiscal.
+- Cryptos (BTC, USDC) via NOWPayments / Coinbase Commerce — niche mais demandé Cameroun jeunes tech-savvy.
+
+**Edge Functions auxiliaires**
+- `delete-account` (suppression GDPR-compliant via service_role : auth.users + cascade tables liées).
+- `send-otp-sms` (Twilio pour vérification téléphone).
+- `listing-review` (modération annonces avant publication).
+- `password-strength` (côté serveur, anti-leak HIBP).
+
+**Sécurité avancée**
+- 2FA réel (TOTP via `otplib` ou SMS via Twilio).
+- Audit log table (`audit_logs` : qui a fait quoi quand).
+- Rate limiting global via Cloudflare Workers (limit IP).
+- IP geo-blocking si nécessaire.
+
+**Tests / Qualité**
+- E2E automatisés (Playwright) sur les 5 flows critiques.
+- Sentry ou similaire pour error tracking en prod.
+- Smoke tests post-deploy automatisés (CI).
+- Coverage SQL via pgTAP.
+
+**App / UX**
+- App native iOS via TestFlight (Capacitor).
+- Multi-langue effectif (extraire textes FR hardcodés vers `i18n.js`).
+- Push notifications (Firebase Cloud Messaging via Edge Function `send-push`).
+- Mode hors ligne complet (queue mutations + sync au retour réseau).
+- Dark mode polish (déjà en place côté CSS, valider sur tous écrans).
+- Animations transitions entre écrans (framer-motion alternative léger).
+
+**Fonctionnel V2**
+- Réseau de techniciens (entretien, plomberie, électricité — déjà câblé partiellement).
+- Convoyeur véhicules (livraison à domicile).
+- Agent immobilier multi-comptes (rôle "agent" + permissions sur plusieurs `owner_id`).
+- Modérateur annonces (rôle "moderator" + écran review).
+- Système de boost annonces (mise en avant payante via Stripe).
+- Programme de récompenses : tier system (déjà en DB) + UI rewards-store.
+- Refer-a-friend deep link (`byer://r/CODE`) avec attribution device-fingerprint.
 
 ---
 
@@ -451,7 +585,7 @@ select cron.unschedule('cleanup-expired-coupons');
 - 📋 Connecter `publishHandleSubmit` à `db.listings.create` + upload photos (utiliser nouvelles colonnes `general_amenities`/`child_entities`/`house_rules`/`custom_rules`)
 - 📋 Connecter recherche/filtres home/explore à RPC `search_listings`
 - 📋 UI upload KYC dans le profil (table prête)
-- 📋 Edge Function `kyc-review` (déployable sans compte externe)
+- ✅ Edge Function `kyc-review` (codée 2026-04-28, à déployer via `supabase functions deploy kyc-review`)
 - 📋 Edge Functions paiement : `momo-webhook` + `om-webhook` (en attente credentials marchand MTN/Orange)
 - 📋 Edge Functions : `delete-account`, `send-otp-sms` (Twilio)
 
@@ -569,10 +703,10 @@ select cron.unschedule('cleanup-expired-coupons');
 - **Fix** : créer `.assetsignore` qui exclut `node_modules/`, `.git/`, `.github/`, `*.md`, scripts batch, `android-project/`, `supabase/`, `scripts/`.
 - **Leçon** : sur un projet Cloudflare Workers Static Assets, **créer `.assetsignore` au tout début** (avant le 1er deploy). Modèle de référence à conserver.
 
-### 🐛 Bug B-008 : Auth confirme l'email mais user "incorrect" au login (en cours)
+### 🐛 Bug B-008 : Auth confirme l'email mais user "incorrect" au login ✅ RÉSOLU 2026-04-25
 - **Symptôme** : signup réussit, mais login avec mêmes credentials renvoie « Email ou mot de passe incorrect ».
-- **Cause racine probable** : option **« Confirm email »** activée par défaut dans Supabase Authentication. Tant que le user n'a pas cliqué le lien dans l'email reçu, `signInWithPassword` est rejeté avec `Email not confirmed`.
-- **Fix immédiat (phase QA)** : Dashboard Supabase → Authentication → Providers → Email → décocher « Confirm email » + Save. Signup direct = entrée immédiate dans l'app.
+- **Cause racine confirmée** : option **« Confirm email »** activée par défaut dans Supabase Authentication. Tant que le user n'a pas cliqué le lien dans l'email reçu, `signInWithPassword` est rejeté avec `Email not confirmed`.
+- **Fix appliqué (phase QA)** : Dashboard Supabase → Authentication → Sign In / Providers → Email → décocher « Confirm email » + Save. Vérifié par curl : signup + login renvoient bien tous deux un `access_token` avec `email_verified:true`.
 - **Fix prod** : garder « Confirm email » activé, mais soigner l'UX du flow VerifyEmailScreen + customiser le template d'email (déjà fait via `VerifyEmailScreen.handleResend`).
 - **Leçon** : toujours vérifier l'état des **toggles Auth Supabase** (Confirm email, Secure email change, Allow phone signup, etc.) AVANT de tester en QA. Ces toggles silencieux changent radicalement le comportement.
 
@@ -581,6 +715,289 @@ select cron.unschedule('cleanup-expired-coupons');
 - **Cause racine** : il n'y avait AUCUN auto-deploy configuré. Le déploiement se faisait manuellement via `wrangler deploy`. Pas de webhook, pas de GitHub Action.
 - **Fix** : créer `.github/workflows/deploy.yml` avec `cloudflare/wrangler-action@v3`. Secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` stockés dans GitHub Secrets.
 - **Leçon** : à la 1re session sur un nouveau projet, **vérifier explicitement** : « est-ce que `git push` déclenche un déploiement ? ». Si non, le mettre en place AVANT toute autre feature. Sinon, on debug pendant des heures un code qui n'est pas en prod.
+
+### 🐛 Bug B-010 : Génération d'un compte qui ne peut PAS être réutilisé pour login (post-fix B-008)
+- **Symptôme** : après désactivation du « Confirm email », un compte créé via `auth.users` direct (insert SQL) ne pouvait pas se logguer car `email_confirmed_at` était NULL et la colonne `confirmed_at` est générée (`generated always as`).
+- **Erreur Postgres** : `confirmed_at can only be updated to default value` (code 428C9).
+- **Cause racine** : `auth.users.confirmed_at` est une colonne **générée** depuis `email_confirmed_at`. Tenter de la mettre à jour directement = blocage.
+- **Fix** : ne mettre à jour QUE `email_confirmed_at = now()`, laisser Postgres recalculer `confirmed_at` automatiquement.
+- **Leçon** : avant tout `UPDATE auth.users` en SQL direct, vérifier le DDL — Supabase utilise des **generated columns** sur cette table. Toujours préférer la RPC officielle (`auth.admin.updateUserById`) ou le Dashboard.
+
+### 🐛 Bug B-011 : Mot de passe oublié — pas de reset UI possible en QA
+- **Symptôme** : compte `pinolando120@gmail.com` existait déjà avec un ancien password. Login renvoyait « invalid credentials ». Aucune option « Mot de passe oublié » pour le reset (mail SMTP non configuré en QA).
+- **Cause racine** : Supabase n'expose PAS de bouton « réinitialiser » dans le Dashboard pour un user existant. Le reset password passe forcément par un email envoyé à l'utilisateur.
+- **Fix appliqué** : SQL direct dans Editor :
+  ```sql
+  update auth.users
+     set encrypted_password = crypt('Pino@2026!', gen_salt('bf')),
+         email_confirmed_at  = coalesce(email_confirmed_at, now())
+   where email = 'pinolando120@gmail.com';
+  ```
+- **Leçon** : pour tout reset password en environnement QA sans SMTP, utiliser `crypt(plaintext, gen_salt('bf'))` directement. Bcrypt natif Postgres = même algo que Supabase Auth, donc compatible.
+
+### 🐛 Bug B-012 : Seed migration — enum `profiles.role` strict ('host' invalide)
+- **Symptôme** : seed `0010_seed_demo_listings.sql` a échoué avec `profiles_role_check` violation lors d'un `INSERT INTO profiles ... role = 'host'`.
+- **Erreur Postgres** : `new row for relation "profiles" violates check constraint "profiles_role_check"` (23514).
+- **Cause racine** : la contrainte CHECK définie en mig.0001 n'autorise QUE `('locataire','bailleur')`. La valeur `'host'` (sémantique anglaise héritée d'Airbnb) n'est PAS reconnue.
+- **Fix** : remplacer `'host'` par `'bailleur'` dans le seed (les 2 occurrences : INSERT + UPDATE conflit).
+- **Leçon** : avant tout seed, **lire les contraintes CHECK** sur les tables ciblées (`\d+ table_name` ou ouvrir le fichier `0001_initial_schema.sql`). Ne pas s'appuyer sur la sémantique « host/owner/landlord » universelle — chaque schéma a son enum.
+
+### 🐛 Bug B-013 : Seed migration — enum `listings.subtype` strict ('villa' invalide)
+- **Symptôme** : seed a re-échoué après B-012 avec `listings_subtype_valid` violation pour `subtype = 'villa'`.
+- **Erreur Postgres** : `new row for relation "listings" violates check constraint "listings_subtype_valid"` (23514).
+- **Cause racine** : la contrainte définie en mig.0005 fixe pour `type = 'property'` la liste exacte : `('maison','immeuble','hotel','motel','auberge','appartement','studio','chambre')`. **Villa n'y est pas** — c'est considéré comme un sous-type de `'maison'`.
+- **Fix** : remplacer `subtype = 'villa'` par `subtype = 'maison'` (le titre `'DEMO Villa Balnéaire Kribi'` reste pour l'affichage).
+- **Leçon** : double verrou — la contrainte est composée (`type = 'X' and subtype in (...)`). Pour ajouter une catégorie réellement nouvelle, **migration dédiée** qui DROP/recrée la contrainte. Ne pas inventer de subtypes en seed.
+
+### 🐛 Bug B-014 : Chrome auto-traduit le SQL avant envoi à Supabase 🚨 PIÈGE NON-DEV
+- **Symptôme** : tentative d'exécution du seed → `ERREUR : 42601 : L'instruction INSERT comporte plus d'expressions que de colonnes cibles`. Inspection : tous les identifiants SQL sont **en français** (`propriétaire_id`, `sous-type`, `titre`, `chambres`, `'propriété'`), et les nombres décimaux ont des virgules françaises (`4,0509` au lieu de `4.0509`).
+- **Cause racine** : Google Chrome a détecté la page Supabase comme « anglaise » et a proposé/activé la traduction automatique. Le contenu de l'éditeur SQL — y compris ce qui est collé via Ctrl+V — est traduit AVANT d'être envoyé au serveur.
+- **Fix immédiat** : clic droit sur la page → décocher « Traduire en français » / cliquer « Afficher l'original ». Vider l'éditeur, recharger la page, recoller, vérifier visuellement que `owner_id` est en anglais.
+- **Fix durable** : Chrome → Paramètres → Langues → désactiver « Utiliser Google Traduction » + « Proposer de traduire les pages ».
+- **Leçon** : pour les utilisateurs francophones non-dev, **toujours désactiver l'auto-traduction du navigateur** sur les outils dev (Supabase, GitHub, Cloudflare Dashboard, Stripe). Ces UI ont des contenus mixtes anglais/dynamique, et le navigateur traduit même les zones de saisie. C'est un bug INVISIBLE pour le développeur (qui voit `owner_id`) mais visible pour le serveur (qui reçoit `propriétaire_id`).
+
+### 🐛 Bug B-015 : Self-booking autorisé (un user peut réserver son propre listing)
+- **Symptôme** : un INSERT dans `public.bookings` avec `guest_id = host_id = listing.owner_id` réussit (RLS = `bookings_guest_create` vérifie seulement `guest_id = auth.uid()`).
+- **Cause racine** : aucune contrainte business — la RLS protège le data ownership, pas la cohérence métier. La règle « un host ne peut pas se booker lui-même » est implicite mais pas codée.
+- **Risque** : exploitation pour gonfler artificiellement son `review_count` ou ses `rewards_points` via auto-bookings (un host gagne +5 pts par booking complété, le guest +2 = +7 pts pour l'auteur).
+- **Fix recommandé** : ajouter au schéma `bookings` une CHECK constraint :
+  ```sql
+  alter table public.bookings
+    add constraint bookings_no_self_booking check (guest_id != host_id);
+  ```
+  Ou un trigger qui compare avec `listings.owner_id` côté DB.
+- **Statut** : 🟡 À corriger en mig.0011. Pas urgent en QA mais bloquant pour la prod.
+
+### 🐛 Bug B-016 : Migration 0006 jamais exécutée en prod 🚨 CRITIQUE ✅ RÉSOLU 2026-04-28
+- **Symptôme** : tentative d'appel des RPC `is_listing_available`, `cancel_booking`, `verify_booking_qr`, `validate_arrival`, `auto_complete_bookings` → `PGRST202: function not found`. Tentative d'INSERT sur `bookings.price_base` → `42703: column does not exist`. Cron job `auto-complete-bookings` (créé par mig.0008) **plante toutes les heures** : `last_status: failed, last_message: function public.auto_complete_bookings() does not exist`.
+- **Cause racine** : la migration `0006_bookings_optimizations.sql` n'a jamais été appliquée sur la base prod. Cependant, les migrations `0007_reviews_rewards_notifications.sql`, `0008_pg_cron_jobs.sql`, et `0010_seed_demo_listings.sql` ont été appliquées par-dessus, créant un trou logique. Le cron 0008 référence des fonctions de 0006 qui n'existent pas.
+- **Impact business** :
+  - 🚨 **Anti-double-booking ABSENT** : 2 réservations qui chevauchent les mêmes dates sur le même listing sont acceptées (testé en QA — bookings BYR-971672 et BYR-871450 sur Villa Kribi 1-4 mai et 2-5 mai créées sans erreur).
+  - 🚨 **Politique d'annulation absente** : pas de calcul auto de remboursement (flexible/moderate/strict).
+  - 🚨 **QR check-in absent** : pas de token UUID, pas de `verify_booking_qr`.
+  - 🚨 **Auto-completion absente** : les bookings ne passent jamais à `completed`, donc aucun trigger de points ne se déclenche, aucun review n'est éligible.
+  - 🚨 **Décomposition prix absente** : colonnes `price_base/service/dossier/taxes/caution` manquantes.
+- **Fix immédiat** :
+  1. Nettoyer les bookings de test (delete les 2 BYR-971672 et BYR-871450).
+  2. Ouvrir [0006_bookings_optimizations.sql](C:\Users\Pino\Desktop\UNIVERSAL-TECH\apps\byer\supabase\migrations\0006_bookings_optimizations.sql) → coller dans Supabase SQL Editor → Run.
+  3. Puis [0009_hotfix_validate_arrival.sql](C:\Users\Pino\Desktop\UNIVERSAL-TECH\apps\byer\supabase\migrations\0009_hotfix_validate_arrival.sql) → Run.
+  4. Vérifier le retour du cron : `select * from cron_jobs_status;` → `last_status` doit passer à `succeeded`.
+  5. Re-tester le double-booking → doit échouer avec contrainte EXCLUDE.
+- **Leçon** : à chaque session SQL Supabase, **vérifier que TOUTES les migrations ont été appliquées** dans le bon ordre, pas juste la dernière. Garder une table `_migrations_applied(name, applied_at)` ou utiliser le système officiel `supabase migration` côté CLI. Ne JAMAIS sauter une migration en pensant « celle d'après corrige tout ».
+
+### 🐛 Bug B-017 : Frontend bundle référence colonne inexistante `price_per_night`
+- **Symptôme** : page d'accueil Byer affichait des annonces de démo (mocks) au lieu d'erreur, MAIS un appel REST custom dans la console DevTools renvoyait `column listings.price_per_night does not exist` (42703).
+- **Cause racine** : la migration mig.0001 a créé la colonne `price_night` (sans le `_per_`). Quelque part dans `bundle.js` (frontend Cloudflare Workers), un select PostgREST utilise encore l'ancien nom.
+- **Statut** : 🟡 À investiguer. Pas bloquant pour le seed (le seed utilise les bons noms), mais bloque potentiellement la recherche `search_listings` côté UI.
+- **Leçon** : à chaque renaming de colonne en migration, **grepper** le frontend pour les anciens noms AVANT de merger. Ajouter au workflow : `git grep -n "price_per_night\|old_col_name" js/ src/`.
+
+---
+
+## 10ter. Tests E2E validés en QA (2026-04-28)
+
+> Récap des scénarios bout-en-bout joués par curl direct sur l'API REST Supabase
+> APRÈS application de mig.0006 (avec hotfix B-001 inline). Tous les tests
+> passés ✅. Sert de baseline de non-régression pour les prochaines releases.
+
+### ✅ T-001 : Anti-double-booking (EXCLUDE constraint mig.0006)
+- **Setup** : 1er booking Villa Kribi 11-14 mai créé avec succès. 2e tentative chevauchante 13-15 mai sur le même listing.
+- **Résultat** : 23P01 `bookings_no_overlap` — la contrainte `EXCLUDE USING gist` bloque physiquement l'INSERT.
+- **Preuve** : `daterange(checkin, checkout, '[)')` exclut le checkout, donc 11-14 et 14-17 OK (2 séjours adjacents). 11-14 et 13-15 KO (overlap).
+
+### ✅ T-002 : Trigger `award_booking_points` (mig.0007)
+- **Setup** : booking `cacb94de-7aef-48ed-8ffa-1e9365d9f5b9` BYR-472165 sur Villa Kribi. UPDATE status='completed'.
+- **Résultat** : Pino (host) 25 → 30 pts (+5). test-guest (guest) 25 → 27 pts (+2).
+- **Idempotence** : 2e UPDATE status='completed' → points inchangés (Pino 30, guest 27). Pas de double-award.
+
+### ✅ T-003 : Review 8 critères + auto-recompute rating_avg (mig.0007)
+- **Setup** : POST `/rest/v1/reviews` sur le booking BYR-472165 avec les 8 ratings (proprete:5, confort:5, emplacement:5, convivialite:4, accessibilite:4, securite:5, equipement:4, qualite_prix:5) + body de 50 chars.
+- **Résultat** : review `7af202e6-c910-4cbb-b5f7-7e494b72bbf2` créée. Colonne `rating` calculée automatiquement à 4.6 (moyenne pondérée). Listing Villa Kribi `rating_avg: 4.60`, `review_count: 1` mis à jour par trigger.
+
+### ✅ T-004 : RPC `cancel_booking` (mig.0006) — 4/4 politiques
+- **T4-A Flexible 22j ahead** : booking 200000 FCFA (170k base + 30k caution) → `refund_amount: 200000` (100% base + caution).
+- **T4-B Moderate 17j ahead** : booking 55000 FCFA (50k base + 5k caution) → `refund_amount: 55000` (100% base + caution).
+- **T4-C Strict 12j ahead** : booking 40000 FCFA (36k base + 4k caution) → `refund_amount: 22000` (50% base + caution).
+- **T4-D Strict 2j ahead** : booking 80000 FCFA (70k base + 10k caution) → `refund_amount: 10000` (caution seule, 0% base).
+- **Edge cases** : re-cancel sur status='cancelled' → P0004. Booking inexistant → P0002. Sans JWT → P0001 "Authentication required".
+- **Side-effects DB** : `status='cancelled', payout_status='held', refund_status='pending', cancelled_at, cancelled_by` correctement renseignés.
+
+### ✅ T-005 : RPC `validate_arrival` (mig.0006 + B-001 inline) — 5/5 cas
+- **Setup** : host de test `1ecb954b-30ff-4bb0-8264-b04d32d8ade6` + listing `c5450db0-fc20-459d-b57c-cc9175252177` + booking `a6784cf0-de10-4941-b161-9a7c030f1997` BYR-211801 (status='confirmed', payment_status='paid'). QR token = `48cc5375-b931-49b4-b4ef-301e1ceabc3a`.
+- **A. Guest tente validate** : "Only the host can validate arrival" ✅ (sécurité role-based OK).
+- **B. Host scan via verify_booking_qr** : retourne `{guest_name, listing_title, checkin, all_good: true, ...}` ✅.
+- **C. Host validate avec QR valide** : `true` ✅. Booking → `status='active'`, `qr_validated_at: 2026-04-28T15:20:44Z`, `qr_validated_by = host_id`.
+- **D. Host re-validate même QR** : `false` ✅ (idempotent, pas de double-validation).
+- **E. QR random** : "QR token not found" ✅.
+- **Confirmation B-001 fix** : la logique `select * into v_b` puis `select l.owner_id into v_owner` fonctionne — pattern record + scalaire séparés validé en PG15.
+
+### Résumé QA
+| Test | RPC / Trigger | Cas | Statut |
+|------|--------------|-----|--------|
+| T-001 | EXCLUDE constraint | Double-booking bloqué | ✅ |
+| T-002 | award_booking_points | +2 guest / +5 host idempotent | ✅ |
+| T-003 | Trigger review | rating_avg recalculé auto | ✅ |
+| T-004 | cancel_booking | flexible/moderate/strict + edges | ✅ 4+3 |
+| T-005 | validate_arrival | guest blocked / host valide / idempotent | ✅ 5/5 |
+
+**Restant** : cron `auto-complete-bookings` à vérifier (last_status doit passer à `succeeded` au prochain run après que mig.0006 a injecté la fonction `auto_complete_bookings`).
+
+---
+
+## 10quater. Edge Functions livrées
+
+### `kyc-review` (livrée 2026-04-28)
+
+> Permet à un admin (allowlist email via env `ADMIN_EMAILS`) de visualiser
+> et valider les pièces KYC. Utilise la `service_role` key côté serveur,
+> jamais exposée au client.
+
+**Localisation** : [supabase/functions/kyc-review/](C:\Users\Pino\Desktop\UNIVERSAL-TECH\apps\byer\supabase\functions\kyc-review\)
+
+**Composants** :
+- [index.ts](C:\Users\Pino\Desktop\UNIVERSAL-TECH\apps\byer\supabase\functions\kyc-review\index.ts) — Deno + supabase-js, 3 routes (`/health`, `/list-pending`, `/review`)
+- [_shared/cors.ts](C:\Users\Pino\Desktop\UNIVERSAL-TECH\apps\byer\supabase\functions\_shared\cors.ts) — headers CORS partagés (allowlist d'origins)
+- [README.md](C:\Users\Pino\Desktop\UNIVERSAL-TECH\apps\byer\supabase\functions\kyc-review\README.md) — déploiement + curl examples
+- [test-kyc-review.sh](C:\Users\Pino\Desktop\UNIVERSAL-TECH\apps\byer\supabase\functions\kyc-review\test-kyc-review.sh) — test E2E (8 étapes : login admin/user, upload faux PNG, list-pending, approve, vérif DB, anti-double-review, refus non-admin)
+
+**Décisions de design** :
+1. **Allowlist email plutôt qu'une table `admins`** : permet une rotation immédiate via `supabase secrets set ADMIN_EMAILS=...`, sans migration. Si on grandit, on créera une table dédiée — pour l'instant 1-3 admins suffisent.
+2. **Signed URLs 5 min** pour les pièces KYC : assez pour visualiser, pas assez pour leak via screenshot ciblé.
+3. **Anti-double-review via `WHERE status='pending'` dans l'UPDATE** : si 2 admins cliquent en même temps, le 2e reçoit un 409, pas une race.
+4. **Notification best-effort** : un échec d'INSERT dans `notifications` n'invalide pas la review (logguer + continuer). La table KYC reste source de vérité.
+5. **Pas de soft-delete** : un doc rejected reste en DB pour audit. L'utilisateur peut en soumettre un nouveau (la contrainte unique tient car elle inclut `status` : un doc rejected n'empêche pas un re-pending).
+
+**Side-effects** :
+- Trigger `sync_kyc_to_profile` (mig.0004) bascule auto `profiles.identity_verified=true` quand un doc passe à `approved`.
+- Une notification de type `system` est insérée pour l'utilisateur (titre + body localisés FR).
+
+**Audit pré-deploy 2026-04-28 — bugs interceptés** :
+- 🐛 **B-018** PostgREST embed ambigu (`profile:profiles(...)` sans hint FK) : la table `kyc_documents` a 2 FK vers `profiles` (`user_id` et `reviewed_by`). Sans `!kyc_documents_user_id_fkey`, l'API retourne `PGRST201`. Vérifié en live curl. **Fixé** : hint FK explicite ajouté.
+- 🐛 **B-019** UNIQUE composite `(user_id, doc_type, status)` (mig.0004) bloque les re-soumissions : un user ne peut pas avoir 2 lignes 'rejected' ou 2 'pending' du même type. **Fixé** par mig.0011 — index unique partiel `where status = 'approved'` (1 seul approved par type, historique pending/rejected libre).
+- 🐛 **B-020** Path parsing fragile (trailing slash → `route=""`). **Fixé** : `split('/').filter(Boolean).pop()`.
+- 🐛 **B-021** CORS émettait `Access-Control-Allow-Origin: null` sur origin non-listée (RFC : null = refus implicite, mais confusing à debugger). **Fixé** : header omis si origin pas dans l'allowlist.
+- 🐛 **B-022** `Deno.env.get(...)!` plante au runtime si secret manquant. **Fixé** : flag `ENV_OK` + 500 explicite.
+- 🐛 **B-023** Test script `grep -oP` non-portable (macOS). **Fixé** : `jq` partout.
+- 🐛 **B-024** README oubliait que le header `apikey` est OBLIGATOIRE en plus du Bearer JWT pour passer le gateway Edge Functions. **Fixé** : doc + script.
+
+**Reste à faire** :
+1. ✅ `supabase link --project-ref xwqnsovfakzraafiudek` — fait via PAT non-interactif (2026-04-27).
+2. ✅ **mig.0011 appliquée** — confirmée par Pino le 2026-04-27.
+3. ✅ `supabase secrets set ADMIN_EMAILS=pinolando120@gmail.com` — fait.
+4. ✅ `supabase functions deploy kyc-review` — fait. `/health` répond `{ok:true, admin_count:1}` HTTP 200.
+5. ✅ UI admin frontend pour `list-pending` + `review` — livré dans Option C (cf. 10quinquies).
+
+**Toutes les étapes terminées.** Section 10sexies couvre le déploiement frontend v47 qui rend les fonctionnalités visibles en prod.
+
+---
+
+## 10quinquies. Frontend bonus (livré 2026-04-28)
+
+> Bouclage de la chaîne : la recherche full-text, l'upload KYC et la review
+> admin ne sont plus des endpoints orphelins — ils ont une UI dans l'app.
+
+### C1 — Recherche full-text branchée
+**Fichiers** :
+- [js/app.js](apps/byer/js/app.js) — état `searchResults` + `useEffect` debouncé 350 ms qui appelle `db.listings.search()` (RPC `search_listings`, mig.0005) dès 2 caractères. Filtres avancés (`maxPrice`, `minRating`, `amenities`, `city`) propagés au RPC.
+- [js/home.js](apps/byer/js/home.js) — prop `searchLoading` + spinner coral remplaçant l'icône loupe pendant la requête.
+
+**Comportement** :
+- `search.length < 2` → liste classique (mocks ou `dbListings`).
+- `search.length ≥ 2` → résultats RPC remplacent la source. Le filtre client saute la partie textuelle (déjà faite par `ts_vector` pondéré title>city>desc).
+- Supabase offline → fallback sur le filtre client `title.includes()` historique. Aucune régression.
+
+### C2 — UI upload KYC (côté utilisateur)
+**Fichiers** :
+- [js/kyc.js](apps/byer/js/kyc.js) — composant `KycUploadSheet` (modal feuille, anim `sheetUp`).
+- [js/edit-profile.js](apps/byer/js/edit-profile.js) — bouton "Vérifier" de la section Identité ouvre la sheet ; statut `identity_verified` lu depuis `profiles` au mount + au close.
+
+**Capacités** :
+- Liste les 4 docs (CNI, passeport, permis, selfie) avec leur statut courant (badge coloré : pending=orange, approved=vert, rejected=rouge avec motif).
+- Upload via input file caché (PNG/JPG/WEBP/PDF, 5 Mo max) → `db.kyc.upload()` → bucket privé `kyc-documents` + insert `kyc_documents` en pending.
+- Garde-fous client : taille + mime, message d'erreur si UNIQUE violé (déjà approuvé).
+- Toast feedback succès/erreur.
+
+### C3 — UI Admin KYC review
+**Fichier** :
+- [js/kyc.js](apps/byer/js/kyc.js) — composant `KycAdminScreen`.
+
+**Intégration app.js** :
+- Détection admin au mount via comparaison `session.user.email` vs `ADMIN_EMAILS = ['pinolando120@gmail.com']` (gating UI ; la sécurité réelle est server-side dans l'Edge Function).
+- Nouvelle entrée dans Settings → "Administration" → "Vérifications KYC en attente" (visible aux admins seulement).
+- L'écran admin appelle `${SUPABASE_URL}/functions/v1/kyc-review/list-pending` (POST + apikey + Bearer admin JWT) puis affiche la liste avec photo (signed URL 5 min), profil utilisateur, type, date.
+- Boutons Approuver (call direct) et Rejeter (modal motif obligatoire 300 chars max).
+- Optimiste : retire la carte de la liste après succès (refresh manuel via bouton "↻ Actualiser").
+
+### Build & versioning
+- [build.js](apps/byer/build.js) : `kyc.js` ajouté à FILES (31 fichiers au total).
+- [index.html](apps/byer/index.html) : bump `bundle.js?v=47` (v46 jamais déployé en prod, v47 inclut les fixes UX cf. 10sexies).
+- [sw.js](apps/byer/sw.js) : `CACHE_NAME = 'byer-v47'` pour invalider le cache SW au prochain reload.
+- Bundle final : 1020 KB (31 fichiers Babel CLI, runtime client = 0).
+
+### Tests à faire (manuels, après déploiement Edge Function)
+| # | Scénario | Attendu |
+|---|----------|---------|
+| C-T1 | Tape "douala" dans la recherche home, segment Logements | Spinner coral pendant ~350 ms, puis résultats RPC |
+| C-T2 | Profile → Modifier → Vérifier (Identité) | Sheet avec 4 lignes vides "Non soumis" |
+| C-T3 | Upload PNG 1 Mo de CNI | Toast "Document soumis ✓", ligne devient "En cours…" orange |
+| C-T4 | Re-upload alors que le doc précédent est `pending` | Bouton "Remplacer" actif, nouvelle ligne pending (l'ancienne non-approved reste en historique) |
+| C-T5 | Settings (en tant qu'admin) → "Vérifications KYC en attente" | Liste des pendings avec preview ; un user lambda ne voit pas l'entrée |
+| C-T6 | Admin clique Rejeter sans saisir de motif | Bouton "Confirmer" disabled + texte d'aide |
+| C-T7 | Admin Approuve → l'utilisateur reçoit une notification + identity_verified=true | Effet de bord du trigger `sync_kyc_to_profile` (mig.0004) |
+
+---
+
+## 10sexies. Déploiement live + fixes UX KYC (2026-04-27)
+
+> Le code Option B + C était bien dans le repo mais **bundle v46 n'est jamais sorti
+> en prod sur Cloudflare Workers**. Les retours QA de Pino l'ont révélé :
+> "le bouton Vérifier n'est pas cliquable", "Modération KYC absente". v47 + redeploy.
+
+### Déploiement Edge Function (côté Supabase)
+- **Méthode** : Personal Access Token Supabase (PAT, scope `account/tokens`) → env var `SUPABASE_ACCESS_TOKEN` pour `link`/`secrets`/`deploy` non-interactifs (contournement du `supabase login` qui exige un clic browser).
+- **Secret** : `ADMIN_EMAILS=pinolando120@gmail.com` (1 admin).
+- **Tests E2E validés** :
+  - `GET /health` (apikey=publishable + Bearer=anon JWT) → `{ok:true, fn:"kyc-review", admin_count:1}` HTTP 200
+  - `POST /list-pending` (sans JWT user admin) → `{error:"Invalid or expired token"}` HTTP 401 (refus correct)
+- **Headers gateway Edge Functions** :
+  - `apikey` accepte le format publishable (`sb_publishable_*`) ✅
+  - `Authorization: Bearer` exige un JWT format strict (le user session JWT en est un) ✅
+  - Pour monitoring externe sans user, fournir le legacy anon JWT (récupérable via `supabase projects api-keys`).
+
+### Fixes UX KYC (bundle v47)
+> Audit utilisateur non-tech : 3 points de friction identifiés.
+
+**Bug U1 — Bouton "Vérifier" Email mort** ([js/edit-profile.js:489-498](apps/byer/js/edit-profile.js)) :
+- Avant : 2 boutons `Vérifier` identiques (Email + Identité), seul celui de l'Identité avait un onClick.
+- Fix : remplacé celui de l'Email par un label `Bientôt` italique non-cliquable. Plus de confusion.
+
+**Bug U2 — Mot "KYC" non expliqué** :
+- Le terme apparaissait sec dans Settings et la modal sans définition.
+- Fix [js/edit-profile.js:500-518](apps/byer/js/edit-profile.js) : section renommée "Pièce d'identité" + sous-titre 11px "Aussi appelé KYC. Carte d'identité, passeport ou permis pour confirmer qui vous êtes."
+- Fix [js/kyc.js:178-183](apps/byer/js/kyc.js) : modal title devient "Vérification d'identité (KYC)" + paragraphe explicatif "KYC = Know Your Customer".
+- Fix [js/settings.js:351-354](apps/byer/js/settings.js) : section header "Administration (admin uniquement)" + ligne "Modérer les pièces d'identité (KYC)".
+
+**Bug U3 — Bouton "Vérifier" trop discret (lien souligné)** :
+- Avant : style `verifyButtonStyle` = lien orange souligné, peu visible sur mobile.
+- Fix : remplacé par un pill coral solide "Envoyer mes documents" (plus actionable, contraste fort).
+
+### Déploiement frontend (Cloudflare Workers)
+- `npx wrangler deploy` (wrangler v4.85.0 via npx, pas d'install globale).
+- Static assets directory `./` (config wrangler.toml).
+- Validation post-deploy : `curl https://byer.landonjouajosephpino.workers.dev/bundle.js?v=47 | grep -c KycUploadSheet` doit être `> 0`.
+
+### Tests utilisateur après v47 (refait C-T2 → C-T7)
+> ⚠️ **Pino doit faire Ctrl+Shift+R après deploy** pour invalider le SW byer-v45 → byer-v47.
+> Le SW se met à jour automatiquement (`reg.update()` dans index.html), mais le hard reload force le passage immédiat.
+
+### ✅ Validation prod (2026-04-27 14:25)
+- Deploy via `npx wrangler deploy` avec `CLOUDFLARE_API_TOKEN` (PAT non-interactif).
+- Asset directory : 4514 fichiers (après `.assetsignore` enrichi : `.bin/`, `.claude/`, `.wrangler/`, `.vscode/`, `.idea/`).
+- Upload : 9 fichiers modifiés en 18.21 sec → URL prod **byer.landonjouajosephpino.workers.dev** (Version ID `b057d5ed-eb63-4f94-baf1-77a6109a9761`).
+- Vérif live :
+  - `curl /bundle.js?v=47 | grep -c KycUploadSheet|KycAdminScreen|kyc-review` → 11 occurrences ✅
+  - `curl / | grep bundle.js` → `<script src="bundle.js?v=47">` ✅
+  - `curl /sw.js | grep CACHE_NAME` → `byer-v47` ✅
+- **QA utilisateur (Pino) : tous les ajouts UX validés** — bouton "Envoyer mes documents" visible, "Bientôt" sur Email, section "Administration" visible avec "Modérer les pièces d'identité (KYC)", explications KYC partout.
 
 ---
 

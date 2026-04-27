@@ -53,14 +53,94 @@ const NOTIFICATIONS = [
 ];
 
 /* ─── NOTIFICATIONS SCREEN ─────────────────────── */
-function NotificationsScreen({ onBack, onOpenBookings, onOpenMessages, onOpenRent, onOpenBoost, onOpenTechs, onOpenReviews }) {
-  const [notifs, setNotifs] = useState(NOTIFICATIONS);
+// Mapping type DB → icône + couleur (cohérent avec le mock historique)
+const NOTIF_TYPE_VIZ = {
+  booking: { icon:"check",   iconBg:"#F0FDF4", iconColor:"#16A34A" },
+  rent:    { icon:"home",    iconBg:"#FFF5F5", iconColor:C.coral },
+  message: { icon:"message", iconBg:"#EFF6FF", iconColor:"#2563EB" },
+  boost:   { icon:"star",    iconBg:"#FFF7ED", iconColor:"#EA580C" },
+  review:  { icon:"star",    iconBg:"#FDF4FF", iconColor:"#8B5CF6" },
+  system:  { icon:"gear",    iconBg:C.bg,      iconColor:C.mid },
+  tech:    { icon:"check",   iconBg:"#F0FDF4", iconColor:"#16A34A" },
+};
+
+// Adapter : ligne notifications DB → shape attendue par le rendu mock
+function adaptNotification(row) {
+  if (!row) return null;
+  const viz = NOTIF_TYPE_VIZ[row.type] || NOTIF_TYPE_VIZ.system;
+  // Format temps relatif simple ("Il y a 2h" / "Hier" / "Il y a 3j")
+  const created = row.created_at ? new Date(row.created_at) : null;
+  let time = "";
+  if (created) {
+    const diffMs = Date.now() - created.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffH = Math.floor(diffMin / 60);
+    const diffD = Math.floor(diffH / 24);
+    if (diffMin < 60) time = `Il y a ${Math.max(1, diffMin)} min`;
+    else if (diffH < 24) time = `Il y a ${diffH}h`;
+    else if (diffD === 1) time = "Hier";
+    else if (diffD < 7) time = `Il y a ${diffD}j`;
+    else time = `Il y a ${Math.floor(diffD / 7)} sem.`;
+  }
+  return {
+    id:    row.id,
+    type:  row.type,
+    read:  !!row.is_read,
+    title: row.title,
+    body:  row.body || "",
+    time,
+    icon:  viz.icon,
+    iconBg: viz.iconBg,
+    iconColor: viz.iconColor,
+    refId: row.ref_id || null,
+  };
+}
+
+function NotificationsScreen({ currentUserId, onBack, onOpenBookings, onOpenMessages, onOpenRent, onOpenBoost, onOpenTechs, onOpenReviews }) {
+  // ─────────────────────────────────────────────────────────────
+  // Source : Supabase si user connecté, sinon mocks démo (compat offline).
+  // Sans cette branche, tous les users voyaient les mêmes 8 notifs fictives
+  // identiques (audit 2026-04-27).
+  // ─────────────────────────────────────────────────────────────
+  const [notifs, setNotifs] = useState([]);
   const [filter, setFilter] = useState("all");
+  const [loaded, setLoaded] = useState(false);
+  const [usingMock, setUsingMock] = useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const db = window.byer && window.byer.db;
+    (async () => {
+      if (db && db.isReady && currentUserId) {
+        const { data, error } = await db.notifications.listMine(currentUserId, 50);
+        if (cancelled) return;
+        if (!error && Array.isArray(data)) {
+          setNotifs(data.map(adaptNotification).filter(Boolean));
+          setUsingMock(false);
+        } else {
+          // Erreur → on n'affiche rien (empty state) plutôt que des fakes
+          setNotifs([]);
+          setUsingMock(false);
+        }
+      } else {
+        // Pas de session → mocks pour démo (transparence : on indique le mode)
+        setNotifs(NOTIFICATIONS);
+        setUsingMock(true);
+      }
+      setLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [currentUserId]);
 
   const unreadCount = notifs.filter(n => !n.read).length;
 
-  const markRead = (id) => {
+  const markRead = async (id) => {
     setNotifs(prev => prev.map(n => n.id === id ? {...n, read: true} : n));
+    // Persist DB si pas en mode mock
+    if (!usingMock) {
+      const db = window.byer && window.byer.db;
+      if (db && db.isReady) await db.notifications.markRead(id);
+    }
   };
 
   // Routage vers l'écran approprié selon le type de notification
@@ -78,8 +158,12 @@ function NotificationsScreen({ onBack, onOpenBookings, onOpenMessages, onOpenRen
     route?.();
   };
 
-  const markAllRead = () => {
+  const markAllRead = async () => {
     setNotifs(prev => prev.map(n => ({...n, read: true})));
+    if (!usingMock && currentUserId) {
+      const db = window.byer && window.byer.db;
+      if (db && db.isReady) await db.notifications.markAllRead(currentUserId);
+    }
   };
 
   const filters = [

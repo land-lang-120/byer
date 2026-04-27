@@ -2,17 +2,41 @@
 
 function DetailScreen({ item, saved, toggleSave, onBack, openGallery, duration, onViewOwner, onBook, onOpenAllReviews }) {
   const isSaved   = !!saved[item.id];
-  const gallery   = GALLERY[item.id];
+  // Gallery resilient : 3 sources possibles
+  //  1) GALLERY[item.id]   → mocks (IDs numériques 1-20)
+  //  2) item._photos[]     → vraies photos Supabase (UUID), via adaptListing
+  //  3) [item.img]         → fallback single image (placeholder Unsplash)
+  // Sans ce null-check, toute fiche Supabase white-screen (gallery.imgs[0]
+  // sur undefined). Cf. audit 2026-04-27 § Bugs critiques.
+  const gallery = (() => {
+    const mockGal = GALLERY[item.id];
+    if (mockGal && Array.isArray(mockGal.imgs) && mockGal.imgs.length) return mockGal;
+    const supaPhotos = Array.isArray(item._photos) ? item._photos : [];
+    if (supaPhotos.length) {
+      return {
+        imgs: supaPhotos,
+        labels: supaPhotos.map((_, i) => i === 0 ? "Vue principale" : `Photo ${i+1}`),
+      };
+    }
+    return {
+      imgs: [item.img || "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80"],
+      labels: ["Vue principale"],
+    };
+  })();
   const nights    = 3;
   const hasMonthly = item.type==="property" && item.monthPrice;
   const [localDur, setLocalDur] = useState(duration);
   const booked    = BOOKED_UNTIL[item.id];
   const [reviewOpen, setReviewOpen] = useState(false);
 
+  // Owner — d'abord chercher dans OWNERS (mocks), sinon utiliser les données
+  // jointes au listing Supabase (item.profiles via FK owner_id) ou fallback.
   const ownerEntry = Object.values(OWNERS).find(o =>
     o.buildings.some(b => b.units.some(u => u.id === item.id))
   );
-  const ownerName  = ownerEntry?.name || "Ekwalla M.";
+  const ownerName  = ownerEntry?.name
+    || (item._supabase && item.ownerName)   // si l'adapter remplit ownerName plus tard
+    || "Hôte";                              // neutre, plus de "Ekwalla M." par défaut
 
   // Tarif calculé via helper (gère vehicle day/week/month et property night/month)
   const { price, unit } = priceFor(item, localDur);

@@ -1,18 +1,41 @@
-function EditProfileScreen({ onBack }) {
-  // Split "name" -> firstName + lastName pour collecter chaque champ séparément
-  // (Pino : "le nom, prénom (pas nom complet uniquement)")
-  const [firstNameInit, lastNameInit] = (USER.name || "").trim().split(/\s+/, 2);
+function EditProfileScreen({ currentProfile, currentUserId, onSaved, onBack }) {
+  // ─────────────────────────────────────────────────────────────
+  // Init formData : priorité au profil Supabase, fallback mock USER.
+  // Sans ça, le formulaire pré-remplissait toujours les infos de Pino
+  // pour TOUS les utilisateurs (audit 2026-04-27).
+  // ─────────────────────────────────────────────────────────────
+  const profileSource = currentProfile || {};
+  const initName = profileSource.name || USER.name || "";
+  const [firstNameInit, lastNameInit] = initName.trim().split(/\s+/, 2);
   const [formData, setFormData] = useState({
     firstName: firstNameInit || "",
     lastName:  lastNameInit  || "",
-    phone: "+237 6XX XXX XXX",
-    email: "pino@email.com",
-    city: USER.city,
-    bio: "Membre Byer depuis mars 2025"
+    phone:     profileSource.phone || "",
+    email:     profileSource.email || "",
+    city:      profileSource.city || USER.city || "Douala",
+    bio:       profileSource.bio || "",
   });
 
   const [toast, setToast] = useState(null);
-  const cities = ["Douala", "Yaoundé", "Kribi", "Limbé", "Buéa", "Bamenda", "Bafoussam"];
+  const [saving, setSaving] = useState(false);
+
+  // Sheet KYC : ouverture depuis le bouton "Vérifier" de la section Identité.
+  const [kycOpen, setKycOpen] = useState(false);
+
+  // Statut KYC backend : initialement on assume "non vérifié" puis on lit
+  // profiles.identity_verified au mount si Supabase est prêt. Re-fetch au
+  // close de la sheet pour refléter une éventuelle validation entre-temps.
+  const [identityVerified, setIdentityVerified] = useState(!!profileSource.identity_verified);
+  const refreshIdentity = React.useCallback(async () => {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) return;
+    const uid = currentUserId || (await db.auth.getSession()).data?.session?.user?.id;
+    if (!uid) return;
+    const { data, error } = await db.profiles.get(uid);
+    if (!error && data) setIdentityVerified(!!data.identity_verified);
+  }, [currentUserId]);
+  useEffect(() => { refreshIdentity(); }, [refreshIdentity]);
+  const cities = ["Douala", "Yaoundé", "Kribi", "Limbé", "Buéa", "Bamenda", "Bafoussam", "Garoua", "Maroua", "Ebolowa", "Bertoua"];
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -29,11 +52,49 @@ function EditProfileScreen({ onBack }) {
     }));
   };
 
-  const handleSave = () => {
-    setToast("Profil mis à jour !");
-    setTimeout(() => {
-      setToast(null);
-    }, 2000);
+  // Vraie sauvegarde : update profiles via Supabase RLS-safe (la policy
+  // profiles_self_update_safe + REVOKE column-level (mig 0012) empêchent
+  // de toucher rewards_points / tier / verified flags). Si offline, on
+  // affiche un toast d'erreur clair plutôt qu'un faux succès.
+  const handleSave = async () => {
+    if (saving) return;
+    const db = window.byer && window.byer.db;
+    const fullName = `${formData.firstName} ${formData.lastName}`.trim();
+    if (!fullName) {
+      setToast("Le nom et le prénom sont requis");
+      setTimeout(() => setToast(null), 2200);
+      return;
+    }
+    if (!db || !db.isReady || !currentUserId) {
+      // Pas de session → on ne ment plus avec un faux succès
+      setToast("Impossible d'enregistrer (mode hors-ligne)");
+      setTimeout(() => setToast(null), 2200);
+      return;
+    }
+    setSaving(true);
+    const patch = {
+      name:  fullName,
+      phone: formData.phone || null,
+      city:  formData.city || null,
+      bio:   formData.bio || null,
+    };
+    try {
+      const { error } = await db.profiles.update(currentUserId, patch);
+      setSaving(false);
+      if (error) {
+        setToast(`Erreur : ${error.message || "échec d'enregistrement"}`);
+        setTimeout(() => setToast(null), 2800);
+        return;
+      }
+      setToast("Profil mis à jour !");
+      // Notifie ByerApp pour recharger currentProfile dans toutes les vues.
+      if (typeof onSaved === "function") onSaved();
+      setTimeout(() => setToast(null), 2000);
+    } catch (e) {
+      setSaving(false);
+      setToast("Erreur réseau, réessayez");
+      setTimeout(() => setToast(null), 2200);
+    }
   };
 
   const containerStyle = {
@@ -475,22 +536,54 @@ function EditProfileScreen({ onBack }) {
                 <svg width="18" height="18" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 <span style={{fontSize:13,fontWeight:600}}>Non vérifié</span>
               </div>
-              <button style={verifyButtonStyle}>Vérifier</button>
+              <span style={{fontSize:12, color:C.light, fontStyle:"italic"}}>Bientôt</span>
             </div>
           </div>
 
           <div style={verificationItemLastStyle}>
-            <div style={verificationLabelStyle}>Identité</div>
-            <div style={verificationStatusStyle}>
-              <div style={notVerifiedStyle}>
-                <svg width="18" height="18" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                <span style={{fontSize:13,fontWeight:600}}>Non vérifié</span>
+            <div style={{flex:1, minWidth:0}}>
+              <div style={verificationLabelStyle}>Pièce d'identité</div>
+              <div style={{fontSize:11, color:C.light, marginTop:2, lineHeight:1.3}}>
+                Aussi appelé KYC. Carte d'identité, passeport ou permis pour confirmer qui vous êtes.
               </div>
-              <button style={verifyButtonStyle}>Vérifier</button>
+            </div>
+            <div style={verificationStatusStyle}>
+              {identityVerified ? (
+                <div style={verifiedStyle}>
+                  <svg width="18" height="18" fill="none" stroke="#22C55E" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  <span style={{fontSize:13,fontWeight:600}}>Vérifié</span>
+                </div>
+              ) : (
+                <button
+                  style={{
+                    background: C.coral,
+                    border: "none",
+                    color: C.white,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    padding: "8px 14px",
+                    borderRadius: 18,
+                    transition: "transform .15s, box-shadow .15s",
+                    boxShadow: "0 2px 8px rgba(255,90,95,.25)",
+                    fontFamily: "'DM Sans',sans-serif",
+                    flexShrink: 0,
+                    whiteSpace: "nowrap",
+                  }}
+                  onClick={() => setKycOpen(true)}
+                >
+                  Envoyer mes documents
+                </button>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      <KycUploadSheet
+        open={kycOpen}
+        onClose={() => { setKycOpen(false); refreshIdentity(); }}
+      />
 
       <button
         onClick={handleSave}

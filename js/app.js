@@ -9,6 +9,45 @@
    les cartes — Airbnb-style, l'UI s'en fiche d'où
    viennent les données.
    ═══════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════
+   ADAPTER : transforme une ligne Supabase bookings
+   (avec listings + listing_photos joints) vers la shape
+   que TripsScreen attend (booking mock).
+   Sans ça, les vraies réservations Supabase n'apparaissaient
+   pas dans /trips → l'utilisateur changeait d'appareil et
+   ses voyages avaient disparu (audit 2026-04-27).
+   ═══════════════════════════════════════════════════ */
+function adaptBooking(row) {
+  if (!row) return null;
+  const lst = row.listings || {};
+  const photo = (lst.listing_photos || []).slice().sort((a,b)=>(a.position||0)-(b.position||0))[0];
+  const img = photo?.url || "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80";
+  // Mapping status DB → status TripsScreen attendu (active/upcoming/past)
+  // DB enum bookings.status (mig 0001) : 'pending','confirmed','active','completed','cancelled'
+  const dbStatus = row.status || "pending";
+  let uiStatus = "upcoming";
+  if (dbStatus === "active") uiStatus = "active";
+  else if (dbStatus === "completed" || dbStatus === "cancelled") uiStatus = "past";
+  else if (dbStatus === "confirmed" || dbStatus === "pending") uiStatus = "upcoming";
+  return {
+    id:        row.id,
+    status:    uiStatus,
+    rawStatus: dbStatus,                     // pour debug + cancel
+    title:     lst.title || "Réservation",
+    city:      lst.city || "",
+    img,
+    checkin:   row.checkin,
+    checkout:  row.checkout,
+    total:     row.total_price,
+    ref:       row.ref,                      // numéro court 6 chiffres
+    listingId: row.listing_id,
+    qrToken:   row.qr_token || null,
+    paymentMethod: row.payment_method,
+    paymentStatus: row.payment_status,
+    _supabase: true,
+  };
+}
+
 function adaptListing(row) {
   if (!row) return null;
   const photos = (row.listing_photos || [])
@@ -18,6 +57,11 @@ function adaptListing(row) {
   const firstImg = photos[0]?.url
     || "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80";
   const isVehicle = row.type === "vehicle";
+  // Profile owner peut venir via l'embed `profiles!owner_id(...)` (cf.
+  // db.listings.get) ou être absent (cf. db.listings.list qui n'embed pas
+  // owner). Dans le 2e cas, ownerName/Photo restent undefined et l'UI
+  // tombe sur ses fallbacks neutres.
+  const ownerProfile = row.profiles || null;
   return {
     id:          row.id,
     type:        row.type,                        // 'property' | 'vehicle'
@@ -48,6 +92,10 @@ function adaptListing(row) {
     _photos:     photos.map(p => p.url),          // gallerie complète
     _supabase:   true,                            // marqueur source
     ownerId:     row.owner_id,
+    ownerName:   ownerProfile?.name || null,
+    ownerPhoto:  ownerProfile?.photo_url || null,
+    ownerVerified: !!ownerProfile?.identity_verified,
+    ownerSince:  ownerProfile?.member_since || null,
   };
 }
 
@@ -113,6 +161,12 @@ function ByerApp({ onLogout }) {
   const [detail, setDetail]     = useState(null);
   const [gallery, setGallery]   = useState(null);
   const [search, setSearch]     = useState("");
+  // Recherche full-text débouncée — branche sur le RPC search_listings
+  // (mig.0005, ts_vector + filtres) dès qu'on tape ≥2 caractères. Tant que
+  // searchResults est null, on retombe sur la liste classique (dbListings
+  // ou mocks). Quand !== null, c'est la source de vérité.
+  const [searchResults, setSearchResults] = useState(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [rentOpen, setRentOpen]       = useState(false);
   const [ownerProfile, setOwnerProfile] = useState(null);
   const [filters, setFilters]   = useState({
@@ -138,6 +192,48 @@ function ByerApp({ onLogout }) {
   React.useEffect(() => {
     if (tab !== "home" && search !== "") setSearch("");
   }, [tab]);
+
+  // Recherche full-text via RPC search_listings (mig.0005) — debounce 350ms.
+  // Pourquoi un effect séparé : on ne veut pas spammer le backend à chaque
+  // touche. On déclenche dès 2 caractères pour éviter les requêtes inutiles
+  // sur "a"/"e". Si Supabase n'est pas prêt, on laisse searchResults=null
+  // et le filtre client (title/city includes) prendra le relais (mocks).
+  React.useEffect(() => {
+    const q = search.trim();
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady || q.length < 2) {
+      setSearchResults(null);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const { data, error } = await db.listings.search({
+          query: q,
+          type: segment,
+          city: location.id !== "cameroun" ? location.id : null,
+          maxPrice: filters.priceMax < 200000 ? filters.priceMax : null,
+          minRating: filters.minRating > 0 ? filters.minRating : null,
+          amenities: filters.amenities.length ? filters.amenities : null,
+          limit: 50,
+        });
+        if (cancelled) return;
+        if (error) {
+          console.warn("[byer] search_listings error:", error.message);
+          setSearchResults([]);
+        } else {
+          setSearchResults((data || []).map(adaptListing).filter(Boolean));
+        }
+      } catch (e) {
+        if (!cancelled) setSearchResults([]);
+      } finally {
+        if (!cancelled) setSearchLoading(false);
+      }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [search, segment, location.id, filters.priceMax, filters.minRating, filters.amenities]);
   const [qrScanOpen, setQrScanOpen]     = useState(false);
   const [qrResult, setQrResult]         = useState(null);  // scanned code
   const [qrInfoOpen, setQrInfoOpen]     = useState(false); // info dialog
@@ -178,6 +274,60 @@ function ByerApp({ onLogout }) {
   const [forgotOpen, setForgotOpen]         = useState(false);
   const [supportOpen, setSupportOpen]       = useState(false);
 
+  // Détecte si l'utilisateur courant est admin → affiche l'entrée "KYC review"
+  // dans Settings. La même liste d'emails que côté Edge Function (durci en
+  // backend mais utile en frontend pour cacher le bouton aux non-admins).
+  const ADMIN_EMAILS = ["pinolando120@gmail.com"];
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [kycAdminOpen, setKycAdminOpen] = useState(false);
+
+  // Profil utilisateur connecté — chargé depuis Supabase au mount + après
+  // édition (refreshCurrentProfile). Sans ça, ProfileScreen/EditProfileScreen
+  // affichaient le mock USER ("Pino") à TOUS les utilisateurs (bug critique
+  // identifié dans l'audit 2026-04-27 — chaque user voyait son nom remplacé
+  // par "Pino" + sa ville par celle de Pino).
+  // Quand currentProfile est null → fallback transparent sur USER (mode démo
+  // ou Supabase indispo).
+  const [currentUserId, setCurrentUserId]   = useState(null);
+  const [currentProfile, setCurrentProfile] = useState(null);
+  const refreshCurrentProfile = React.useCallback(async () => {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) return;
+    const { data: sess } = await db.auth.getSession();
+    const uid = sess?.session?.user?.id;
+    const email = sess?.session?.user?.email?.toLowerCase();
+    setIsAdmin(!!email && ADMIN_EMAILS.includes(email));
+    if (!uid) {
+      setCurrentUserId(null);
+      setCurrentProfile(null);
+      return;
+    }
+    setCurrentUserId(uid);
+    const { data, error } = await db.profiles.get(uid);
+    if (!error && data) setCurrentProfile(data);
+  }, []);
+  React.useEffect(() => { refreshCurrentProfile(); }, [refreshCurrentProfile]);
+
+  // ─────────────────────────────────────────────────────────────
+  // dbBookings : vraies réservations chargées depuis Supabase au mount
+  // + à chaque changement de role (locataire ↔ bailleur). En mode
+  // bailleur on demande role="host" (filtre col host_id), sinon guest_id.
+  // Sans ce fetch, TripsScreen ne montrait que la liste localStorage et
+  // les mocks démo → réservations perdues entre devices (audit 2026-04-27).
+  // ─────────────────────────────────────────────────────────────
+  const [dbBookings, setDbBookings] = useState([]);
+  const refreshDbBookings = React.useCallback(async () => {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady || !currentUserId) return;
+    const { data, error } = await db.bookings.listMine(currentUserId, role === "bailleur" ? "host" : "guest");
+    if (!error && Array.isArray(data)) {
+      setDbBookings(data.map(adaptBooking).filter(Boolean));
+    } else if (error) {
+      console.warn("[byer] bookings.listMine error:", error.message);
+    }
+  }, [currentUserId, role]);
+  React.useEffect(() => { refreshDbBookings(); }, [refreshDbBookings]);
+
   const toggleSave  = (id, e) => { e?.stopPropagation(); setSaved(p => ({...p,[id]:!p[id]})); };
   const openGallery = (item, idx=0, e) => { e?.stopPropagation(); setGallery({item,idx}); };
 
@@ -187,9 +337,14 @@ function ByerApp({ onLogout }) {
     setDuration(prev => migrateDuration(prev, newSeg));
   };
 
-  // Source de vérité : Supabase si on a des données, sinon mocks pour démo
+  // Source de vérité (priorité décroissante) :
+  //  1. searchResults — recherche full-text RPC active (search.length ≥ 2)
+  //  2. dbListings    — données Supabase chargées au mount
+  //  3. mocks         — fallback démo si offline
   const mockItems = segment === "property" ? PROPERTIES : VEHICLES;
-  const allItems  = dbListings.length ? dbListings : mockItems;
+  const allItems  = searchResults !== null
+    ? searchResults
+    : (dbListings.length ? dbListings : mockItems);
   const items = allItems.filter(i => {
     // Location filter: "cameroun" = tout, sinon filtre par ville
     if (location.id !== "cameroun" && i.city !== location.id) return false;
@@ -214,6 +369,10 @@ function ByerApp({ onLogout }) {
     }
     // instantBook : pas de champ data → on ignore silencieusement (placeholder UX)
 
+    // Filtre textuel : si searchResults est actif, le RPC a déjà fait le job
+    // (ts_vector pondéré title>city>desc). On n'applique le includes() que
+    // sur la liste mock/db pour rester rétro-compatible offline.
+    if (searchResults !== null) return true;
     const q = search.toLowerCase();
     return !q || i.title.toLowerCase().includes(q) || i.city.toLowerCase().includes(q);
   });
@@ -305,7 +464,7 @@ function ByerApp({ onLogout }) {
   const onSecondaryScreen = !!detail || !!gallery || !!allReviewsItem
     || rentOpen || !!ownerProfile || !!buildingDetail || dashboardOpen
     || !!listAllFilter || techsOpen || prosOpen || boostOpen || notifsOpen
-    || publishOpen || settingsOpen || termsOpen || privacyOpen || forgotOpen
+    || publishOpen || settingsOpen || kycAdminOpen || termsOpen || privacyOpen || forgotOpen
     || supportOpen || editProfileOpen || !!bookingItem || reviewsOpen || historyOpen;
   const hideGlobalNav = chatActive || !!gallery || qrScanOpen || onSecondaryScreen;
 
@@ -365,6 +524,7 @@ function ByerApp({ onLogout }) {
     screenContent = <BoostScreen onBack={()=>closeAndMaybeReturnToDashboard(setBoostOpen)}/>;
   } else if (notifsOpen) {
     screenContent = <NotificationsScreen
+                      currentUserId={currentUserId}
                       onBack={()=>setNotifsOpen(false)}
                       onOpenBookings={()=>{ setNotifsOpen(false); setTab("trips"); }}
                       onOpenMessages={()=>{ setNotifsOpen(false); setTab("messages"); }}
@@ -388,14 +548,23 @@ function ByerApp({ onLogout }) {
                       onOpenPrivacy={()=>setPrivacyOpen(true)}
                       onOpenForgotPassword={()=>setForgotOpen(true)}
                       onOpenSupport={()=>setSupportOpen(true)}
+                      isAdmin={isAdmin}
+                      onOpenKycAdmin={()=>{ setSettingsOpen(false); setKycAdminOpen(true); }}
                       onLogout={()=>{ setSettingsOpen(false); onLogout?.(); }}
                       onDeleteAccount={()=>{ setSettingsOpen(false); onLogout?.(); }}
                     />;
+  } else if (kycAdminOpen) {
+    screenContent = <KycAdminScreen onBack={()=>setKycAdminOpen(false)}/>;
   } else if (termsOpen)       { screenContent = <TermsScreen   onBack={()=>setTermsOpen(false)}/>; }
   else if (privacyOpen)       { screenContent = <PrivacyScreen onBack={()=>setPrivacyOpen(false)}/>; }
   else if (forgotOpen)        { screenContent = <ForgotPasswordScreen onBack={()=>setForgotOpen(false)}/>; }
   else if (supportOpen)       { screenContent = <SupportScreen onBack={()=>setSupportOpen(false)}/>; }
-  else if (editProfileOpen)   { screenContent = <EditProfileScreen onBack={()=>setEditProfileOpen(false)}/>; }
+  else if (editProfileOpen)   { screenContent = <EditProfileScreen
+                                                   currentProfile={currentProfile}
+                                                   currentUserId={currentUserId}
+                                                   onSaved={refreshCurrentProfile}
+                                                   onBack={()=>{ setEditProfileOpen(false); refreshCurrentProfile(); }}
+                                                 />; }
   else if (bookingItem) {
     screenContent = <BookingScreen
                       item={bookingItem}
@@ -433,6 +602,7 @@ function ByerApp({ onLogout }) {
           duration={duration} setDuration={setDuration}
           location={location} onOpenLocPicker={() => setLocOpen(true)}
           search={search} setSearch={setSearch}
+          searchLoading={searchLoading}
           activeFilterCount={activeFilterCount}
           onOpenFilter={() => setFilterOpen(true)}
           items={items} saved={saved}
@@ -445,8 +615,49 @@ function ByerApp({ onLogout }) {
           onOpenBoost={()=>setBoostOpen(true)}
         />
       }
-      {tab==="saved"    && <SavedScreen role={role} items={[...PROPERTIES,...VEHICLES].filter(i=>saved[i.id])} openDetail={setDetail} toggleSave={toggleSave} saved={saved} openGallery={openGallery} duration={duration}/>}
-      {tab==="trips"    && <TripsScreen role={role} openDetail={setDetail} userBookings={userBookings} onCancelBooking={(id)=>setUserBookings(prev=>prev.filter(b=>b.id!==id))}/>}
+      {tab==="saved"    && <SavedScreen
+                              role={role}
+                              /*
+                                Source de vérité favoris :
+                                  - Les annonces Supabase (dbListings) ET les mocks (PROPERTIES + VEHICLES).
+                                  - On dédoublonne par id (priorité Supabase si même id).
+                                Sans ça, un user qui mettait en favori une vraie annonce ne la
+                                retrouvait jamais dans Favoris (audit 2026-04-27).
+                              */
+                              items={(() => {
+                                const all = [...dbListings];
+                                const seen = new Set(all.map(i => i.id));
+                                [...PROPERTIES, ...VEHICLES].forEach(i => {
+                                  if (!seen.has(i.id)) all.push(i);
+                                });
+                                return all.filter(i => saved[i.id]);
+                              })()}
+                              openDetail={setDetail}
+                              toggleSave={toggleSave}
+                              saved={saved}
+                              openGallery={openGallery}
+                              duration={duration}
+                           />}
+      {tab==="trips"    && <TripsScreen
+                              role={role}
+                              openDetail={setDetail}
+                              userBookings={dbBookings.length ? dbBookings : userBookings}
+                              dbBookingsLoaded={dbBookings.length > 0}
+                              onCancelBooking={async (id) => {
+                                // 1) si réservation Supabase → RPC cancel_booking (atomique avec refund)
+                                const target = dbBookings.find(b => b.id === id);
+                                if (target && target._supabase) {
+                                  const db = window.byer && window.byer.db;
+                                  if (db && db.isReady) {
+                                    const { error } = await db.bookings.cancel(id, "Annulation utilisateur");
+                                    if (!error) await refreshDbBookings();
+                                    return;
+                                  }
+                                }
+                                // 2) fallback localStorage pour les vieilles résa démo
+                                setUserBookings(prev => prev.filter(b => b.id !== id));
+                              }}
+                            />}
       {/* Boutons QR sur l'onglet Voyages :
           - "Mon QR Code" (icône noire / fond blanc) au-dessus → locataire présente son QR
           - "Scanner QR" (coral) en dessous → bailleur scanne le QR du voyageur
@@ -454,7 +665,7 @@ function ByerApp({ onLogout }) {
       {tab==="trips" && <MyQRCodeButton onClick={() => setMyQrOpen(true)}/>}
       {tab==="trips" && <QRScanButton onClick={() => setQrInfoOpen(true)}/>}
       {tab==="messages" && <MessagesScreen role={role} onChatActiveChange={setChatActive}/>}
-      {tab==="profile"  && <ProfileScreen role={role} setRole={setRole} onOpenRent={() => setRentOpen(true)} onOpenDashboard={()=>setDashboardOpen(true)} onOpenTechs={()=>{setTechsRole(role);setTechsOpen(true);}} onOpenPros={()=>{setProsRole(role);setProsOpen(true);}} onOpenPublish={()=>{setPublishSegment(null);setPublishOpen(true);}} onOpenSettings={()=>setSettingsOpen(true)} onOpenEditProfile={()=>setEditProfileOpen(true)} onOpenReviews={()=>setReviewsOpen(true)} onOpenHistory={()=>setHistoryOpen(true)} onLogout={onLogout}/>}
+      {tab==="profile"  && <ProfileScreen role={role} setRole={setRole} currentProfile={currentProfile} onOpenRent={() => setRentOpen(true)} onOpenDashboard={()=>setDashboardOpen(true)} onOpenTechs={()=>{setTechsRole(role);setTechsOpen(true);}} onOpenPros={()=>{setProsRole(role);setProsOpen(true);}} onOpenPublish={()=>{setPublishSegment(null);setPublishOpen(true);}} onOpenSettings={()=>setSettingsOpen(true)} onOpenEditProfile={()=>setEditProfileOpen(true)} onOpenReviews={()=>setReviewsOpen(true)} onOpenHistory={()=>setHistoryOpen(true)} onLogout={onLogout}/>}
 
       {/* My QR Code dialog (locataire) */}
       {myQrOpen && <MyQRCodeDialog booking={myQrBooking} onClose={() => setMyQrOpen(false)}/>}

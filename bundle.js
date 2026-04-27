@@ -305,8 +305,15 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
       });
     },
     signInOAuth: async provider => {
+      // redirectTo obligatoire en prod : sans ça, Google retombe sur l'URL
+      // racine du Dashboard Supabase (configurée dans Authentication → URL
+      // Configuration) au lieu de revenir dans l'app. Audit 2026-04-27.
+      // window.location.origin couvre prod (workers.dev) ET local (localhost:3001).
       return await sb.auth.signInWithOAuth({
-        provider
+        provider,
+        options: {
+          redirectTo: window.location.origin + "/"
+        }
       });
     },
     resetPassword: async email => {
@@ -354,7 +361,7 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
   //  KYC (migration 0004)
   // ──────────────────────────────────────────────────
   const kyc = {
-    list: async userId => sb.from("kyc_documents").select("*").eq("user_id", userId).order("uploaded_at", {
+    list: async userId => sb.from("kyc_documents").select("*").eq("user_id", userId).order("submitted_at", {
       ascending: false
     }),
     upload: async (file, userId, docType) => {
@@ -386,18 +393,24 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
 
   // ──────────────────────────────────────────────────
   //  TRUSTED DEVICES (migration 0004)
+  //  ⚠️ L'INSERT direct côté client est bloqué par RLS (cf. mig 0004 :
+  //  "L'insertion est faite par une edge function"). La méthode register()
+  //  reste exposée pour compatibilité mais retournera une erreur RLS tant
+  //  que l'edge function "register-device" n'existe pas.
+  //  Schéma réel : device_hash (hash stable), device_label (nom humain).
   // ──────────────────────────────────────────────────
   const devices = {
     list: async userId => sb.from("trusted_devices").select("*").eq("user_id", userId).order("last_seen_at", {
       ascending: false
     }),
-    register: async (userId, deviceName, fingerprint) => sb.from("trusted_devices").upsert({
+    register: async (userId, deviceLabel, deviceHash, platform) => sb.from("trusted_devices").upsert({
       user_id: userId,
-      device_name: deviceName,
-      fingerprint,
+      device_label: deviceLabel,
+      device_hash: deviceHash,
+      platform: platform || null,
       last_seen_at: new Date().toISOString()
     }, {
-      onConflict: "user_id,fingerprint"
+      onConflict: "user_id,device_hash"
     }).select().single(),
     remove: async id => sb.from("trusted_devices").delete().eq("id", id)
   };
@@ -572,10 +585,11 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
         body
       }).select().single();
       if (!error) {
-        // Bumpe last_message_at + last_message_preview
+        // Bumpe last_message_at uniquement (last_message_preview n'existe pas
+        // dans le schéma — la preview est calculée côté UI via listConversations
+        // qui peut joindre le dernier message si besoin).
         await sb.from("conversations").update({
-          last_message_at: new Date().toISOString(),
-          last_message_preview: body.slice(0, 200)
+          last_message_at: new Date().toISOString()
         }).eq("id", conversationId);
       }
       return {
@@ -620,10 +634,12 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
     //   si non fourni. Le trigger validate_review_eligibility rejette si
     //   l'auteur n'est pas le guest d'un booking completed.
     create: async data => sb.from("reviews").insert(data).select().single(),
-    // Réponse hôte (champ host_response, host_response_at)
+    // Réponse hôte (schéma réel : reply, reply_at — cf. mig 0001:177-178)
+    // Le trigger notify_guest_on_review_reply (mig 0007) crée une notification
+    // pour le guest dès que reply passe de NULL à une valeur.
     reply: async (reviewId, replyText) => sb.from("reviews").update({
-      host_response: replyText,
-      host_response_at: new Date().toISOString()
+      reply: replyText,
+      reply_at: new Date().toISOString()
     }).eq("id", reviewId).select().single()
   };
 
@@ -647,21 +663,27 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
   //  (migrations 0001 + 0007)
   // ──────────────────────────────────────────────────
   const rewards = {
-    // Catalogue éditable depuis dashboard Supabase (table rewards_catalog)
-    listCatalog: async () => sb.from("rewards_catalog").select("*").eq("is_active", true).order("cost", {
+    // Catalogue éditable depuis dashboard Supabase (table rewards_catalog).
+    // Schéma réel (mig 0007) : cost_points (pas "cost"), position pour ordre.
+    listCatalog: async () => sb.from("rewards_catalog").select("*").eq("is_active", true).order("position", {
+      ascending: true
+    }).order("cost_points", {
       ascending: true
     }),
-    // Solde + tier — lus depuis profile (read-only via API)
-    getBalance: async userId => sb.from("profiles").select("rewards_points, rewards_tier, referral_count").eq("id", userId).single(),
+    // Solde + tier — lus depuis profile (read-only via API).
+    // Schéma réel (mig 0001:29-35) : "tier" est generated stored, pas "rewards_tier".
+    getBalance: async userId => sb.from("profiles").select("rewards_points, tier, referral_count").eq("id", userId).single(),
     // Historique des transactions (gain + débit)
     listPoints: async userId => sb.from("points_transactions").select("*").eq("user_id", userId).order("created_at", {
       ascending: false
     }),
-    // Coupons générés par échange (filtrable actifs / utilisés / expirés)
+    // Coupons générés par échange (filtrable actifs / utilisés / expirés).
+    // Schéma réel (mig 0001:200-211) : pas de colonne "status" — on filtre via
+    // is_used=false ET expires_at > now() pour "actif".
     listCoupons: async (userId, activeOnly = true) => {
       let q = sb.from("coupons").select("*").eq("user_id", userId);
       if (activeOnly) {
-        q = q.eq("status", "active");
+        q = q.eq("is_used", false).gt("expires_at", new Date().toISOString());
       }
       return await q.order("created_at", {
         ascending: false
@@ -7691,11 +7713,12 @@ function LoginScreen({
       return;
     }
 
-    // Fallback mock (Supabase indisponible)
-    setTimeout(() => {
-      setLoading(false);
-      onLogin();
-    }, 1400);
+    // Supabase indisponible → on ne bypass PLUS l'auth en prod (audit 2026-04-27).
+    // Avant : setTimeout(()=>{ setLoading(false); onLogin(); }, 1400) — entrait
+    // dans l'app sans session valide → toutes les requêtes DB échouaient
+    // silencieusement avec des erreurs RLS cryptiques côté UI.
+    setLoading(false);
+    setErr("Service temporairement indisponible. Réessayez dans quelques instants.");
   };
   return /*#__PURE__*/React.createElement("div", {
     style: Os.root
@@ -7993,7 +8016,7 @@ function LoginScreen({
       fontFamily: "'DM Sans',sans-serif"
     },
     onClick: onSignup
-  }, "Cr\xE9er un compte")), /*#__PURE__*/React.createElement("button", {
+  }, "Cr\xE9er un compte")), (!window.byer || !window.byer.db || !window.byer.db.isReady) && /*#__PURE__*/React.createElement("button", {
     onClick: onLogin,
     style: {
       background: "none",
@@ -8016,7 +8039,7 @@ function LoginScreen({
     style: {
       fontSize: 14
     }
-  }, "\uD83D\uDC40"), "D\xE9couvrir l'app sans compte")));
+  }, "\uD83D\uDC40"), "D\xE9couvrir l'app sans compte (mode d\xE9mo offline)")));
 }
 
 /* ─── SIGNUP ─────────────────────────────────────── */
@@ -8892,6 +8915,7 @@ function HomeScreen({
   onOpenLocPicker,
   search,
   setSearch,
+  searchLoading,
   activeFilterCount,
   onOpenFilter,
   items,
@@ -8914,13 +8938,19 @@ function HomeScreen({
      Côté bailleur  : on pilote des locations & des revenus. */
   const greeting = isBailleur ? segment === "property" ? "Pilotez vos locations immobilières" : "Pilotez vos locations de véhicules" : segment === "property" ? "Votre logement à portée de main !" : "Prêt à prendre la route ?";
 
-  /* Stats du bailleur (mock dérivé des données) */
+  /* Stats du bailleur (mock dérivé des données — sera branché sur Supabase
+     dans une prochaine itération : db.listings.listMine + db.bookings.listMine
+     + agrégation revenue côté serveur). Tant qu'on est en mock, on affiche
+     un bandeau de transparence pour ne pas mentir à l'utilisateur sur ses
+     vraies stats — audit 2026-04-27. */
   const ownerProperties = PROPERTIES.slice(0, 4); // mes annonces (mock)
   const ownerVehicles = VEHICLES.slice(0, 3);
   const myListings = segment === "property" ? ownerProperties : ownerVehicles;
   const incomingReqs = BOOKINGS.filter(b => b.status === "upcoming").length;
   const activeBookings = BOOKINGS.filter(b => b.status === "active").length;
   const monthRevenue = BOOKINGS.reduce((s, b) => s + b.price * b.nights, 0);
+  const ownerStatsAreMock = true; // flag pour bandeau "démo"
+
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: S.stickyTop
   }, /*#__PURE__*/React.createElement("div", {
@@ -9003,7 +9033,16 @@ function HomeScreen({
     style: S.searchRow
   }, /*#__PURE__*/React.createElement("div", {
     style: S.searchWrap
-  }, /*#__PURE__*/React.createElement(Icon, {
+  }, searchLoading ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 17,
+      height: 17,
+      border: `2px solid ${C.coral}`,
+      borderTopColor: "transparent",
+      borderRadius: "50%",
+      animation: "spin .8s linear infinite"
+    }
+  }) : /*#__PURE__*/React.createElement(Icon, {
     name: "search",
     size: 17,
     color: C.mid
@@ -9066,7 +9105,31 @@ function HomeScreen({
     style: {
       padding: "12px 16px 0"
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, ownerStatsAreMock && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "8px 12px",
+      background: "#FFFBEB",
+      border: "1px solid #FDE68A",
+      borderRadius: 10,
+      marginBottom: 10,
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 14
+    }
+  }, "\uD83D\uDCCA"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: "#78350F",
+      margin: 0,
+      lineHeight: 1.4,
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement("strong", null, "D\xE9mo"), " \xB7 Vos vraies stats appara\xEEtront apr\xE8s votre premi\xE8re annonce.")), /*#__PURE__*/React.createElement("div", {
     style: {
       background: "linear-gradient(135deg,#7E22CE 0%,#A855F7 100%)",
       borderRadius: 18,
@@ -9795,14 +9858,38 @@ function DetailScreen({
   onOpenAllReviews
 }) {
   const isSaved = !!saved[item.id];
-  const gallery = GALLERY[item.id];
+  // Gallery resilient : 3 sources possibles
+  //  1) GALLERY[item.id]   → mocks (IDs numériques 1-20)
+  //  2) item._photos[]     → vraies photos Supabase (UUID), via adaptListing
+  //  3) [item.img]         → fallback single image (placeholder Unsplash)
+  // Sans ce null-check, toute fiche Supabase white-screen (gallery.imgs[0]
+  // sur undefined). Cf. audit 2026-04-27 § Bugs critiques.
+  const gallery = (() => {
+    const mockGal = GALLERY[item.id];
+    if (mockGal && Array.isArray(mockGal.imgs) && mockGal.imgs.length) return mockGal;
+    const supaPhotos = Array.isArray(item._photos) ? item._photos : [];
+    if (supaPhotos.length) {
+      return {
+        imgs: supaPhotos,
+        labels: supaPhotos.map((_, i) => i === 0 ? "Vue principale" : `Photo ${i + 1}`)
+      };
+    }
+    return {
+      imgs: [item.img || "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80"],
+      labels: ["Vue principale"]
+    };
+  })();
   const nights = 3;
   const hasMonthly = item.type === "property" && item.monthPrice;
   const [localDur, setLocalDur] = useState(duration);
   const booked = BOOKED_UNTIL[item.id];
   const [reviewOpen, setReviewOpen] = useState(false);
+
+  // Owner — d'abord chercher dans OWNERS (mocks), sinon utiliser les données
+  // jointes au listing Supabase (item.profiles via FK owner_id) ou fallback.
   const ownerEntry = Object.values(OWNERS).find(o => o.buildings.some(b => b.units.some(u => u.id === item.id)));
-  const ownerName = ownerEntry?.name || "Ekwalla M.";
+  const ownerName = ownerEntry?.name || item._supabase && item.ownerName // si l'adapter remplit ownerName plus tard
+  || "Hôte"; // neutre, plus de "Ekwalla M." par défaut
 
   // Tarif calculé via helper (gère vehicle day/week/month et property night/month)
   const {
@@ -11346,6 +11433,7 @@ function TripsScreen({
   role,
   openDetail,
   userBookings = [],
+  dbBookingsLoaded = false,
   onCancelBooking
 }) {
   const [filter, setFilter] = useState("all");
@@ -11362,18 +11450,36 @@ function TripsScreen({
   };
   const isBailleur = role === "bailleur";
 
-  // Fusion : réservations utilisateur (récentes en premier) + mocks démo
-  // En mode bailleur on simule les réservations entrantes : on enrichit chaque booking avec
-  // un "guest" (le voyageur) pour différencier visuellement.
-  const allBookings = isBailleur ? BOOKINGS.map((b, i) => ({
+  // Source : si Supabase a chargé des réservations (dbBookingsLoaded=true),
+  // on affiche EXCLUSIVEMENT les vraies données. Sinon, on fusionne les
+  // réservations localStorage (offline) + mocks démo pour rester utilisable.
+  // Cette logique évite que les vraies réservations soient mélangées avec
+  // les fakes (sinon "Mes voyages" afficherait BOOKINGS pour tout le monde).
+  const allBookings = isBailleur ? dbBookingsLoaded
+  // Mode bailleur + DB : pour chaque booking on enrichit avec guest +
+  // statut bailleur. Les noms guest sont génériques (à remplacer par
+  // le vrai profile.guest_id quand la jointure sera ajoutée).
+  ? userBookings.map((b, i) => ({
+    ...b,
+    guest: b.guestName || `Voyageur ${i + 1}`,
+    guestPhoto: b.guestPhoto || null,
+    adults: b.guests || 1,
+    requestedAt: b.created_at ? "" : "—",
+    bailleurStatus: b.rawStatus === "pending" ? "pending" : b.rawStatus === "active" ? "in_progress" : b.rawStatus === "completed" ? "completed" : b.rawStatus === "cancelled" ? "completed" : "pending"
+  }))
+  // Mode bailleur + offline : démo avec mocks enrichis
+  : BOOKINGS.map((b, i) => ({
     ...b,
     guest: ["Caroline N.", "David Mboma", "Aïcha B.", "Junior K.", "Sandrine T."][i % 5],
     guestPhoto: `https://i.pravatar.cc/80?img=${20 + i * 4}`,
     adults: 2 + i % 3,
     requestedAt: ["Il y a 2h", "Il y a 1j", "Il y a 3j", "Il y a 5j"][i % 4],
-    // En mode bailleur, "upcoming" devient "demandes en attente"
     bailleurStatus: b.status === "upcoming" ? "pending" : b.status === "active" ? "in_progress" : "completed"
-  })) : [...userBookings, ...BOOKINGS];
+  })) : dbBookingsLoaded
+  // Locataire + DB : on n'utilise QUE les vraies réservations
+  ? userBookings
+  // Locataire + offline : localStorage + mocks démo (rétro-compat)
+  : [...userBookings, ...BOOKINGS];
   const filtered = filter === "all" ? allBookings : isBailleur ? allBookings.filter(b => b.bailleurStatus === filter) : allBookings.filter(b => b.status === filter);
   const openMaps = (booking, e) => {
     e.stopPropagation();
@@ -13309,6 +13415,7 @@ function ChatScreen({
 function ProfileScreen({
   role,
   setRole,
+  currentProfile,
   onOpenRent,
   onOpenDashboard,
   onOpenTechs,
@@ -13320,6 +13427,20 @@ function ProfileScreen({
   onOpenHistory,
   onLogout
 }) {
+  // ─────────────────────────────────────────────────────────────
+  // Identité affichée : priorité au profil Supabase chargé par ByerApp,
+  // fallback sur le mock USER si offline ou pas connecté. Sans ça,
+  // tous les users voyaient "Pino" + ville de Pino (audit 2026-04-27).
+  // ─────────────────────────────────────────────────────────────
+  const displayName = currentProfile?.name || USER.name || "Utilisateur";
+  const displayCity = currentProfile?.city || USER.city || "Cameroun";
+  const displaySince = currentProfile?.member_since ? new Date(currentProfile.member_since).toLocaleDateString("fr-FR", {
+    month: "long",
+    year: "numeric"
+  }) : USER.since;
+  const displayPhoto = currentProfile?.photo_url || USER.photo;
+  const displayAvatar = currentProfile?.avatar_letter || USER.avatar;
+  const displayBg = currentProfile?.avatar_bg || USER.bg;
   const urgentCount = LOYERS_LOCATAIRE.filter(l => l.statut === "en_attente" && l.rappelActif).length + LOYERS_BAILLEUR.filter(l => l.statut === "en_attente" && l.joursRestants <= 7).length;
 
   /* Le rôle est désormais lifté dans ByerApp et propagé via props (sync entre toutes les pages). */
@@ -13365,8 +13486,10 @@ function ProfileScreen({
     setTimeout(() => setToast(""), 2200);
   };
 
-  // Programme parrainage : code de référence stable
-  const referralCode = (USER.name || "BYER").replace(/\s+/g, "").toUpperCase().slice(0, 6) + "24";
+  // Programme parrainage : code de référence stable.
+  // Utilise le code de la DB s'il existe (généré par trigger generate_referral_code
+  // au signup), sinon dérive depuis displayName (compat mock).
+  const referralCode = currentProfile?.referral_code || (displayName || "BYER").replace(/\s+/g, "").toUpperCase().slice(0, 6) + "24";
   const referralLink = `https://byer.cm/r/${referralCode}`;
   const handleShareInvite = async () => {
     const shareData = {
@@ -13581,9 +13704,9 @@ function ProfileScreen({
       boxShadow: `0 1px 8px rgba(0,0,0,.05)`
     }
   }, /*#__PURE__*/React.createElement(FaceAvatar, {
-    photo: USER.photo,
-    avatar: USER.avatar,
-    bg: USER.bg,
+    photo: displayPhoto,
+    avatar: displayAvatar,
+    bg: displayBg,
     size: 56,
     radius: 28
   }), /*#__PURE__*/React.createElement("div", {
@@ -13607,7 +13730,7 @@ function ProfileScreen({
       textOverflow: "ellipsis",
       whiteSpace: "nowrap"
     }
-  }, USER.name), /*#__PURE__*/React.createElement("span", {
+  }, displayName), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 10,
       fontWeight: 700,
@@ -13632,7 +13755,7 @@ function ProfileScreen({
       color: C.light,
       marginTop: 2
     }
-  }, USER.city, " \xB7 Membre ", USER.since))), /*#__PURE__*/React.createElement("div", {
+  }, displayCity, " \xB7 Membre ", displaySince))), /*#__PURE__*/React.createElement("div", {
     style: {
       margin: "0 16px 14px",
       display: "flex",
@@ -18167,6 +18290,42 @@ function OwnerDashboardScreen({
       width: 38
     }
   })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: "10px 16px 0",
+      padding: "10px 14px",
+      background: "#FFFBEB",
+      border: "1px solid #FDE68A",
+      borderRadius: 12,
+      display: "flex",
+      alignItems: "flex-start",
+      gap: 10,
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 18,
+      lineHeight: "20px"
+    }
+  }, "\uD83D\uDCCA"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: "#92400E",
+      margin: 0
+    }
+  }, "Donn\xE9es de d\xE9monstration"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: "#78350F",
+      margin: "2px 0 0",
+      lineHeight: 1.4
+    }
+  }, "Les chiffres ci-dessous sont des exemples. Vos vraies statistiques appara\xEEtront d\xE8s que vous publierez votre premi\xE8re annonce."))), /*#__PURE__*/React.createElement("div", {
     style: {
       margin: "12px 16px",
       background: C.white,
@@ -24622,7 +24781,74 @@ const NOTIFICATIONS = [{
 }];
 
 /* ─── NOTIFICATIONS SCREEN ─────────────────────── */
+// Mapping type DB → icône + couleur (cohérent avec le mock historique)
+const NOTIF_TYPE_VIZ = {
+  booking: {
+    icon: "check",
+    iconBg: "#F0FDF4",
+    iconColor: "#16A34A"
+  },
+  rent: {
+    icon: "home",
+    iconBg: "#FFF5F5",
+    iconColor: C.coral
+  },
+  message: {
+    icon: "message",
+    iconBg: "#EFF6FF",
+    iconColor: "#2563EB"
+  },
+  boost: {
+    icon: "star",
+    iconBg: "#FFF7ED",
+    iconColor: "#EA580C"
+  },
+  review: {
+    icon: "star",
+    iconBg: "#FDF4FF",
+    iconColor: "#8B5CF6"
+  },
+  system: {
+    icon: "gear",
+    iconBg: C.bg,
+    iconColor: C.mid
+  },
+  tech: {
+    icon: "check",
+    iconBg: "#F0FDF4",
+    iconColor: "#16A34A"
+  }
+};
+
+// Adapter : ligne notifications DB → shape attendue par le rendu mock
+function adaptNotification(row) {
+  if (!row) return null;
+  const viz = NOTIF_TYPE_VIZ[row.type] || NOTIF_TYPE_VIZ.system;
+  // Format temps relatif simple ("Il y a 2h" / "Hier" / "Il y a 3j")
+  const created = row.created_at ? new Date(row.created_at) : null;
+  let time = "";
+  if (created) {
+    const diffMs = Date.now() - created.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffH = Math.floor(diffMin / 60);
+    const diffD = Math.floor(diffH / 24);
+    if (diffMin < 60) time = `Il y a ${Math.max(1, diffMin)} min`;else if (diffH < 24) time = `Il y a ${diffH}h`;else if (diffD === 1) time = "Hier";else if (diffD < 7) time = `Il y a ${diffD}j`;else time = `Il y a ${Math.floor(diffD / 7)} sem.`;
+  }
+  return {
+    id: row.id,
+    type: row.type,
+    read: !!row.is_read,
+    title: row.title,
+    body: row.body || "",
+    time,
+    icon: viz.icon,
+    iconBg: viz.iconBg,
+    iconColor: viz.iconColor,
+    refId: row.ref_id || null
+  };
+}
 function NotificationsScreen({
+  currentUserId,
   onBack,
   onOpenBookings,
   onOpenMessages,
@@ -24631,14 +24857,55 @@ function NotificationsScreen({
   onOpenTechs,
   onOpenReviews
 }) {
-  const [notifs, setNotifs] = useState(NOTIFICATIONS);
+  // ─────────────────────────────────────────────────────────────
+  // Source : Supabase si user connecté, sinon mocks démo (compat offline).
+  // Sans cette branche, tous les users voyaient les mêmes 8 notifs fictives
+  // identiques (audit 2026-04-27).
+  // ─────────────────────────────────────────────────────────────
+  const [notifs, setNotifs] = useState([]);
   const [filter, setFilter] = useState("all");
+  const [loaded, setLoaded] = useState(false);
+  const [usingMock, setUsingMock] = useState(false);
+  React.useEffect(() => {
+    let cancelled = false;
+    const db = window.byer && window.byer.db;
+    (async () => {
+      if (db && db.isReady && currentUserId) {
+        const {
+          data,
+          error
+        } = await db.notifications.listMine(currentUserId, 50);
+        if (cancelled) return;
+        if (!error && Array.isArray(data)) {
+          setNotifs(data.map(adaptNotification).filter(Boolean));
+          setUsingMock(false);
+        } else {
+          // Erreur → on n'affiche rien (empty state) plutôt que des fakes
+          setNotifs([]);
+          setUsingMock(false);
+        }
+      } else {
+        // Pas de session → mocks pour démo (transparence : on indique le mode)
+        setNotifs(NOTIFICATIONS);
+        setUsingMock(true);
+      }
+      setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId]);
   const unreadCount = notifs.filter(n => !n.read).length;
-  const markRead = id => {
+  const markRead = async id => {
     setNotifs(prev => prev.map(n => n.id === id ? {
       ...n,
       read: true
     } : n));
+    // Persist DB si pas en mode mock
+    if (!usingMock) {
+      const db = window.byer && window.byer.db;
+      if (db && db.isReady) await db.notifications.markRead(id);
+    }
   };
 
   // Routage vers l'écran approprié selon le type de notification
@@ -24655,11 +24922,15 @@ function NotificationsScreen({
     }[notif.type];
     route?.();
   };
-  const markAllRead = () => {
+  const markAllRead = async () => {
     setNotifs(prev => prev.map(n => ({
       ...n,
       read: true
     })));
+    if (!usingMock && currentUserId) {
+      const db = window.byer && window.byer.db;
+      if (db && db.isReady) await db.notifications.markAllRead(currentUserId);
+    }
   };
   const filters = [{
     id: "all",
@@ -27966,7 +28237,9 @@ function SettingsScreen({
   onOpenForgotPassword,
   onOpenSupport,
   onLogout,
-  onDeleteAccount
+  onDeleteAccount,
+  isAdmin,
+  onOpenKycAdmin
 }) {
   // Hook i18n : force le re-render quand la langue change globalement.
   window.byerI18n.useLangTick();
@@ -28309,7 +28582,13 @@ function SettingsScreen({
       value: `${DEVICES.length}`
     }),
     onPress: () => setShowDevicesSheet(true)
-  }), /*#__PURE__*/React.createElement(SectionHeader, {
+  }), isAdmin && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(SectionHeader, {
+    title: "Administration (admin uniquement)"
+  }), /*#__PURE__*/React.createElement(RowItem, {
+    label: "Mod\xE9rer les pi\xE8ces d'identit\xE9 (KYC)",
+    rightElement: /*#__PURE__*/React.createElement(ChevronElement, null),
+    onPress: onOpenKycAdmin
+  })), /*#__PURE__*/React.createElement(SectionHeader, {
     title: t("settings.help")
   }), /*#__PURE__*/React.createElement(RowItem, {
     label: t("settings.helpCenter"),
@@ -28612,21 +28891,52 @@ function PickerSheet({
 "use strict";
 
 function EditProfileScreen({
+  currentProfile,
+  currentUserId,
+  onSaved,
   onBack
 }) {
-  // Split "name" -> firstName + lastName pour collecter chaque champ séparément
-  // (Pino : "le nom, prénom (pas nom complet uniquement)")
-  const [firstNameInit, lastNameInit] = (USER.name || "").trim().split(/\s+/, 2);
+  // ─────────────────────────────────────────────────────────────
+  // Init formData : priorité au profil Supabase, fallback mock USER.
+  // Sans ça, le formulaire pré-remplissait toujours les infos de Pino
+  // pour TOUS les utilisateurs (audit 2026-04-27).
+  // ─────────────────────────────────────────────────────────────
+  const profileSource = currentProfile || {};
+  const initName = profileSource.name || USER.name || "";
+  const [firstNameInit, lastNameInit] = initName.trim().split(/\s+/, 2);
   const [formData, setFormData] = useState({
     firstName: firstNameInit || "",
     lastName: lastNameInit || "",
-    phone: "+237 6XX XXX XXX",
-    email: "pino@email.com",
-    city: USER.city,
-    bio: "Membre Byer depuis mars 2025"
+    phone: profileSource.phone || "",
+    email: profileSource.email || "",
+    city: profileSource.city || USER.city || "Douala",
+    bio: profileSource.bio || ""
   });
   const [toast, setToast] = useState(null);
-  const cities = ["Douala", "Yaoundé", "Kribi", "Limbé", "Buéa", "Bamenda", "Bafoussam"];
+  const [saving, setSaving] = useState(false);
+
+  // Sheet KYC : ouverture depuis le bouton "Vérifier" de la section Identité.
+  const [kycOpen, setKycOpen] = useState(false);
+
+  // Statut KYC backend : initialement on assume "non vérifié" puis on lit
+  // profiles.identity_verified au mount si Supabase est prêt. Re-fetch au
+  // close de la sheet pour refléter une éventuelle validation entre-temps.
+  const [identityVerified, setIdentityVerified] = useState(!!profileSource.identity_verified);
+  const refreshIdentity = React.useCallback(async () => {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) return;
+    const uid = currentUserId || (await db.auth.getSession()).data?.session?.user?.id;
+    if (!uid) return;
+    const {
+      data,
+      error
+    } = await db.profiles.get(uid);
+    if (!error && data) setIdentityVerified(!!data.identity_verified);
+  }, [currentUserId]);
+  useEffect(() => {
+    refreshIdentity();
+  }, [refreshIdentity]);
+  const cities = ["Douala", "Yaoundé", "Kribi", "Limbé", "Buéa", "Bamenda", "Bafoussam", "Garoua", "Maroua", "Ebolowa", "Bertoua"];
   const handleInputChange = e => {
     const {
       name,
@@ -28643,11 +28953,52 @@ function EditProfileScreen({
       city: e.target.value
     }));
   };
-  const handleSave = () => {
-    setToast("Profil mis à jour !");
-    setTimeout(() => {
-      setToast(null);
-    }, 2000);
+
+  // Vraie sauvegarde : update profiles via Supabase RLS-safe (la policy
+  // profiles_self_update_safe + REVOKE column-level (mig 0012) empêchent
+  // de toucher rewards_points / tier / verified flags). Si offline, on
+  // affiche un toast d'erreur clair plutôt qu'un faux succès.
+  const handleSave = async () => {
+    if (saving) return;
+    const db = window.byer && window.byer.db;
+    const fullName = `${formData.firstName} ${formData.lastName}`.trim();
+    if (!fullName) {
+      setToast("Le nom et le prénom sont requis");
+      setTimeout(() => setToast(null), 2200);
+      return;
+    }
+    if (!db || !db.isReady || !currentUserId) {
+      // Pas de session → on ne ment plus avec un faux succès
+      setToast("Impossible d'enregistrer (mode hors-ligne)");
+      setTimeout(() => setToast(null), 2200);
+      return;
+    }
+    setSaving(true);
+    const patch = {
+      name: fullName,
+      phone: formData.phone || null,
+      city: formData.city || null,
+      bio: formData.bio || null
+    };
+    try {
+      const {
+        error
+      } = await db.profiles.update(currentUserId, patch);
+      setSaving(false);
+      if (error) {
+        setToast(`Erreur : ${error.message || "échec d'enregistrement"}`);
+        setTimeout(() => setToast(null), 2800);
+        return;
+      }
+      setToast("Profil mis à jour !");
+      // Notifie ByerApp pour recharger currentProfile dans toutes les vues.
+      if (typeof onSaved === "function") onSaved();
+      setTimeout(() => setToast(null), 2000);
+    } catch (e) {
+      setSaving(false);
+      setToast("Erreur réseau, réessayez");
+      setTimeout(() => setToast(null), 2200);
+    }
   };
   const containerStyle = {
     display: "flex",
@@ -29119,46 +29470,73 @@ function EditProfileScreen({
       fontSize: 13,
       fontWeight: 600
     }
-  }, "Non v\xE9rifi\xE9")), /*#__PURE__*/React.createElement("button", {
-    style: verifyButtonStyle
-  }, "V\xE9rifier"))), /*#__PURE__*/React.createElement("div", {
+  }, "Non v\xE9rifi\xE9")), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.light,
+      fontStyle: "italic"
+    }
+  }, "Bient\xF4t"))), /*#__PURE__*/React.createElement("div", {
     style: verificationItemLastStyle
   }, /*#__PURE__*/React.createElement("div", {
-    style: verificationLabelStyle
-  }, "Identit\xE9"), /*#__PURE__*/React.createElement("div", {
-    style: verificationStatusStyle
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
   }, /*#__PURE__*/React.createElement("div", {
-    style: notVerifiedStyle
+    style: verificationLabelStyle
+  }, "Pi\xE8ce d'identit\xE9"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.light,
+      marginTop: 2,
+      lineHeight: 1.3
+    }
+  }, "Aussi appel\xE9 KYC. Carte d'identit\xE9, passeport ou permis pour confirmer qui vous \xEAtes.")), /*#__PURE__*/React.createElement("div", {
+    style: verificationStatusStyle
+  }, identityVerified ? /*#__PURE__*/React.createElement("div", {
+    style: verifiedStyle
   }, /*#__PURE__*/React.createElement("svg", {
     width: "18",
     height: "18",
     fill: "none",
-    stroke: "#F59E0B",
+    stroke: "#22C55E",
     strokeWidth: "2",
     strokeLinecap: "round",
     viewBox: "0 0 24 24"
-  }, /*#__PURE__*/React.createElement("circle", {
-    cx: "12",
-    cy: "12",
-    r: "10"
-  }), /*#__PURE__*/React.createElement("line", {
-    x1: "12",
-    y1: "8",
-    x2: "12",
-    y2: "12"
-  }), /*#__PURE__*/React.createElement("line", {
-    x1: "12",
-    y1: "16",
-    x2: "12.01",
-    y2: "16"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M22 11.08V12a10 10 0 11-5.93-9.14"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "22 4 12 14.01 9 11.01"
   })), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 13,
       fontWeight: 600
     }
-  }, "Non v\xE9rifi\xE9")), /*#__PURE__*/React.createElement("button", {
-    style: verifyButtonStyle
-  }, "V\xE9rifier"))))), /*#__PURE__*/React.createElement("button", {
+  }, "V\xE9rifi\xE9")) : /*#__PURE__*/React.createElement("button", {
+    style: {
+      background: C.coral,
+      border: "none",
+      color: C.white,
+      fontSize: 13,
+      fontWeight: 700,
+      cursor: "pointer",
+      padding: "8px 14px",
+      borderRadius: 18,
+      transition: "transform .15s, box-shadow .15s",
+      boxShadow: "0 2px 8px rgba(255,90,95,.25)",
+      fontFamily: "'DM Sans',sans-serif",
+      flexShrink: 0,
+      whiteSpace: "nowrap"
+    },
+    onClick: () => setKycOpen(true)
+  }, "Envoyer mes documents"))))), /*#__PURE__*/React.createElement(KycUploadSheet, {
+    open: kycOpen,
+    onClose: () => {
+      setKycOpen(false);
+      refreshIdentity();
+    }
+  }), /*#__PURE__*/React.createElement("button", {
     onClick: handleSave,
     style: saveButtonFullStyle
   }, "Enregistrer les modifications"), toast && /*#__PURE__*/React.createElement("div", {
@@ -32044,6 +32422,836 @@ function ForgotPasswordScreen({
   }, "Renvoyer ou changer d'email")));
 }
 
+/* ═══ js/kyc.js ═══ */
+"use strict";
+
+/* ═══════════════════════════════════════════════════
+   Byer — KYC UI
+   ─────────────────────────────────────────────────────
+   Deux composants exposés :
+     • KycUploadSheet — feuille modale côté utilisateur :
+         charge la liste des docs déjà soumis (db.kyc.list),
+         affiche leur statut (pending / approved / rejected),
+         permet d'uploader CNI / Passeport / Permis / Selfie.
+     • KycAdminScreen — écran admin (gating via email) :
+         appelle l'Edge Function `kyc-review` pour lister les
+         pending et les approuver/rejeter avec preview + motif.
+   ─────────────────────────────────────────────────────
+   Pourquoi un module à part : la logique upload + admin est
+   isolée du reste du profil pour qu'on puisse la rebrancher
+   ailleurs (settings, dashboard) sans dupliquer.
+   ═══════════════════════════════════════════════════ */
+
+/* ── Types de documents acceptés ──────────────────── */
+const KYC_DOC_TYPES = [{
+  id: "id_card",
+  label: "Carte nationale d'identité",
+  emoji: "🪪"
+}, {
+  id: "passport",
+  label: "Passeport",
+  emoji: "🛂"
+}, {
+  id: "driver_license",
+  label: "Permis de conduire",
+  emoji: "🚗"
+}, {
+  id: "selfie",
+  label: "Selfie de vérification",
+  emoji: "🤳"
+}];
+
+/* ── Helpers status → couleur/label ──────────────── */
+function kycStatusBadge(status) {
+  switch (status) {
+    case "approved":
+      return {
+        color: "#16A34A",
+        bg: "rgba(22,163,74,.10)",
+        label: "Validé ✓",
+        icon: "✅"
+      };
+    case "rejected":
+      return {
+        color: "#DC2626",
+        bg: "rgba(220,38,38,.10)",
+        label: "Refusé ✗",
+        icon: "❌"
+      };
+    case "pending":
+      return {
+        color: "#D97706",
+        bg: "rgba(217,119,6,.10)",
+        label: "En cours…",
+        icon: "⏳"
+      };
+    default:
+      return {
+        color: C.mid,
+        bg: "rgba(0,0,0,.04)",
+        label: "Non soumis",
+        icon: "—"
+      };
+  }
+}
+
+/* ────────────────────────────────────────────────────
+   KycUploadSheet : modal pour uploader / suivre KYC
+   ──────────────────────────────────────────────────── */
+function KycUploadSheet({
+  open,
+  onClose
+}) {
+  const [docs, setDocs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(null); // doc_type en cours d'upload
+  const [toast, setToast] = useState("");
+  const [userId, setUserId] = useState(null);
+  const fileInputRef = useRef(null);
+  const pendingTypeRef = useRef(null); // type cible quand l'input file s'ouvre
+
+  // Recharge la liste des docs depuis la DB. Mémoïsé via useCallback pour
+  // pouvoir l'appeler depuis useEffect ET après chaque upload.
+  const refresh = React.useCallback(async () => {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) {
+      setDocs([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const {
+        data: sess
+      } = await db.auth.getSession();
+      const uid = sess?.session?.user?.id;
+      if (!uid) {
+        setDocs([]);
+        setUserId(null);
+        return;
+      }
+      setUserId(uid);
+      const {
+        data,
+        error
+      } = await db.kyc.list(uid);
+      if (error) {
+        console.warn("[byer] kyc.list error:", error.message);
+        setDocs([]);
+      } else {
+        setDocs(data || []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Re-fetch chaque ouverture (l'admin peut avoir validé entre 2 ouvertures).
+  useEffect(() => {
+    if (open) refresh();
+  }, [open, refresh]);
+
+  // Pour chaque type, on ne garde que le doc le plus récent (la table
+  // garde l'historique mais l'UI affiche la dernière soumission).
+  const latestByType = React.useMemo(() => {
+    const map = {};
+    for (const d of docs) {
+      const cur = map[d.doc_type];
+      if (!cur || new Date(d.uploaded_at) > new Date(cur.uploaded_at)) {
+        map[d.doc_type] = d;
+      }
+    }
+    return map;
+  }, [docs]);
+  const showToast = msg => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 2400);
+  };
+  const triggerFilePick = docType => {
+    pendingTypeRef.current = docType;
+    fileInputRef.current?.click();
+  };
+  const handleFileChange = async e => {
+    const file = e.target.files?.[0];
+    const docType = pendingTypeRef.current;
+    // Reset l'input pour permettre de re-sélectionner le même fichier après
+    e.target.value = "";
+    pendingTypeRef.current = null;
+    if (!file || !docType) return;
+
+    // Garde-fous client : taille max 5 Mo + type image/pdf seulement.
+    // (Les RLS storage refusent aussi mais autant échouer vite côté UI.)
+    const MAX = 5 * 1024 * 1024;
+    if (file.size > MAX) {
+      showToast("Fichier trop gros (max 5 Mo)");
+      return;
+    }
+    if (!/^image\/(png|jpe?g|webp)$|^application\/pdf$/.test(file.type)) {
+      showToast("Format accepté : PNG, JPG, WEBP ou PDF");
+      return;
+    }
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady || !userId) {
+      showToast("Service indisponible — réessayez plus tard");
+      return;
+    }
+    setUploading(docType);
+    try {
+      const {
+        error
+      } = await db.kyc.upload(file, userId, docType);
+      if (error) {
+        // Cas typique : violation de l'index unique partiel (déjà approuvé).
+        const msg = /duplicate|unique/i.test(error.message) ? "Ce document est déjà validé." : `Échec : ${error.message}`;
+        showToast(msg);
+      } else {
+        showToast("Document soumis ✓ — vérification en cours");
+        await refresh();
+      }
+    } catch (err) {
+      showToast("Erreur réseau, réessayez");
+    } finally {
+      setUploading(null);
+    }
+  };
+  if (!open) return null;
+
+  // Styles inline (cohérent avec le reste de Byer qui n'utilise pas de CSS Modules)
+  const overlay = {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,.45)",
+    zIndex: 1500,
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "center"
+  };
+  const sheet = {
+    width: "100%",
+    maxWidth: 520,
+    background: C.white,
+    borderRadius: "20px 20px 0 0",
+    maxHeight: "86vh",
+    overflowY: "auto",
+    padding: "22px 20px 32px",
+    fontFamily: "DM Sans, sans-serif",
+    animation: "sheetUp .3s ease"
+  };
+  const header = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14
+  };
+  const title = {
+    fontSize: 18,
+    fontWeight: 700,
+    color: C.black
+  };
+  const close = {
+    background: "none",
+    border: "none",
+    fontSize: 22,
+    color: C.mid,
+    cursor: "pointer",
+    padding: 4
+  };
+  const subtitle = {
+    fontSize: 13,
+    color: C.mid,
+    lineHeight: 1.5,
+    marginBottom: 18
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: overlay,
+    onClick: onClose
+  }, /*#__PURE__*/React.createElement("div", {
+    style: sheet,
+    onClick: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("div", {
+    style: header
+  }, /*#__PURE__*/React.createElement("div", {
+    style: title
+  }, "V\xE9rification d'identit\xE9 (KYC)"), /*#__PURE__*/React.createElement("button", {
+    style: close,
+    onClick: onClose,
+    "aria-label": "Fermer"
+  }, "\u2715")), /*#__PURE__*/React.createElement("div", {
+    style: subtitle
+  }, /*#__PURE__*/React.createElement("strong", null, "KYC"), " = \"Know Your Customer\". Pour louer ou publier une annonce, on a besoin de v\xE9rifier qui vous \xEAtes via une ", /*#__PURE__*/React.createElement("strong", null, "pi\xE8ce d'identit\xE9 officielle"), " (carte nationale, passeport ou permis). Vos documents sont chiffr\xE9s et examin\xE9s sous 24h.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.light
+    }
+  }, "Formats : PNG/JPG/WEBP/PDF \xB7 5 Mo max.")), loading && /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: 30,
+      color: C.mid,
+      fontSize: 13
+    }
+  }, "Chargement\u2026"), !loading && KYC_DOC_TYPES.map(dt => {
+    const cur = latestByType[dt.id];
+    const badge = kycStatusBadge(cur?.status);
+    const isUploading = uploading === dt.id;
+    const isApproved = cur?.status === "approved";
+    const isPending = cur?.status === "pending";
+
+    // CTA texte change selon l'état :
+    //  • approved → désactivé ("Validé")
+    //  • pending  → "Remplacer" possible (rare mais utile si erreur upload)
+    //  • rejected → "Re-soumettre"
+    //  • absent   → "Soumettre"
+    const ctaLabel = isApproved ? "Validé" : isUploading ? "Envoi…" : isPending ? "Remplacer" : cur?.status === "rejected" ? "Re-soumettre" : "Soumettre";
+    return /*#__PURE__*/React.createElement("div", {
+      key: dt.id,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "14px 12px",
+        marginBottom: 10,
+        border: `1px solid ${C.border}`,
+        borderRadius: 14,
+        background: C.white
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 26,
+        lineHeight: 1
+      }
+    }, dt.emoji), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 600,
+        color: C.black
+      }
+    }, dt.label), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        marginTop: 4,
+        padding: "3px 10px",
+        borderRadius: 12,
+        fontSize: 11,
+        fontWeight: 600,
+        color: badge.color,
+        background: badge.bg
+      }
+    }, badge.label), cur?.status === "rejected" && cur.reject_reason && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: "#DC2626",
+        marginTop: 6,
+        lineHeight: 1.4
+      }
+    }, "Motif : ", cur.reject_reason)), /*#__PURE__*/React.createElement("button", {
+      disabled: isApproved || isUploading,
+      onClick: () => triggerFilePick(dt.id),
+      style: {
+        background: isApproved ? C.bg : C.coral,
+        color: isApproved ? C.light : C.white,
+        border: "none",
+        padding: "9px 14px",
+        borderRadius: 10,
+        fontSize: 12,
+        fontWeight: 700,
+        cursor: isApproved || isUploading ? "default" : "pointer",
+        opacity: isUploading ? 0.7 : 1,
+        fontFamily: "inherit",
+        whiteSpace: "nowrap"
+      }
+    }, ctaLabel));
+  }), /*#__PURE__*/React.createElement("input", {
+    ref: fileInputRef,
+    type: "file",
+    accept: "image/png,image/jpeg,image/webp,application/pdf",
+    style: {
+      display: "none"
+    },
+    onChange: handleFileChange
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.light,
+      lineHeight: 1.5,
+      marginTop: 18,
+      textAlign: "center"
+    }
+  }, "\uD83D\uDD12 Vos pi\xE8ces sont stock\xE9es dans un bucket priv\xE9 chiffr\xE9. Seul un admin Byer y acc\xE8de pour la v\xE9rification. Aucune donn\xE9e n'est partag\xE9e \xE0 des tiers."), toast && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      bottom: 30,
+      left: "50%",
+      transform: "translateX(-50%)",
+      background: C.dark,
+      color: C.white,
+      padding: "10px 18px",
+      borderRadius: 24,
+      fontSize: 13,
+      fontWeight: 600,
+      zIndex: 1600,
+      boxShadow: "0 6px 20px rgba(0,0,0,.2)"
+    }
+  }, toast)));
+}
+
+/* ────────────────────────────────────────────────────
+   KycAdminScreen : écran de validation pour les admins
+   ────────────────────────────────────────────────────
+   Appelle l'Edge Function `kyc-review` (et non la table
+   directement) — les signed URLs requièrent la
+   service_role key, side-server uniquement. */
+function KycAdminScreen({
+  onBack
+}) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [acting, setActing] = useState(null); // { id, action } en cours
+  const [rejectFor, setRejectFor] = useState(null); // doc_id ou null
+  const [rejectReason, setRejectReason] = useState("");
+  const [toast, setToast] = useState("");
+  const showToast = msg => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 2200);
+  };
+
+  // Construit l'URL de la fonction. SUPABASE_URL provient de config.js.
+  const FN_URL = `${SUPABASE_URL}/functions/v1/kyc-review`;
+  const callFn = async (route, body) => {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) throw new Error("Backend offline");
+    const {
+      data: sess
+    } = await db.auth.getSession();
+    const jwt = sess?.session?.access_token;
+    if (!jwt) throw new Error("Session expirée — reconnectez-vous");
+    const res = await fetch(`${FN_URL}/${route}`, {
+      method: "POST",
+      headers: {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${jwt}`,
+        "Content-Type": "application/json"
+      },
+      body: body ? JSON.stringify(body) : "{}"
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+    return json;
+  };
+  const refresh = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const {
+        items
+      } = await callFn("list-pending");
+      setItems(items || []);
+    } catch (e) {
+      setError(e.message || "Erreur de chargement");
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+  const onApprove = async doc => {
+    setActing({
+      id: doc.id,
+      action: "approve"
+    });
+    try {
+      await callFn("review", {
+        doc_id: doc.id,
+        action: "approve"
+      });
+      showToast(`✅ ${doc.profile?.name || "Utilisateur"} validé`);
+      // Optimiste : on retire de la liste (sinon attendre refresh)
+      setItems(prev => prev.filter(it => it.id !== doc.id));
+    } catch (e) {
+      showToast(`Erreur : ${e.message}`);
+    } finally {
+      setActing(null);
+    }
+  };
+  const onReject = async () => {
+    if (!rejectFor || !rejectReason.trim()) {
+      showToast("Le motif est obligatoire");
+      return;
+    }
+    setActing({
+      id: rejectFor,
+      action: "reject"
+    });
+    try {
+      await callFn("review", {
+        doc_id: rejectFor,
+        action: "reject",
+        reason: rejectReason.trim()
+      });
+      showToast("❌ Document refusé");
+      setItems(prev => prev.filter(it => it.id !== rejectFor));
+      setRejectFor(null);
+      setRejectReason("");
+    } catch (e) {
+      showToast(`Erreur : ${e.message}`);
+    } finally {
+      setActing(null);
+    }
+  };
+
+  // Styles
+  const wrap = {
+    position: "fixed",
+    inset: 0,
+    background: C.bg,
+    zIndex: 1400,
+    fontFamily: "DM Sans, sans-serif",
+    overflowY: "auto"
+  };
+  const header = {
+    background: C.white,
+    padding: "var(--top-pad) 16px 14px",
+    borderBottom: `1px solid ${C.border}`,
+    position: "sticky",
+    top: 0,
+    zIndex: 10,
+    display: "flex",
+    alignItems: "center",
+    gap: 12
+  };
+  const backBtn = {
+    background: "none",
+    border: "none",
+    fontSize: 22,
+    cursor: "pointer",
+    padding: 4,
+    color: C.dark
+  };
+  const headerTitle = {
+    fontSize: 17,
+    fontWeight: 700,
+    color: C.black,
+    flex: 1
+  };
+  const refreshBtn = {
+    background: C.coral,
+    color: C.white,
+    border: "none",
+    padding: "7px 14px",
+    borderRadius: 18,
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: "pointer"
+  };
+  const docTypeLabels = {
+    id_card: "Carte d'identité",
+    passport: "Passeport",
+    driver_license: "Permis de conduire",
+    selfie: "Selfie"
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: wrap
+  }, /*#__PURE__*/React.createElement("div", {
+    style: header
+  }, /*#__PURE__*/React.createElement("button", {
+    style: backBtn,
+    onClick: onBack,
+    "aria-label": "Retour"
+  }, "\u2190"), /*#__PURE__*/React.createElement("div", {
+    style: headerTitle
+  }, "KYC en attente ", items.length > 0 && `(${items.length})`), /*#__PURE__*/React.createElement("button", {
+    style: refreshBtn,
+    onClick: refresh,
+    disabled: loading
+  }, loading ? "…" : "↻ Actualiser")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 16,
+      maxWidth: 680,
+      margin: "0 auto"
+    }
+  }, loading && /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: 40,
+      color: C.mid
+    }
+  }, "Chargement\u2026"), !loading && error && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 16,
+      background: "rgba(220,38,38,.08)",
+      border: "1px solid rgba(220,38,38,.25)",
+      borderRadius: 12,
+      color: "#DC2626",
+      fontSize: 13
+    }
+  }, error.includes("admin") || error.includes("403") ? "Accès refusé : vous n'êtes pas dans la liste des administrateurs." : `Erreur : ${error}`), !loading && !error && items.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: 60,
+      color: C.mid
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 48,
+      marginBottom: 12
+    }
+  }, "\u2713"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 15,
+      fontWeight: 600,
+      color: C.dark
+    }
+  }, "Aucun KYC en attente"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      marginTop: 6
+    }
+  }, "Tout est \xE0 jour, beau travail !")), !loading && items.map(doc => {
+    const isActing = acting?.id === doc.id;
+    return /*#__PURE__*/React.createElement("div", {
+      key: doc.id,
+      style: {
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 16,
+        padding: 14,
+        marginBottom: 14
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        marginBottom: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 40,
+        height: 40,
+        borderRadius: "50%",
+        background: doc.profile?.avatar_bg || "#6366F1",
+        color: "white",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 16,
+        fontWeight: 700
+      }
+    }, doc.profile?.avatar_letter || doc.profile?.name?.[0] || "?"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 600,
+        color: C.black
+      }
+    }, doc.profile?.name || "Utilisateur"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.mid
+      }
+    }, doc.profile?.email || "—", " \xB7 ", doc.profile?.phone || ""))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        marginBottom: 10,
+        fontSize: 12,
+        color: C.mid
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "\uD83D\uDCC4 ", docTypeLabels[doc.doc_type] || doc.doc_type), /*#__PURE__*/React.createElement("span", null, new Date(doc.submitted_at).toLocaleString("fr-FR", {
+      dateStyle: "short",
+      timeStyle: "short"
+    }))), doc.signed_url ? /*#__PURE__*/React.createElement("a", {
+      href: doc.signed_url,
+      target: "_blank",
+      rel: "noopener noreferrer"
+    }, /*#__PURE__*/React.createElement("img", {
+      src: doc.signed_url,
+      alt: `KYC ${doc.doc_type}`,
+      style: {
+        width: "100%",
+        maxHeight: 280,
+        objectFit: "contain",
+        borderRadius: 10,
+        background: C.bg,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`
+      },
+      onError: e => {
+        e.currentTarget.style.display = "none";
+      }
+    })) : /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: 24,
+        textAlign: "center",
+        color: C.mid,
+        fontSize: 12,
+        background: C.bg,
+        borderRadius: 10,
+        marginBottom: 12
+      }
+    }, doc.signed_url_error ? `Aperçu indisponible : ${doc.signed_url_error}` : "Aperçu indisponible"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      disabled: isActing,
+      onClick: () => onApprove(doc),
+      style: {
+        flex: 1,
+        padding: "11px 0",
+        borderRadius: 10,
+        border: "none",
+        background: "#16A34A",
+        color: "white",
+        fontWeight: 700,
+        fontSize: 13,
+        cursor: isActing ? "default" : "pointer",
+        opacity: isActing && acting?.action === "approve" ? 0.6 : 1
+      }
+    }, isActing && acting?.action === "approve" ? "Validation…" : "✓ Approuver"), /*#__PURE__*/React.createElement("button", {
+      disabled: isActing,
+      onClick: () => {
+        setRejectFor(doc.id);
+        setRejectReason("");
+      },
+      style: {
+        flex: 1,
+        padding: "11px 0",
+        borderRadius: 10,
+        border: `1px solid ${C.border}`,
+        background: C.white,
+        color: "#DC2626",
+        fontWeight: 700,
+        fontSize: 13,
+        cursor: isActing ? "default" : "pointer"
+      }
+    }, "\u2715 Rejeter")));
+  })), rejectFor && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,.5)",
+      zIndex: 1700,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 16
+    },
+    onClick: () => {
+      if (!acting) {
+        setRejectFor(null);
+        setRejectReason("");
+      }
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    style: {
+      background: C.white,
+      borderRadius: 18,
+      padding: 22,
+      maxWidth: 420,
+      width: "100%",
+      fontFamily: "DM Sans, sans-serif"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 16,
+      fontWeight: 700,
+      marginBottom: 8
+    }
+  }, "Motif du rejet"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.mid,
+      marginBottom: 14,
+      lineHeight: 1.5
+    }
+  }, "Le motif sera communiqu\xE9 \xE0 l'utilisateur via une notification. Soyez explicite (ex : \"Photo floue, recommencez avec plus de lumi\xE8re\")."), /*#__PURE__*/React.createElement("textarea", {
+    autoFocus: true,
+    value: rejectReason,
+    onChange: e => setRejectReason(e.target.value),
+    placeholder: "Photo illisible, document expir\xE9, pr\xE9nom diff\xE9rent\u2026",
+    maxLength: 300,
+    rows: 4,
+    style: {
+      width: "100%",
+      padding: 12,
+      borderRadius: 10,
+      border: `1px solid ${C.border}`,
+      fontSize: 14,
+      fontFamily: "inherit",
+      resize: "vertical",
+      outline: "none",
+      boxSizing: "border-box",
+      marginBottom: 14
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    disabled: !!acting,
+    onClick: () => {
+      setRejectFor(null);
+      setRejectReason("");
+    },
+    style: {
+      flex: 1,
+      padding: "11px 0",
+      borderRadius: 10,
+      border: `1px solid ${C.border}`,
+      background: C.white,
+      fontWeight: 600,
+      fontSize: 13,
+      cursor: "pointer"
+    }
+  }, "Annuler"), /*#__PURE__*/React.createElement("button", {
+    disabled: !!acting || !rejectReason.trim(),
+    onClick: onReject,
+    style: {
+      flex: 1,
+      padding: "11px 0",
+      borderRadius: 10,
+      border: "none",
+      background: "#DC2626",
+      color: "white",
+      fontWeight: 700,
+      fontSize: 13,
+      cursor: acting || !rejectReason.trim() ? "default" : "pointer",
+      opacity: !rejectReason.trim() || acting ? 0.5 : 1
+    }
+  }, acting ? "Envoi…" : "Confirmer le rejet")))), toast && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      bottom: 30,
+      left: "50%",
+      transform: "translateX(-50%)",
+      background: C.dark,
+      color: C.white,
+      padding: "10px 18px",
+      borderRadius: 24,
+      fontSize: 13,
+      fontWeight: 600,
+      zIndex: 1800,
+      boxShadow: "0 6px 20px rgba(0,0,0,.2)"
+    }
+  }, toast));
+}
+
 /* ═══ js/app.js ═══ */
 "use strict";
 
@@ -32058,12 +33266,55 @@ function ForgotPasswordScreen({
    les cartes — Airbnb-style, l'UI s'en fiche d'où
    viennent les données.
    ═══════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════
+   ADAPTER : transforme une ligne Supabase bookings
+   (avec listings + listing_photos joints) vers la shape
+   que TripsScreen attend (booking mock).
+   Sans ça, les vraies réservations Supabase n'apparaissaient
+   pas dans /trips → l'utilisateur changeait d'appareil et
+   ses voyages avaient disparu (audit 2026-04-27).
+   ═══════════════════════════════════════════════════ */
+function adaptBooking(row) {
+  if (!row) return null;
+  const lst = row.listings || {};
+  const photo = (lst.listing_photos || []).slice().sort((a, b) => (a.position || 0) - (b.position || 0))[0];
+  const img = photo?.url || "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80";
+  // Mapping status DB → status TripsScreen attendu (active/upcoming/past)
+  // DB enum bookings.status (mig 0001) : 'pending','confirmed','active','completed','cancelled'
+  const dbStatus = row.status || "pending";
+  let uiStatus = "upcoming";
+  if (dbStatus === "active") uiStatus = "active";else if (dbStatus === "completed" || dbStatus === "cancelled") uiStatus = "past";else if (dbStatus === "confirmed" || dbStatus === "pending") uiStatus = "upcoming";
+  return {
+    id: row.id,
+    status: uiStatus,
+    rawStatus: dbStatus,
+    // pour debug + cancel
+    title: lst.title || "Réservation",
+    city: lst.city || "",
+    img,
+    checkin: row.checkin,
+    checkout: row.checkout,
+    total: row.total_price,
+    ref: row.ref,
+    // numéro court 6 chiffres
+    listingId: row.listing_id,
+    qrToken: row.qr_token || null,
+    paymentMethod: row.payment_method,
+    paymentStatus: row.payment_status,
+    _supabase: true
+  };
+}
 function adaptListing(row) {
   if (!row) return null;
   const photos = (row.listing_photos || []).slice().sort((a, b) => (a.position || 0) - (b.position || 0));
   // Image fallback si aucune photo n'a encore été uploadée
   const firstImg = photos[0]?.url || "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80";
   const isVehicle = row.type === "vehicle";
+  // Profile owner peut venir via l'embed `profiles!owner_id(...)` (cf.
+  // db.listings.get) ou être absent (cf. db.listings.list qui n'embed pas
+  // owner). Dans le 2e cas, ownerName/Photo restent undefined et l'UI
+  // tombe sur ses fallbacks neutres.
+  const ownerProfile = row.profiles || null;
   return {
     id: row.id,
     type: row.type,
@@ -32097,7 +33348,11 @@ function adaptListing(row) {
     // gallerie complète
     _supabase: true,
     // marqueur source
-    ownerId: row.owner_id
+    ownerId: row.owner_id,
+    ownerName: ownerProfile?.name || null,
+    ownerPhoto: ownerProfile?.photo_url || null,
+    ownerVerified: !!ownerProfile?.identity_verified,
+    ownerSince: ownerProfile?.member_since || null
   };
 }
 
@@ -32181,6 +33436,12 @@ function ByerApp({
   const [detail, setDetail] = useState(null);
   const [gallery, setGallery] = useState(null);
   const [search, setSearch] = useState("");
+  // Recherche full-text débouncée — branche sur le RPC search_listings
+  // (mig.0005, ts_vector + filtres) dès qu'on tape ≥2 caractères. Tant que
+  // searchResults est null, on retombe sur la liste classique (dbListings
+  // ou mocks). Quand !== null, c'est la source de vérité.
+  const [searchResults, setSearchResults] = useState(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [rentOpen, setRentOpen] = useState(false);
   const [ownerProfile, setOwnerProfile] = useState(null);
   const [filters, setFilters] = useState({
@@ -32200,6 +33461,54 @@ function ByerApp({
   React.useEffect(() => {
     if (tab !== "home" && search !== "") setSearch("");
   }, [tab]);
+
+  // Recherche full-text via RPC search_listings (mig.0005) — debounce 350ms.
+  // Pourquoi un effect séparé : on ne veut pas spammer le backend à chaque
+  // touche. On déclenche dès 2 caractères pour éviter les requêtes inutiles
+  // sur "a"/"e". Si Supabase n'est pas prêt, on laisse searchResults=null
+  // et le filtre client (title/city includes) prendra le relais (mocks).
+  React.useEffect(() => {
+    const q = search.trim();
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady || q.length < 2) {
+      setSearchResults(null);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const {
+          data,
+          error
+        } = await db.listings.search({
+          query: q,
+          type: segment,
+          city: location.id !== "cameroun" ? location.id : null,
+          maxPrice: filters.priceMax < 200000 ? filters.priceMax : null,
+          minRating: filters.minRating > 0 ? filters.minRating : null,
+          amenities: filters.amenities.length ? filters.amenities : null,
+          limit: 50
+        });
+        if (cancelled) return;
+        if (error) {
+          console.warn("[byer] search_listings error:", error.message);
+          setSearchResults([]);
+        } else {
+          setSearchResults((data || []).map(adaptListing).filter(Boolean));
+        }
+      } catch (e) {
+        if (!cancelled) setSearchResults([]);
+      } finally {
+        if (!cancelled) setSearchLoading(false);
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [search, segment, location.id, filters.priceMax, filters.minRating, filters.amenities]);
   const [qrScanOpen, setQrScanOpen] = useState(false);
   const [qrResult, setQrResult] = useState(null); // scanned code
   const [qrInfoOpen, setQrInfoOpen] = useState(false); // info dialog
@@ -32242,6 +33551,72 @@ function ByerApp({
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [forgotOpen, setForgotOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
+
+  // Détecte si l'utilisateur courant est admin → affiche l'entrée "KYC review"
+  // dans Settings. La même liste d'emails que côté Edge Function (durci en
+  // backend mais utile en frontend pour cacher le bouton aux non-admins).
+  const ADMIN_EMAILS = ["pinolando120@gmail.com"];
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [kycAdminOpen, setKycAdminOpen] = useState(false);
+
+  // Profil utilisateur connecté — chargé depuis Supabase au mount + après
+  // édition (refreshCurrentProfile). Sans ça, ProfileScreen/EditProfileScreen
+  // affichaient le mock USER ("Pino") à TOUS les utilisateurs (bug critique
+  // identifié dans l'audit 2026-04-27 — chaque user voyait son nom remplacé
+  // par "Pino" + sa ville par celle de Pino).
+  // Quand currentProfile est null → fallback transparent sur USER (mode démo
+  // ou Supabase indispo).
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [currentProfile, setCurrentProfile] = useState(null);
+  const refreshCurrentProfile = React.useCallback(async () => {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) return;
+    const {
+      data: sess
+    } = await db.auth.getSession();
+    const uid = sess?.session?.user?.id;
+    const email = sess?.session?.user?.email?.toLowerCase();
+    setIsAdmin(!!email && ADMIN_EMAILS.includes(email));
+    if (!uid) {
+      setCurrentUserId(null);
+      setCurrentProfile(null);
+      return;
+    }
+    setCurrentUserId(uid);
+    const {
+      data,
+      error
+    } = await db.profiles.get(uid);
+    if (!error && data) setCurrentProfile(data);
+  }, []);
+  React.useEffect(() => {
+    refreshCurrentProfile();
+  }, [refreshCurrentProfile]);
+
+  // ─────────────────────────────────────────────────────────────
+  // dbBookings : vraies réservations chargées depuis Supabase au mount
+  // + à chaque changement de role (locataire ↔ bailleur). En mode
+  // bailleur on demande role="host" (filtre col host_id), sinon guest_id.
+  // Sans ce fetch, TripsScreen ne montrait que la liste localStorage et
+  // les mocks démo → réservations perdues entre devices (audit 2026-04-27).
+  // ─────────────────────────────────────────────────────────────
+  const [dbBookings, setDbBookings] = useState([]);
+  const refreshDbBookings = React.useCallback(async () => {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady || !currentUserId) return;
+    const {
+      data,
+      error
+    } = await db.bookings.listMine(currentUserId, role === "bailleur" ? "host" : "guest");
+    if (!error && Array.isArray(data)) {
+      setDbBookings(data.map(adaptBooking).filter(Boolean));
+    } else if (error) {
+      console.warn("[byer] bookings.listMine error:", error.message);
+    }
+  }, [currentUserId, role]);
+  React.useEffect(() => {
+    refreshDbBookings();
+  }, [refreshDbBookings]);
   const toggleSave = (id, e) => {
     e?.stopPropagation();
     setSaved(p => ({
@@ -32263,9 +33638,12 @@ function ByerApp({
     setDuration(prev => migrateDuration(prev, newSeg));
   };
 
-  // Source de vérité : Supabase si on a des données, sinon mocks pour démo
+  // Source de vérité (priorité décroissante) :
+  //  1. searchResults — recherche full-text RPC active (search.length ≥ 2)
+  //  2. dbListings    — données Supabase chargées au mount
+  //  3. mocks         — fallback démo si offline
   const mockItems = segment === "property" ? PROPERTIES : VEHICLES;
-  const allItems = dbListings.length ? dbListings : mockItems;
+  const allItems = searchResults !== null ? searchResults : dbListings.length ? dbListings : mockItems;
   const items = allItems.filter(i => {
     // Location filter: "cameroun" = tout, sinon filtre par ville
     if (location.id !== "cameroun" && i.city !== location.id) return false;
@@ -32288,6 +33666,10 @@ function ByerApp({
     }
     // instantBook : pas de champ data → on ignore silencieusement (placeholder UX)
 
+    // Filtre textuel : si searchResults est actif, le RPC a déjà fait le job
+    // (ts_vector pondéré title>city>desc). On n'applique le includes() que
+    // sur la liste mock/db pour rester rétro-compatible offline.
+    if (searchResults !== null) return true;
     const q = search.toLowerCase();
     return !q || i.title.toLowerCase().includes(q) || i.city.toLowerCase().includes(q);
   });
@@ -32381,7 +33763,7 @@ function ByerApp({
      - Scanner QR overlay (caméra plein écran)
      - TOUT écran secondaire (Settings, Publish, Dashboard, Detail, etc.)
        → la nav bar ne doit apparaître QUE sur les 5 onglets principaux. */
-  const onSecondaryScreen = !!detail || !!gallery || !!allReviewsItem || rentOpen || !!ownerProfile || !!buildingDetail || dashboardOpen || !!listAllFilter || techsOpen || prosOpen || boostOpen || notifsOpen || publishOpen || settingsOpen || termsOpen || privacyOpen || forgotOpen || supportOpen || editProfileOpen || !!bookingItem || reviewsOpen || historyOpen;
+  const onSecondaryScreen = !!detail || !!gallery || !!allReviewsItem || rentOpen || !!ownerProfile || !!buildingDetail || dashboardOpen || !!listAllFilter || techsOpen || prosOpen || boostOpen || notifsOpen || publishOpen || settingsOpen || kycAdminOpen || termsOpen || privacyOpen || forgotOpen || supportOpen || editProfileOpen || !!bookingItem || reviewsOpen || historyOpen;
   const hideGlobalNav = chatActive || !!gallery || qrScanOpen || onSecondaryScreen;
 
   /* Synchronise le ref avec onSecondaryScreen (lu par popstate listener) */
@@ -32528,6 +33910,7 @@ function ByerApp({
     });
   } else if (notifsOpen) {
     screenContent = /*#__PURE__*/React.createElement(NotificationsScreen, {
+      currentUserId: currentUserId,
       onBack: () => setNotifsOpen(false),
       onOpenBookings: () => {
         setNotifsOpen(false);
@@ -32573,6 +33956,11 @@ function ByerApp({
       onOpenPrivacy: () => setPrivacyOpen(true),
       onOpenForgotPassword: () => setForgotOpen(true),
       onOpenSupport: () => setSupportOpen(true),
+      isAdmin: isAdmin,
+      onOpenKycAdmin: () => {
+        setSettingsOpen(false);
+        setKycAdminOpen(true);
+      },
       onLogout: () => {
         setSettingsOpen(false);
         onLogout?.();
@@ -32581,6 +33969,10 @@ function ByerApp({
         setSettingsOpen(false);
         onLogout?.();
       }
+    });
+  } else if (kycAdminOpen) {
+    screenContent = /*#__PURE__*/React.createElement(KycAdminScreen, {
+      onBack: () => setKycAdminOpen(false)
     });
   } else if (termsOpen) {
     screenContent = /*#__PURE__*/React.createElement(TermsScreen, {
@@ -32600,7 +33992,13 @@ function ByerApp({
     });
   } else if (editProfileOpen) {
     screenContent = /*#__PURE__*/React.createElement(EditProfileScreen, {
-      onBack: () => setEditProfileOpen(false)
+      currentProfile: currentProfile,
+      currentUserId: currentUserId,
+      onSaved: refreshCurrentProfile,
+      onBack: () => {
+        setEditProfileOpen(false);
+        refreshCurrentProfile();
+      }
     });
   } else if (bookingItem) {
     screenContent = /*#__PURE__*/React.createElement(BookingScreen, {
@@ -32653,6 +34051,7 @@ function ByerApp({
       onOpenLocPicker: () => setLocOpen(true),
       search: search,
       setSearch: setSearch,
+      searchLoading: searchLoading,
       activeFilterCount: activeFilterCount,
       onOpenFilter: () => setFilterOpen(true),
       items: items,
@@ -32676,8 +34075,22 @@ function ByerApp({
       },
       onOpenBoost: () => setBoostOpen(true)
     }), tab === "saved" && /*#__PURE__*/React.createElement(SavedScreen, {
-      role: role,
-      items: [...PROPERTIES, ...VEHICLES].filter(i => saved[i.id]),
+      role: role
+      /*
+        Source de vérité favoris :
+          - Les annonces Supabase (dbListings) ET les mocks (PROPERTIES + VEHICLES).
+          - On dédoublonne par id (priorité Supabase si même id).
+        Sans ça, un user qui mettait en favori une vraie annonce ne la
+        retrouvait jamais dans Favoris (audit 2026-04-27).
+      */,
+      items: (() => {
+        const all = [...dbListings];
+        const seen = new Set(all.map(i => i.id));
+        [...PROPERTIES, ...VEHICLES].forEach(i => {
+          if (!seen.has(i.id)) all.push(i);
+        });
+        return all.filter(i => saved[i.id]);
+      })(),
       openDetail: setDetail,
       toggleSave: toggleSave,
       saved: saved,
@@ -32686,8 +34099,24 @@ function ByerApp({
     }), tab === "trips" && /*#__PURE__*/React.createElement(TripsScreen, {
       role: role,
       openDetail: setDetail,
-      userBookings: userBookings,
-      onCancelBooking: id => setUserBookings(prev => prev.filter(b => b.id !== id))
+      userBookings: dbBookings.length ? dbBookings : userBookings,
+      dbBookingsLoaded: dbBookings.length > 0,
+      onCancelBooking: async id => {
+        // 1) si réservation Supabase → RPC cancel_booking (atomique avec refund)
+        const target = dbBookings.find(b => b.id === id);
+        if (target && target._supabase) {
+          const db = window.byer && window.byer.db;
+          if (db && db.isReady) {
+            const {
+              error
+            } = await db.bookings.cancel(id, "Annulation utilisateur");
+            if (!error) await refreshDbBookings();
+            return;
+          }
+        }
+        // 2) fallback localStorage pour les vieilles résa démo
+        setUserBookings(prev => prev.filter(b => b.id !== id));
+      }
     }), tab === "trips" && /*#__PURE__*/React.createElement(MyQRCodeButton, {
       onClick: () => setMyQrOpen(true)
     }), tab === "trips" && /*#__PURE__*/React.createElement(QRScanButton, {
@@ -32698,6 +34127,7 @@ function ByerApp({
     }), tab === "profile" && /*#__PURE__*/React.createElement(ProfileScreen, {
       role: role,
       setRole: setRole,
+      currentProfile: currentProfile,
       onOpenRent: () => setRentOpen(true),
       onOpenDashboard: () => setDashboardOpen(true),
       onOpenTechs: () => {
@@ -32834,6 +34264,147 @@ function BottomNavBar({
 
 /* Byer — Main Entry Point */
 
+/* ═══════════════════════════════════════════════════
+   ErrorBoundary — filet de sécurité React
+   Capture toute exception non gérée pendant le render et affiche un
+   fallback humain au lieu du white-screen. Sans ça, n'importe quelle
+   erreur (props undefined, API inattendue) tue toute l'app.
+   ═══════════════════════════════════════════════════ */
+class ByerErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null
+    };
+  }
+  static getDerivedStateFromError(error) {
+    return {
+      hasError: true,
+      error
+    };
+  }
+  componentDidCatch(error, info) {
+    // Log console pour debug en dev / Sentry plus tard.
+    // En prod, ce log finit dans la console DevTools — utile si Pino reproduit.
+    console.error("[byer] ErrorBoundary caught:", error, info && info.componentStack);
+  }
+  handleReload = () => {
+    try {
+      // Hard reload — bypass le SW pour récupérer la dernière version
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(regs => {
+          regs.forEach(r => r.update().catch(() => {}));
+        });
+      }
+    } catch (e) {}
+    window.location.reload();
+  };
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "fixed",
+        inset: 0,
+        background: "#F7F7F7",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        fontFamily: "DM Sans, sans-serif",
+        textAlign: "center",
+        zIndex: 9999
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        background: "#FF5A5F",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        marginBottom: 20
+      }
+    }, /*#__PURE__*/React.createElement("svg", {
+      width: "36",
+      height: "36",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "white",
+      strokeWidth: "2.5",
+      strokeLinecap: "round",
+      strokeLinejoin: "round"
+    }, /*#__PURE__*/React.createElement("circle", {
+      cx: "12",
+      cy: "12",
+      r: "10"
+    }), /*#__PURE__*/React.createElement("line", {
+      x1: "12",
+      y1: "8",
+      x2: "12",
+      y2: "12"
+    }), /*#__PURE__*/React.createElement("line", {
+      x1: "12",
+      y1: "16",
+      x2: "12.01",
+      y2: "16"
+    }))), /*#__PURE__*/React.createElement("h1", {
+      style: {
+        fontSize: 20,
+        fontWeight: 700,
+        color: "#222",
+        margin: "0 0 8px"
+      }
+    }, "Oups, un souci technique"), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 14,
+        color: "#666",
+        lineHeight: 1.5,
+        maxWidth: 340,
+        margin: "0 0 24px"
+      }
+    }, "L'application a rencontr\xE9 une erreur inattendue. Nos \xE9quipes sont notifi\xE9es. Recharge la page pour continuer."), /*#__PURE__*/React.createElement("button", {
+      onClick: this.handleReload,
+      style: {
+        background: "#FF5A5F",
+        color: "white",
+        border: "none",
+        borderRadius: 14,
+        padding: "14px 28px",
+        fontSize: 15,
+        fontWeight: 600,
+        cursor: "pointer",
+        boxShadow: "0 4px 12px rgba(255,90,95,0.3)",
+        fontFamily: "DM Sans, sans-serif"
+      }
+    }, "Recharger l'application"), this.state.error && /*#__PURE__*/React.createElement("details", {
+      style: {
+        marginTop: 24,
+        fontSize: 11,
+        color: "#999",
+        maxWidth: 340
+      }
+    }, /*#__PURE__*/React.createElement("summary", {
+      style: {
+        cursor: "pointer"
+      }
+    }, "D\xE9tails techniques"), /*#__PURE__*/React.createElement("pre", {
+      style: {
+        textAlign: "left",
+        overflow: "auto",
+        padding: 8,
+        background: "#fff",
+        borderRadius: 6,
+        marginTop: 8,
+        fontFamily: "monospace",
+        fontSize: 10,
+        color: "#666"
+      }
+    }, String(this.state.error.message || this.state.error))));
+  }
+}
 function Root() {
   const [screen, setScreen] = useState("splash"); // splash | onboarding | login | signup | forgot | verify | app
   const [forgotPrefill, setForgotPrefill] = useState("");
@@ -32949,7 +34520,9 @@ function Root() {
   });
 }
 
-// Mount
+// Mount — Root est wrappé dans ErrorBoundary pour qu'aucune exception React
+// ne white-screen l'app. Si une erreur tape dans un sous-composant, on affiche
+// un fallback "Oups, recharger" plutôt qu'un écran blanc opaque.
 const container = document.getElementById('root');
 const reactRoot = ReactDOM.createRoot(container);
-reactRoot.render(/*#__PURE__*/React.createElement(Root, null));
+reactRoot.render(/*#__PURE__*/React.createElement(ByerErrorBoundary, null, /*#__PURE__*/React.createElement(Root, null)));
