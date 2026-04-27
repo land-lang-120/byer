@@ -12351,7 +12351,8 @@ function TripsScreen({
 /* ─── MESSAGES SCREEN ───────────────────────────── */
 function MessagesScreen({
   role,
-  onChatActiveChange
+  onChatActiveChange,
+  onOpenListing
 }) {
   const isBailleur = role === "bailleur";
 
@@ -12446,6 +12447,8 @@ function MessagesScreen({
           avatarBg: other?.avatar_bg || "#6366F1",
           photo: other?.photo_url || null,
           logement: c.listings?.title || "Annonce",
+          listingId: c.listing_id || null,
+          // pour résoudre "Voir le logement"
           lastMsg: c.last_message_preview || "",
           lastTime: c.last_message_at ? new Date(c.last_message_at).toLocaleDateString('fr-FR') : "—",
           unread: unreadCounts[idx],
@@ -12611,7 +12614,13 @@ function MessagesScreen({
       /* La flèche retour appelle history.back() : déclenche popstate qui
          ferme le chat → cohérent avec le bouton retour téléphone. Un seul
          chemin de sortie pour les deux affordances (cf. useEffect popstate). */,
-      onBack: () => window.history.back(),
+      onBack: () => window.history.back()
+      /* "Voir le logement" du menu chat → ferme le chat (history.back) puis
+         ouvre la fiche détail du listing résolu par app.js depuis la conv. */,
+      onOpenListing: onOpenListing ? () => {
+        window.history.back();
+        onOpenListing(conv);
+      } : null,
       onToggleBlock: () => toggleBlock(openChat),
       onSendMessage: async text => {
         // Optimistic UI : on ajoute tout de suite, on "ré-aligne" via Realtime
@@ -13093,7 +13102,8 @@ function ChatScreen({
   conv,
   onBack,
   onToggleBlock,
-  onSendMessage
+  onSendMessage,
+  onOpenListing
 }) {
   const [input, setInput] = useState("");
   const [showMenu, setShowMenu] = useState(false);
@@ -13183,7 +13193,12 @@ function ChatScreen({
     style: S.chatMenuItem,
     onClick: () => {
       setShowMenu(false);
-      flashChat(`Logement : ${conv.logement}`);
+      if (onOpenListing) {
+        onOpenListing(); // ferme le chat + ouvre la fiche
+      } else {
+        // Fallback démo si app.js n'a pas câblé le prop
+        flashChat(`Logement : ${conv.logement}`);
+      }
     }
   }, /*#__PURE__*/React.createElement(Icon, {
     name: "home",
@@ -34594,6 +34609,26 @@ function ByerApp({
     }), tab === "messages" && /*#__PURE__*/React.createElement(MessagesScreen, {
       role: role,
       onChatActiveChange: setChatActive
+      /* "Voir le logement" depuis le menu d'une conversation :
+         résout l'objet listing depuis (1) listingId si fourni
+         (Supabase via embed conversations.listing_id) ou (2)
+         le titre `logement` (mocks). Ouvre DetailScreen. */,
+      onOpenListing: conv => {
+        if (!conv) return;
+        const candidates = [...dbListings, ...PROPERTIES, ...VEHICLES];
+        let item = null;
+        if (conv.listingId) {
+          item = candidates.find(i => i.id === conv.listingId) || null;
+        }
+        if (!item && conv.logement) {
+          item = candidates.find(i => i.title === conv.logement) || null;
+        }
+        if (item) {
+          setDetail(item);
+          // Si on était sur l'onglet messages, on bascule pas la nav
+          // — DetailScreen est un overlay rendu au-dessus.
+        }
+      }
     }), tab === "profile" && /*#__PURE__*/React.createElement(ProfileScreen, {
       role: role,
       setRole: setRole,

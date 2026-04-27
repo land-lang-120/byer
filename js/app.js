@@ -726,7 +726,30 @@ function ByerApp({ onLogout }) {
           Plus visible dans Messages (mauvaise ergonomie en chat). */}
       {tab==="trips" && <MyQRCodeButton onClick={() => setMyQrOpen(true)}/>}
       {tab==="trips" && <QRScanButton onClick={() => setQrInfoOpen(true)}/>}
-      {tab==="messages" && <MessagesScreen role={role} onChatActiveChange={setChatActive}/>}
+      {tab==="messages" && <MessagesScreen
+                              role={role}
+                              onChatActiveChange={setChatActive}
+                              /* "Voir le logement" depuis le menu d'une conversation :
+                                 résout l'objet listing depuis (1) listingId si fourni
+                                 (Supabase via embed conversations.listing_id) ou (2)
+                                 le titre `logement` (mocks). Ouvre DetailScreen. */
+                              onOpenListing={(conv) => {
+                                if (!conv) return;
+                                const candidates = [...dbListings, ...PROPERTIES, ...VEHICLES];
+                                let item = null;
+                                if (conv.listingId) {
+                                  item = candidates.find(i => i.id === conv.listingId) || null;
+                                }
+                                if (!item && conv.logement) {
+                                  item = candidates.find(i => i.title === conv.logement) || null;
+                                }
+                                if (item) {
+                                  setDetail(item);
+                                  // Si on était sur l'onglet messages, on bascule pas la nav
+                                  // — DetailScreen est un overlay rendu au-dessus.
+                                }
+                              }}
+                            />}
       {tab==="profile"  && <ProfileScreen role={role} setRole={setRole} currentProfile={currentProfile} onOpenRent={() => setRentOpen(true)} onOpenDashboard={()=>setDashboardOpen(true)} onOpenTechs={()=>{setTechsRole(role);setTechsOpen(true);}} onOpenPros={()=>{setProsRole(role);setProsOpen(true);}} onOpenPublish={()=>{setPublishSegment(null);setPublishOpen(true);}} onOpenSettings={()=>setSettingsOpen(true)} onOpenEditProfile={()=>setEditProfileOpen(true)} onOpenReviews={()=>setReviewsOpen(true)} onOpenHistory={()=>setHistoryOpen(true)} onLogout={onLogout}/>}
 
       {/* My QR Code dialog (locataire) */}

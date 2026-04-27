@@ -1,7 +1,7 @@
 /* Byer — Messages & Chat */
 
 /* ─── MESSAGES SCREEN ───────────────────────────── */
-function MessagesScreen({ role, onChatActiveChange }) {
+function MessagesScreen({ role, onChatActiveChange, onOpenListing }) {
   const isBailleur = role === "bailleur";
 
   /* En mode bailleur, l'enrichissement avec des contacts fictifs
@@ -86,6 +86,7 @@ function MessagesScreen({ role, onChatActiveChange }) {
           avatarBg:     other?.avatar_bg || "#6366F1",
           photo:        other?.photo_url || null,
           logement:     c.listings?.title || "Annonce",
+          listingId:    c.listing_id || null,        // pour résoudre "Voir le logement"
           lastMsg:      c.last_message_preview || "",
           lastTime:     c.last_message_at ? new Date(c.last_message_at).toLocaleDateString('fr-FR') : "—",
           unread:       unreadCounts[idx],
@@ -228,6 +229,12 @@ function MessagesScreen({ role, onChatActiveChange }) {
            ferme le chat → cohérent avec le bouton retour téléphone. Un seul
            chemin de sortie pour les deux affordances (cf. useEffect popstate). */
         onBack={() => window.history.back()}
+        /* "Voir le logement" du menu chat → ferme le chat (history.back) puis
+           ouvre la fiche détail du listing résolu par app.js depuis la conv. */
+        onOpenListing={onOpenListing ? (() => {
+          window.history.back();
+          onOpenListing(conv);
+        }) : null}
         onToggleBlock={() => toggleBlock(openChat)}
         onSendMessage={async (text) => {
           // Optimistic UI : on ajoute tout de suite, on "ré-aligne" via Realtime
@@ -475,7 +482,7 @@ function NewConversationSheet({ onClose, onSelect, existingNames = [] }) {
 }
 
 /* ─── CHAT SCREEN ───────────────────────────────── */
-function ChatScreen({ conv, onBack, onToggleBlock, onSendMessage }) {
+function ChatScreen({ conv, onBack, onToggleBlock, onSendMessage, onOpenListing }) {
   const [input, setInput]       = useState("");
   const [showMenu, setShowMenu] = useState(false);
   const [blockConfirm, setBlockConfirm] = useState(false);
@@ -523,7 +530,15 @@ function ChatScreen({ conv, onBack, onToggleBlock, onSendMessage }) {
           <>
             <div style={{position:"fixed",inset:0,zIndex:50}} onClick={()=>setShowMenu(false)}/>
             <div style={S.chatMenu}>
-              <button style={S.chatMenuItem} onClick={()=>{ setShowMenu(false); flashChat(`Logement : ${conv.logement}`); }}>
+              <button style={S.chatMenuItem} onClick={()=>{
+                setShowMenu(false);
+                if (onOpenListing) {
+                  onOpenListing();   // ferme le chat + ouvre la fiche
+                } else {
+                  // Fallback démo si app.js n'a pas câblé le prop
+                  flashChat(`Logement : ${conv.logement}`);
+                }
+              }}>
                 <Icon name="home" size={16} color={C.dark} stroke={1.8}/>
                 <span>Voir le logement</span>
               </button>
