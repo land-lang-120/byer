@@ -67,11 +67,12 @@ create policy "conversations_party_update" on public.conversations
   with check (guest_id = auth.uid() or host_id = auth.uid());
 
 -- ────────────────────────────────────────────────────────────────────
--- 4. reviews : ajouter WITH CHECK pour bloquer le transfert d'author
+-- 4. reviews : ajouter WITH CHECK + REVOKE column-level pour author_id
 -- ────────────────────────────────────────────────────────────────────
 -- Note : la policy d'origine permet à l'host de répondre (champ reply)
 -- même s'il n'est pas l'auteur. On préserve cette logique tout en
--- empêchant la modif d'author_id par les deux côtés.
+-- empêchant la modif d'author_id (REVOKE column-level — bulletproof,
+-- pas un subselect anti-pattern qui ne marche pas en READ COMMITTED).
 drop policy if exists "reviews_author_update" on public.reviews;
 create policy "reviews_author_update" on public.reviews
   for update
@@ -83,17 +84,18 @@ create policy "reviews_author_update" on public.reviews
     )
   )
   with check (
-    -- L'author_id ne doit JAMAIS changer, peu importe qui modifie
-    author_id = (select author_id from public.reviews where id = reviews.id)
-    -- Et l'auteur peut update OU l'host de la booking peut update (pour reply)
-    and (
-      author_id = auth.uid()
-      or exists (
-        select 1 from public.bookings b
-        where b.id = reviews.booking_id and b.host_id = auth.uid()
-      )
+    -- Post-update : la ligne doit toujours appartenir à l'auteur
+    -- ou à l'host de la booking (pour reply).
+    author_id = auth.uid()
+    or exists (
+      select 1 from public.bookings b
+      where b.id = reviews.booking_id and b.host_id = auth.uid()
     )
   );
+
+-- L'author_id et booking_id/listing_id ne doivent JAMAIS être modifiés
+-- (réécrire l'historique). REVOKE column-level pour être infaillible.
+revoke update (author_id, booking_id, listing_id) on public.reviews from authenticated;
 
 -- ────────────────────────────────────────────────────────────────────
 -- 5. notifications : ajouter WITH CHECK pour bloquer le transfert user_id
@@ -188,8 +190,11 @@ create policy "avatars_self_delete"
 --   • identity_verified     — flag KYC validé (mis par Edge Function admin)
 --   • email_verified        — mis par Auth seul
 --   • phone_verified        — mis par Auth + Edge Function send-otp-sms
---   • is_superhost          — calculé par trigger mig 0007
 --   • role                  — locataire/bailleur (admin only via Edge Function)
+--
+-- Note : is_superhost est sur la table LISTINGS (pas profiles), géré
+-- séparément par le trigger update_listing_superhost (mig 0005). On le
+-- protège dans un REVOKE séparé sur listings ci-dessous.
 --
 -- Tier (generated stored) n'a pas besoin d'être révoqué : il est calculé
 -- automatiquement à partir de rewards_points donc protégé par transitivité.
@@ -200,10 +205,16 @@ revoke update (
   identity_verified,
   email_verified,
   phone_verified,
-  is_superhost,
   role
 ) on public.profiles
 from authenticated;
+
+-- Anti-triche superhost : un bailleur ne doit pas pouvoir se mettre en
+-- "is_superhost = true" lui-même. Le trigger update_listing_superhost
+-- (mig 0005) calcule cette valeur depuis le portfolio (≥3 résa terminées
+-- avec ≥4.8 rating). REVOKE column-level pour bloquer la triche.
+-- Idem pour rating_avg / review_count qui sont calculés par trigger.
+revoke update (is_superhost, rating_avg, review_count) on public.listings from authenticated;
 
 -- Côté policy on simplifie aussi : profiles_self_update reste avec son
 -- USING/WITH CHECK existants. Le REVOKE column-level rend les anciens
