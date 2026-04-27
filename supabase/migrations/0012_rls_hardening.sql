@@ -247,6 +247,11 @@ create policy "trusted_devices_no_client_insert" on public.trusted_devices
 -- Note : la vraie protection vient déjà de la contrainte unique
 -- (referred_id, referrer_id) — un user ne peut être filleul que d'UN
 -- seul autre user. Le rate limit ici est un complément contre les bots.
+--
+-- Postgres ne permet pas de changer le type de retour d'une fonction via
+-- CREATE OR REPLACE — il faut DROP d'abord. La fonction existante (mig
+-- 0004) retournait probablement boolean ou text ; on bascule à jsonb.
+drop function if exists public.apply_referral_code(text);
 
 create or replace function public.apply_referral_code(p_code text)
 returns jsonb
