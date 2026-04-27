@@ -9,6 +9,53 @@
 
 ---
 
+## 0bis. 🎯 CHECKLIST SENIOR (À RELIRE SYSTÉMATIQUEMENT)
+
+> ⚠️ **À CONSULTER AVANT CHAQUE PHASE / COMMIT / DEPLOY.** Mise en place
+> après l'incident v50 (deux bugs livrés en prod : ghost-ref `activeOwner`
+> + photo upload non câblé). Audit méticuleux non négociable.
+
+**Avant chaque modification structurelle :**
+1. **Grep ghost-refs** : avant de supprimer une variable/state/ref/import,
+   lancer `grep -rn "<varname>" js/` pour identifier TOUTES les références.
+   Aucune n'a le droit de subsister après suppression.
+
+2. **Walk-through render path** : pour chaque écran touché, tracer
+   mentalement chaque accès `props.*` / `state.*` / `owner.*` ligne par
+   ligne sur le code post-modification. Identifier les paths qui pourraient
+   recevoir `undefined` / array vide / null.
+
+3. **Test des 3 chemins** : valider mentalement que l'écran rend
+   correctement dans :
+   - **(a)** Mode démo / offline (Supabase indisponible)
+   - **(b)** User authentifié sans data (premier login, aucune annonce)
+   - **(c)** User authentifié avec data réelle
+
+**Avant chaque commit / push :**
+4. **Lecture du diff** : `git diff --stat` puis lire chaque fichier modifié
+   en entier. Pas de push à l'aveugle.
+
+5. **Vérif handlers** : tout bouton/action/upload ajouté DOIT avoir un
+   `onClick` (ou `onChange`) fonctionnel. Pas de "j'ai vu le SVG je suppose
+   que ça marche" — vérifier l'arborescence JSX.
+
+6. **Audit cumulatif** : début de chaque nouvelle phase = grep + vérif que
+   les phases précédentes tiennent toujours (RLS appliquée, mocks remplacés,
+   pas de régression).
+
+**Après chaque deploy :**
+7. **Smoke test live** : `curl /bundle.js?v=N | grep -c <feature_marker>` >0
+   ET `grep -c <removed_var>` =0 sur le live.
+
+8. **Tests utilisateur** : ne JAMAIS dire "prêt à tester" sans avoir mentalement
+   simulé le parcours principal de l'utilisateur final sur le code post-deploy.
+
+> 💡 Cette checklist est la dette technique à payer après chaque audit foiré.
+> Elle reste applicable pour Phases 4, 5 et toutes les apps suivantes
+> (CarExpress, Pharmadroid, Sequoia).
+
+---
+
 ## 0. 📊 État d'avancement (snapshot 2026-04-27)
 
 > Vue d'ensemble unique. Source de vérité pour répondre à "où en est-on ?".
@@ -71,6 +118,23 @@
 - 3.H — `OwnerListAllScreen` : reçoit `currentProfile` + `dbMyListings`, utilise `buildOwnerFromDb` pour bâtir l'owner virtuel quand `usingRealData=true`. "Voir tout" sur Owner Dashboard ne montre plus systématiquement les biens d'Ekwalla.
 - 3.I — `OwnerProfileScreen` : accepte un payload objet `{name, photo, since, verified, isSupabase, ownerId}` en plus du string mock historique. Quand on clique sur l'hôte d'une fiche Supabase, on voit un profil minimal cohérent (nom + photo + badge "Identité vérifiée") au lieu de "Profil non trouvé".
 - `DetailScreen` : appelle `onViewOwner(ownerPayload)` avec un objet enrichi quand `item._supabase=true`, sinon string mock pour rétro-compat.
+
+**v51 — Hotfix audit méticuleux post-déploiement (2026-04-27)**
+
+> Pino signale 2 bugs après v50 → audit révèle les manques de mon process. Mise en place d'une checklist senior pour Phase 4+ (cf. fin de section).
+
+- **Bug ghost-ref (`activeOwner.charCodeAt(0)`)** : Phase 3.C avait supprimé `useState("Ekwalla M.")` mais laissé une référence ligne 143 du graphique de revenus → ReferenceError → ErrorBoundary affiché. Fix : `seed = (owner.name || "byer").charCodeAt(0)`.
+- **Upload photo profil non implémenté** : EditProfile avait l'icône appareil photo SVG mais aucun `onClick`. Implémentation complète :
+  - Input file caché (`accept="image/png,image/jpeg,image/webp"`).
+  - Clic sur avatar OU camera OU texte "Changer la photo" → ouvre le picker.
+  - Validation client : type image + taille ≤ 5 Mo.
+  - Preview optimiste via FileReader (data URL avant upload terminé).
+  - Upload via `db.storage.uploadAvatar` (utilise `avatars_self_update` + `avatars_self_delete` policies de mig 0012 — `upsert:true` → la 2e photo écrase la 1ère).
+  - Update `profiles.photo_url` avec cache-bust `?t={Date.now()}` (sinon les navigateurs réutilisent l'image cachée).
+  - Spinner sur le bouton camera + toast vert/rouge selon résultat.
+  - Rollback de la preview optimiste si upload échoue.
+
+> 📖 Checklist senior consolidée en section **0bis** (en haut du document) — à relire systématiquement avant chaque phase.
 
 ### 🔄 En cours (Phase 3 → branchement OwnerDashboard sur DB réelle)
 
@@ -137,12 +201,82 @@
 - Dark mode polish (déjà en place côté CSS, valider sur tous écrans).
 - Animations transitions entre écrans (framer-motion alternative léger).
 
-**Fonctionnel V2**
-- Réseau de techniciens (entretien, plomberie, électricité — déjà câblé partiellement).
-- Convoyeur véhicules (livraison à domicile).
-- Agent immobilier multi-comptes (rôle "agent" + permissions sur plusieurs `owner_id`).
-- Modérateur annonces (rôle "moderator" + écran review).
-- Système de boost annonces (mise en avant payante via Stripe).
+**Fonctionnel V2 — réseau Concierges & Agents (architecture définie 2026-04-27)**
+
+> ✅ **Vision Pino** validée : un user peut créer un "profil concierge" (ou
+> agent/technicien). Visible à lui-même (CRUD perso) ET à tous les bailleurs
+> qui cherchent à recruter. Une fois engagé sur un listing, il agit au nom
+> du bailleur (chat locataire, remise de clés, validation arrivée, signature
+> contrat depuis l'app).
+
+**Modèle DB proposé** (à implémenter en mig 0014) :
+
+```sql
+-- Extension : profil pro (agent / technicien / concierge / convoyeur)
+create table public.pro_profiles (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid not null references public.profiles(id) on delete cascade,
+  pro_type        text not null check (pro_type in ('agent','technicien','concierge','convoyeur')),
+  specialties     text[],                     -- ['plomberie','électricité'] pour techniciens
+  cities          text[],                     -- zones desservies
+  experience_years int,
+  hourly_rate     int,                        -- FCFA/heure
+  daily_rate      int,                        -- FCFA/jour
+  bio             text,
+  is_active       boolean default true,
+  rating_avg      numeric(2,1),               -- moyenne reviews côté bailleur
+  mission_count   int default 0,              -- nombre de missions terminées
+  created_at      timestamptz default now(),
+  unique (user_id, pro_type)                  -- 1 profil par type par user
+);
+
+-- Assignation : un pro engagé sur un listing par un bailleur
+create table public.listing_assignments (
+  id              uuid primary key default gen_random_uuid(),
+  listing_id      uuid not null references public.listings(id) on delete cascade,
+  pro_id          uuid not null references public.pro_profiles(id) on delete cascade,
+  bailleur_id     uuid not null references public.profiles(id),
+  scope           text[] not null,            -- ['chat','keys','arrival','contract','damage_report']
+  status          text default 'pending'      -- pending|accepted|rejected|terminated
+                  check (status in ('pending','accepted','rejected','active','terminated')),
+  fee_type        text,                       -- 'hourly' | 'daily' | 'fixed' | 'commission'
+  fee_amount      int,
+  notes           text,
+  accepted_at     timestamptz,
+  terminated_at   timestamptz,
+  created_at      timestamptz default now()
+);
+
+-- Audit log : actions du pro au nom du bailleur (traçabilité légale)
+create table public.assignment_actions (
+  id              uuid primary key default gen_random_uuid(),
+  assignment_id   uuid not null references public.listing_assignments(id),
+  action          text not null,              -- 'keys_handed','arrival_validated','contract_signed','message_sent'
+  booking_id      uuid references public.bookings(id),
+  metadata        jsonb,
+  performed_at    timestamptz default now()
+);
+```
+
+**Permissions RLS** (durcissement nécessaire) :
+- Pros voient leurs propres assignements seulement (`pro_id IN (select id from pro_profiles where user_id = auth.uid())`).
+- Bailleurs voient les pro_profiles `is_active=true` (lecture publique pour recrutement) + leurs assignements (`bailleur_id = auth.uid()`).
+- Pros peuvent agir sur un listing UNIQUEMENT si une `listing_assignments` `status='active'` lie leur pro_id à ce listing — checké via fonctions RPC SECURITY DEFINER (jamais policy directe sur listings).
+- Logging automatique dans `assignment_actions` via triggers sur les tables impliquées.
+
+**Pourquoi V2 (post-Play Store) et pas v1** :
+- Effort : ~12-15 h dev (DB + RLS + UI bailleur + UI pro + flows recrutement/résiliation/audit).
+- Pas bloquant pour Play Store : l'app v1 marche sans avec un bailleur qui gère seul.
+- Risque RLS : la délégation introduit un modèle de permissions complexe (un pro peut écrire dans la conv d'un bailleur sur un listing donné, mais pas sur les autres listings du même bailleur). Mieux vaut maturer ce modèle après quelques semaines de prod.
+
+**Préparation v1 minimale (à faire dans Phase 4 ou 5)** :
+- Garder `professionals.js` / `technicians.js` en mode "vitrine read-only" (mocks visibles, mais bouton "Engager" affiche "Bientôt disponible").
+- Ajouter une colonne `roles text[]` sur profiles (ou conserver `role` text et préparer la migration vers array) pour permettre un futur multi-rôle.
+
+**Autres extensions V2** :
+- Convoyeur véhicules (livraison à domicile — sous-cas de pro_type='convoyeur').
+- Modérateur annonces (rôle 'moderator' + écran review).
+- Système de boost annonces (mise en avant payante via Flutterwave).
 - Programme de récompenses : tier system (déjà en DB) + UI rewards-store.
 - Refer-a-friend deep link (`byer://r/CODE`) avec attribution device-fingerprint.
 
