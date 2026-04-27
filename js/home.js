@@ -1,7 +1,7 @@
 /* Byer — Home Screen */
 
 /* ─── HOME ──────────────────────────────────────── */
-function HomeScreen({ role, setRole, segment, setSegment, propType, setPropType, duration, setDuration, location, onOpenLocPicker, search, setSearch, searchLoading, activeFilterCount, onOpenFilter, items, saved, toggleSave, openDetail, openGallery, onOpenNotifs, onOpenDashboard, onOpenPublish, onOpenPros, onOpenTechs, onOpenBoost }) {
+function HomeScreen({ role, setRole, segment, setSegment, propType, setPropType, duration, setDuration, location, onOpenLocPicker, search, setSearch, searchLoading, activeFilterCount, onOpenFilter, items, saved, toggleSave, openDetail, openGallery, ownerStats, dbMyListings = [], onOpenNotifs, onOpenDashboard, onOpenPublish, onOpenPros, onOpenTechs, onOpenBoost }) {
   const isBailleur = role === "bailleur";
 
   /* Greeting selon role + segment — aligné à l'app
@@ -16,18 +16,38 @@ function HomeScreen({ role, setRole, segment, setSegment, propType, setPropType,
         ? "Votre logement à portée de main !"
         : "Prêt à prendre la route ?");
 
-  /* Stats du bailleur (mock dérivé des données — sera branché sur Supabase
-     dans une prochaine itération : db.listings.listMine + db.bookings.listMine
-     + agrégation revenue côté serveur). Tant qu'on est en mock, on affiche
-     un bandeau de transparence pour ne pas mentir à l'utilisateur sur ses
-     vraies stats — audit 2026-04-27. */
-  const ownerProperties = PROPERTIES.slice(0, 4);   // mes annonces (mock)
+  /* Stats bailleur — Phase 3 : si ownerStats.hasRealData=true (user a au
+     moins 1 listing publiée OU 1 booking comme host), on affiche les vraies
+     données depuis Supabase. Sinon on retombe sur les mocks démo + bandeau.
+     Le filtrage par segment côté DB (property/vehicle) se fait sur dbMyListings. */
+  const realMyListings = (dbMyListings || []).filter(l =>
+    segment === "property" ? l.type !== "vehicle" : l.type === "vehicle"
+  );
+  const realStats = ownerStats && ownerStats.hasRealData
+    ? {
+        myListings:    realMyListings,
+        incomingReqs:  ownerStats.incomingReqs,
+        activeBookings: ownerStats.activeBookings,
+        monthRevenue:  ownerStats.monthRevenue,
+        isMock:        false,
+      }
+    : null;
+  // Fallback démo (offline / no-data)
+  const ownerProperties = PROPERTIES.slice(0, 4);
   const ownerVehicles   = VEHICLES.slice(0, 3);
-  const myListings      = segment==="property" ? ownerProperties : ownerVehicles;
-  const incomingReqs    = BOOKINGS.filter(b => b.status === "upcoming").length;
-  const activeBookings  = BOOKINGS.filter(b => b.status === "active").length;
-  const monthRevenue    = BOOKINGS.reduce((s,b)=>s+(b.price*b.nights),0);
-  const ownerStatsAreMock = true;  // flag pour bandeau "démo"
+  const mockStats = {
+    myListings:    segment==="property" ? ownerProperties : ownerVehicles,
+    incomingReqs:  BOOKINGS.filter(b => b.status === "upcoming").length,
+    activeBookings: BOOKINGS.filter(b => b.status === "active").length,
+    monthRevenue:  BOOKINGS.reduce((s,b)=>s+(b.price*b.nights),0),
+    isMock:        true,
+  };
+  const stats = realStats || mockStats;
+  const myListings        = stats.myListings;
+  const incomingReqs      = stats.incomingReqs;
+  const activeBookings    = stats.activeBookings;
+  const monthRevenue      = stats.monthRevenue;
+  const ownerStatsAreMock = stats.isMock;
 
   return (
     <div>

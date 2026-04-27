@@ -328,6 +328,58 @@ function ByerApp({ onLogout }) {
   }, [currentUserId, role]);
   React.useEffect(() => { refreshDbBookings(); }, [refreshDbBookings]);
 
+  // ─────────────────────────────────────────────────────────────
+  // dbMyListings : annonces publiées par le user connecté.
+  // Sert à brancher OwnerDashboard + Home bailleur sur la vraie DB
+  // au lieu d'afficher les mocks "Ekwalla M." pour tous les bailleurs
+  // (audit 2026-04-27 — Phase 3).
+  // ─────────────────────────────────────────────────────────────
+  const [dbMyListings, setDbMyListings] = useState([]);
+  const refreshDbMyListings = React.useCallback(async () => {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady || !currentUserId) return;
+    const { data, error } = await db.listings.listMine(currentUserId);
+    if (!error && Array.isArray(data)) {
+      setDbMyListings(data.map(adaptListing).filter(Boolean));
+    } else if (error) {
+      console.warn("[byer] listings.listMine error:", error.message);
+    }
+  }, [currentUserId]);
+  React.useEffect(() => { refreshDbMyListings(); }, [refreshDbMyListings]);
+
+  // Stats bailleur agrégées depuis dbMyListings + dbBookings.
+  // Calculées mémoïsées pour éviter les re-calculs à chaque render.
+  // - hostBookings : sous-ensemble des bookings où je suis hôte
+  //                  (dbBookings est déjà filtré côté DB par role, mais
+  //                   on garde le filtre client pour robustesse)
+  // - monthRevenue : somme des total_price des bookings 'active' ou
+  //                  'completed' du mois courant
+  // - incomingReqs : pending/confirmed (host doit valider/préparer)
+  // - activeBookings : status='active' (séjour en cours)
+  const ownerStats = React.useMemo(() => {
+    const hostBookings = role === "bailleur" ? dbBookings : [];
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    const monthRevenue = hostBookings.reduce((sum, b) => {
+      if (!b.checkin || !b.total) return sum;
+      const ci = new Date(b.checkin);
+      if (ci >= monthStart && ci <= monthEnd && (b.rawStatus === "active" || b.rawStatus === "completed" || b.rawStatus === "confirmed")) {
+        return sum + (Number(b.total) || 0);
+      }
+      return sum;
+    }, 0);
+    const incomingReqs = hostBookings.filter(b => b.rawStatus === "pending" || b.rawStatus === "confirmed").length;
+    const activeBookings = hostBookings.filter(b => b.rawStatus === "active").length;
+    return {
+      myListingsCount: dbMyListings.length,
+      monthRevenue,
+      incomingReqs,
+      activeBookings,
+      hasRealData: dbMyListings.length > 0 || hostBookings.length > 0,
+    };
+  }, [dbMyListings, dbBookings, role]);
+
   const toggleSave  = (id, e) => { e?.stopPropagation(); setSaved(p => ({...p,[id]:!p[id]})); };
   const openGallery = (item, idx=0, e) => { e?.stopPropagation(); setGallery({item,idx}); };
 
@@ -502,6 +554,9 @@ function ByerApp({ onLogout }) {
     screenContent = <BuildingDetailScreen building={buildingDetail} onBack={()=>{ setBuildingDetail(null); if (returnToDashboard) { setDashboardOpen(true); setReturnToDashboard(false); } }}/>;
   } else if (dashboardOpen) {
     screenContent = <OwnerDashboardScreen
+                      currentProfile={currentProfile}
+                      dbMyListings={dbMyListings}
+                      ownerStats={ownerStats}
                       onBack={()=>setDashboardOpen(false)}
                       onViewBuilding={b=>{setDashboardOpen(false);setBuildingDetail(b);setReturnToDashboard(true);}}
                       onManageTechs={()=>{setDashboardOpen(false);setTechsRole("bailleur");setTechsOpen(true);setReturnToDashboard(true);}}
@@ -607,6 +662,11 @@ function ByerApp({ onLogout }) {
           onOpenFilter={() => setFilterOpen(true)}
           items={items} saved={saved}
           toggleSave={toggleSave} openDetail={setDetail} openGallery={openGallery}
+          /* Phase 3 : stats bailleur réelles (Supabase) ; HomeScreen bascule
+             en mode "vraies données" si ownerStats.hasRealData=true.
+             Sinon affiche le bandeau démo + chiffres mock pour design preview. */
+          ownerStats={ownerStats}
+          dbMyListings={dbMyListings}
           onOpenNotifs={()=>setNotifsOpen(true)}
           onOpenDashboard={()=>setDashboardOpen(true)}
           onOpenPublish={(seg)=>{setPublishSegment(seg||null);setPublishOpen(true);}}

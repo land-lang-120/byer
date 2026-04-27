@@ -3,9 +3,86 @@
    stats portefeuille, et navigation entités mères/filles.
    ═══════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════
+   buildOwnerFromDb : transforme currentProfile + dbMyListings
+   en un objet "owner" compatible avec la structure historique
+   buildings → units (groupées par ville) + vehicles flat.
+
+   Pourquoi : OwnerDashboard a été conçu sur une hiérarchie
+   immeuble → unités héritée du mock OWNERS. La DB Supabase est
+   plate (table listings sans concept de "building"). On fait
+   le pont en regroupant les listings par city.
+
+   Audit 2026-04-27 — Phase 3 : remplace l'utilisation systématique
+   de OWNERS["Ekwalla M."] qui affichait les biens d'Ekwalla à
+   tous les bailleurs.
+   ═══════════════════════════════════════════════════ */
+function buildOwnerFromDb(currentProfile, dbMyListings) {
+  if (!currentProfile) return null;
+  const props    = (dbMyListings || []).filter(l => l.type !== "vehicle");
+  const vehicles = (dbMyListings || []).filter(l => l.type === "vehicle");
+
+  const byCity = {};
+  props.forEach(p => {
+    const c = p.city || "Sans ville";
+    if (!byCity[c]) byCity[c] = [];
+    byCity[c].push(p);
+  });
+  const buildings = Object.entries(byCity).map(([city, listings], idx) => ({
+    id: `BUILD-${idx}`,
+    name: `Mes biens à ${city}`,
+    address: city,
+    type: "immeuble",
+    floors: listings.length,
+    img: listings[0]?.img || "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=600&q=80",
+    units: listings.map(l => ({
+      id:           l.id,
+      label:        l.title,
+      floor:        "—",
+      propType:     l.propType,
+      nightPrice:   l.nightPrice,
+      monthPrice:   l.monthPrice,
+      available:    true,
+      availableFrom: null,
+    })),
+  }));
+
+  return {
+    id:        currentProfile.id,
+    name:      currentProfile.name || "Mon profil",
+    since:     currentProfile.member_since
+                 ? new Date(currentProfile.member_since).getFullYear().toString()
+                 : new Date().getFullYear().toString(),
+    city:      currentProfile.city || "Cameroun",
+    avatar:    currentProfile.avatar_letter || (currentProfile.name?.[0] || "U").toUpperCase(),
+    avatarBg:  currentProfile.avatar_bg || "#6366F1",
+    photo:     currentProfile.photo_url || null,
+    superhost: false,        // calculé par trigger côté listings, pas profile
+    rating:    0,
+    reviews:   0,
+    about:     currentProfile.bio || "",
+    buildings,
+    vehicles: vehicles.map(v => ({
+      id:         v.id,
+      brand:      v.brand || "",
+      model:      v.model || "",
+      year:       v.year,
+      propType:   v.propType,
+      city:       v.city,
+      img:        v.img,
+      nightPrice: v.nightPrice,
+      monthPrice: v.monthPrice,
+      fuel:       v.fuel || "",
+      trans:      v.trans || "",
+      seats:      v.seats,
+      available:  true,
+      plate:      "—",
+    })),
+  };
+}
+
 /* ─── OWNER DASHBOARD SCREEN ─────────────────────── */
-function OwnerDashboardScreen({ onBack, onViewBuilding, onManageTechs, onManagePros, onBoost, onAddListing, onViewAll }) {
-  const [activeOwner] = useState("Ekwalla M.");
+function OwnerDashboardScreen({ currentProfile, dbMyListings, ownerStats, onBack, onViewBuilding, onManageTechs, onManagePros, onBoost, onAddListing, onViewAll }) {
   const [chartPeriod, setChartPeriod] = useState("6m"); // 3m | 6m | 12m
   /* Filtre ville/région — "all" = tout Cameroun, sinon nom de la ville */
   const [cityFilter, setCityFilter] = useState("all");
@@ -14,7 +91,15 @@ function OwnerDashboardScreen({ onBack, onViewBuilding, onManageTechs, onManageP
   const [delegationsMap, setDelegationsMap] = useState(() => delegations.getAll());
   /* Re-sync from storage helper après chaque update */
   const refreshDelegations = () => setDelegationsMap(delegations.getAll());
-  const owner = OWNERS[activeOwner];
+
+  /* Phase 3 : si l'utilisateur a publié au moins 1 annonce, on affiche
+     ses VRAIES données (built from currentProfile + dbMyListings).
+     Sinon, fallback sur le mock OWNERS["Ekwalla M."] pour conserver la
+     démo visuelle (avec bandeau "Données de démonstration" affiché
+     plus bas qui prévient l'utilisateur). */
+  const realOwner = buildOwnerFromDb(currentProfile, dbMyListings);
+  const usingRealData = !!(realOwner && (realOwner.buildings.length > 0 || realOwner.vehicles.length > 0));
+  const owner = usingRealData ? realOwner : OWNERS["Ekwalla M."];
   if (!owner) return null;
 
   /* Liste de toutes les villes présentes dans le portefeuille (immo + véhicules)
@@ -93,27 +178,30 @@ function OwnerDashboardScreen({ onBack, onViewBuilding, onManageTechs, onManageP
           <div style={{width:38}}/>
         </div>
 
-        {/* Bandeau démo — transparence : les chiffres affichés sont fictifs
-            tant que le bailleur n'a pas publié de vraies annonces. À retirer
-            quand la branche Supabase de listMine + revenus sera câblée
-            (cf. cahier de charges 0.À faire / OwnerDashboard). */}
-        <div style={{
-          margin:"10px 16px 0", padding:"10px 14px",
-          background:"#FFFBEB", border:"1px solid #FDE68A",
-          borderRadius:12, display:"flex", alignItems:"flex-start", gap:10,
-          fontFamily:"'DM Sans',sans-serif",
-        }}>
-          <span style={{fontSize:18, lineHeight:"20px"}}>📊</span>
-          <div style={{flex:1, minWidth:0}}>
-            <p style={{fontSize:12, fontWeight:700, color:"#92400E", margin:0}}>
-              Données de démonstration
-            </p>
-            <p style={{fontSize:11, color:"#78350F", margin:"2px 0 0", lineHeight:1.4}}>
-              Les chiffres ci-dessous sont des exemples. Vos vraies statistiques
-              apparaîtront dès que vous publierez votre première annonce.
-            </p>
+        {/* Bandeau "Données de démonstration" — affiché UNIQUEMENT si le
+            bailleur n'a pas encore publié d'annonce (usingRealData=false).
+            Dès la 1ère annonce, on bascule sur les vraies données via
+            buildOwnerFromDb(currentProfile, dbMyListings) et le bandeau
+            disparaît automatiquement. Phase 3 — audit 2026-04-27. */}
+        {!usingRealData && (
+          <div style={{
+            margin:"10px 16px 0", padding:"10px 14px",
+            background:"#FFFBEB", border:"1px solid #FDE68A",
+            borderRadius:12, display:"flex", alignItems:"flex-start", gap:10,
+            fontFamily:"'DM Sans',sans-serif",
+          }}>
+            <span style={{fontSize:18, lineHeight:"20px"}}>📊</span>
+            <div style={{flex:1, minWidth:0}}>
+              <p style={{fontSize:12, fontWeight:700, color:"#92400E", margin:0}}>
+                Données de démonstration
+              </p>
+              <p style={{fontSize:11, color:"#78350F", margin:"2px 0 0", lineHeight:1.4}}>
+                Les chiffres ci-dessous sont des exemples. Vos vraies statistiques
+                apparaîtront dès que vous publierez votre première annonce.
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Owner card */}
         <div style={{margin:"12px 16px",background:C.white,borderRadius:18,padding:"16px",display:"flex",alignItems:"center",gap:14,boxShadow:"0 2px 12px rgba(0,0,0,.06)"}}>

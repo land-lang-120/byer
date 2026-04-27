@@ -431,11 +431,18 @@ const BOOKED_UNTIL = {
 };
 
 /* ─── RENT SCREEN CONSTANTS ────────────────────────
-   Dates et seuils pour l'écran de loyers
+   Dates et seuils pour l'écran de loyers.
+   Avant : date figée 2025-03-22 → tous les calculs (DAYS_LEFT, WARN)
+   étaient cassés en 2026 (audit 2026-04-27). Maintenant calculé dynamiquement
+   à partir de "maintenant" : DEADLINE_1 = fin du mois courant.
 ─────────────────────────────────────────────────── */
-const TODAY      = new Date("2025-03-22");
-const DEADLINE_1 = new Date("2025-03-31"); // fin du mois courant
-const DAYS_LEFT  = Math.ceil((DEADLINE_1 - TODAY) / 86400000); // 9 jours
+const TODAY      = new Date();
+const DEADLINE_1 = (() => {
+  const d = new Date(TODAY.getFullYear(), TODAY.getMonth() + 1, 0); // dernier jour du mois courant
+  d.setHours(23, 59, 59, 999);
+  return d;
+})();
+const DAYS_LEFT  = Math.ceil((DEADLINE_1 - TODAY) / 86400000);
 const WARN       = DAYS_LEFT <= 7; // rappel actif si <= 7 jours
 
 /* ─── LOYERS — VUE LOCATAIRE ───────────────────────── */

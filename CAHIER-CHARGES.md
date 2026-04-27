@@ -1,10 +1,10 @@
 # 📖 Byer — Cahier de charges
 
 > Marketplace de location immobilier + véhicules au Cameroun
-> Version : **3.3** — 2026-04-27 (Phase 1 + 2 livrées en prod : fixes critiques frontend + RLS hardening)
+> Version : **3.4** — 2026-04-27 (Phase 3 livrée : OwnerDashboard + Home bailleur branchés DB, RentScreen date dynamique, Messages cleanup)
 > URL prod : https://byer.landonjouajosephpino.workers.dev
 > Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **12 migrations appliquées, 18 RPCs en service, 1 Edge Function déployée**
-> Bundle frontend : `bundle.js?v=48` (Phase 1 critique + ErrorBoundary + branchement DB profil/trips/saved/notifs)
+> Bundle frontend : `bundle.js?v=49` (Phase 1 + 2 + 3 — toutes les données mockées remplaçables par DB réelle quand l'utilisateur en a)
 > Voir aussi : [PROGRESS.md](PROGRESS.md) (suivi du dev) · [supabase/SETUP.md](supabase/SETUP.md) (procédure migrations)
 
 ---
@@ -58,6 +58,13 @@
 - REVOKE column-level UPDATE sur `listings` (`is_superhost`, `rating_avg`, `review_count`) → bloque la triche superhost (calculé par trigger uniquement).
 - `trusted_devices_no_client_insert` (explicite, `with check (false)`) → INSERT direct côté client interdit, force passage par Edge Function.
 - `apply_referral_code` réécrit avec rate limit 5 codes/24h + return `jsonb {ok, error}` + DROP IF EXISTS pour permettre changement de signature.
+
+**Phase 3 — Cleanup données réelles (livrée 2026-04-27, bundle v49)**
+- 3.B — `HomeScreen` bailleur branché sur `ownerStats` (memoïsé dans ByerApp) : `myListings`/`incomingReqs`/`activeBookings`/`monthRevenue` agrégés depuis `dbMyListings` + `dbBookings(role=host)`. Bandeau "Démo" disparaît dès que `hasRealData=true` (≥1 listing OU ≥1 host booking).
+- 3.C — `OwnerDashboard` : adapter `buildOwnerFromDb(currentProfile, dbMyListings)` qui remplace `OWNERS["Ekwalla M."]` par un owner virtuel. Listings groupées par city → "buildings virtuels". Vehicles séparés. Owner card = vrais nom/photo/since/city du profil. Fallback mock si pas encore d'annonce.
+- 3.D — `data.js` : `TODAY = new Date()` (était figé `"2025-03-22"` → cassait DAYS_LEFT/WARN en 2026). `DEADLINE_1` = dernier jour du mois courant calculé dynamiquement.
+- 3.E — `messages.js` : retiré l'enrichissement bailleur avec contacts hardcodés (`Caroline N.`, `David M.`, `Aïcha B.`, `Junior K.`, `Sandrine T.`). Si user authentifié, les vraies conversations Supabase remplacent les mocks ; sinon empty state via démo neutre.
+- 3.F — Script `scripts/cleanup-demo-listings.sql` : `delete from listings where title like 'DEMO %'` (preview + delete commenté pour confirmation manuelle). À exécuter manuellement quand Pino veut nettoyer le seed mig 0010.
 
 ### 🔄 En cours (Phase 3 → branchement OwnerDashboard sur DB réelle)
 

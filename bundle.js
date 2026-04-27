@@ -2110,11 +2110,18 @@ const BOOKED_UNTIL = {
 };
 
 /* ─── RENT SCREEN CONSTANTS ────────────────────────
-   Dates et seuils pour l'écran de loyers
+   Dates et seuils pour l'écran de loyers.
+   Avant : date figée 2025-03-22 → tous les calculs (DAYS_LEFT, WARN)
+   étaient cassés en 2026 (audit 2026-04-27). Maintenant calculé dynamiquement
+   à partir de "maintenant" : DEADLINE_1 = fin du mois courant.
 ─────────────────────────────────────────────────── */
-const TODAY = new Date("2025-03-22");
-const DEADLINE_1 = new Date("2025-03-31"); // fin du mois courant
-const DAYS_LEFT = Math.ceil((DEADLINE_1 - TODAY) / 86400000); // 9 jours
+const TODAY = new Date();
+const DEADLINE_1 = (() => {
+  const d = new Date(TODAY.getFullYear(), TODAY.getMonth() + 1, 0); // dernier jour du mois courant
+  d.setHours(23, 59, 59, 999);
+  return d;
+})();
+const DAYS_LEFT = Math.ceil((DEADLINE_1 - TODAY) / 86400000);
 const WARN = DAYS_LEFT <= 7; // rappel actif si <= 7 jours
 
 /* ─── LOYERS — VUE LOCATAIRE ───────────────────────── */
@@ -8923,6 +8930,8 @@ function HomeScreen({
   toggleSave,
   openDetail,
   openGallery,
+  ownerStats,
+  dbMyListings = [],
   onOpenNotifs,
   onOpenDashboard,
   onOpenPublish,
@@ -8938,19 +8947,34 @@ function HomeScreen({
      Côté bailleur  : on pilote des locations & des revenus. */
   const greeting = isBailleur ? segment === "property" ? "Pilotez vos locations immobilières" : "Pilotez vos locations de véhicules" : segment === "property" ? "Votre logement à portée de main !" : "Prêt à prendre la route ?";
 
-  /* Stats du bailleur (mock dérivé des données — sera branché sur Supabase
-     dans une prochaine itération : db.listings.listMine + db.bookings.listMine
-     + agrégation revenue côté serveur). Tant qu'on est en mock, on affiche
-     un bandeau de transparence pour ne pas mentir à l'utilisateur sur ses
-     vraies stats — audit 2026-04-27. */
-  const ownerProperties = PROPERTIES.slice(0, 4); // mes annonces (mock)
+  /* Stats bailleur — Phase 3 : si ownerStats.hasRealData=true (user a au
+     moins 1 listing publiée OU 1 booking comme host), on affiche les vraies
+     données depuis Supabase. Sinon on retombe sur les mocks démo + bandeau.
+     Le filtrage par segment côté DB (property/vehicle) se fait sur dbMyListings. */
+  const realMyListings = (dbMyListings || []).filter(l => segment === "property" ? l.type !== "vehicle" : l.type === "vehicle");
+  const realStats = ownerStats && ownerStats.hasRealData ? {
+    myListings: realMyListings,
+    incomingReqs: ownerStats.incomingReqs,
+    activeBookings: ownerStats.activeBookings,
+    monthRevenue: ownerStats.monthRevenue,
+    isMock: false
+  } : null;
+  // Fallback démo (offline / no-data)
+  const ownerProperties = PROPERTIES.slice(0, 4);
   const ownerVehicles = VEHICLES.slice(0, 3);
-  const myListings = segment === "property" ? ownerProperties : ownerVehicles;
-  const incomingReqs = BOOKINGS.filter(b => b.status === "upcoming").length;
-  const activeBookings = BOOKINGS.filter(b => b.status === "active").length;
-  const monthRevenue = BOOKINGS.reduce((s, b) => s + b.price * b.nights, 0);
-  const ownerStatsAreMock = true; // flag pour bandeau "démo"
-
+  const mockStats = {
+    myListings: segment === "property" ? ownerProperties : ownerVehicles,
+    incomingReqs: BOOKINGS.filter(b => b.status === "upcoming").length,
+    activeBookings: BOOKINGS.filter(b => b.status === "active").length,
+    monthRevenue: BOOKINGS.reduce((s, b) => s + b.price * b.nights, 0),
+    isMock: true
+  };
+  const stats = realStats || mockStats;
+  const myListings = stats.myListings;
+  const incomingReqs = stats.incomingReqs;
+  const activeBookings = stats.activeBookings;
+  const monthRevenue = stats.monthRevenue;
+  const ownerStatsAreMock = stats.isMock;
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: S.stickyTop
   }, /*#__PURE__*/React.createElement("div", {
@@ -12309,14 +12333,15 @@ function MessagesScreen({
 }) {
   const isBailleur = role === "bailleur";
 
-  /* En mode bailleur on simule des conversations entrantes (voyageurs/locataires).
-     On enrichit chaque conv avec un rôle adapté côté bailleur.                  */
-  const baseConvs = isBailleur ? CONVERSATIONS_DATA.map((c, i) => ({
-    ...c,
-    contact: ["Caroline N.", "David M.", "Aïcha B.", "Junior K.", "Sandrine T."][i % 5] || c.contact,
-    contactRole: ["Voyageur", "Locataire long séjour", "Voyageur", "Demandeur", "Voyageur"][i % 5],
-    lastMsg: ["Bonjour, est-ce disponible le 20 ?", "Merci pour les clés !", "Le wifi fonctionne pas...", "Possible de visiter samedi ?", "Tout est parfait, merci !"][i % 5]
-  })) : CONVERSATIONS_DATA;
+  /* En mode bailleur, l'enrichissement avec des contacts fictifs
+     (Caroline N./David M./...) ne sert qu'à animer la démo offline.
+     Dès qu'un user connecté charge ses vraies conversations Supabase
+     (cf. useEffect ligne 38+), elles écrasent baseConvs. Pour ne pas
+     polluer la liste avec des fakes au mount initial des bailleurs
+     authentifiés, on garde CONVERSATIONS_DATA tel quel — l'effet de
+     branchement remplace par la liste réelle (ou empty state si vide).
+     Audit 2026-04-27. */
+  const baseConvs = CONVERSATIONS_DATA;
   const [convos, setConvos] = useState(baseConvs);
   const [openChat, setOpenChat] = useState(null);
   const [search, setSearch] = useState("");
@@ -18170,8 +18195,86 @@ function GuestVerificationSheet({
    stats portefeuille, et navigation entités mères/filles.
    ═══════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════
+   buildOwnerFromDb : transforme currentProfile + dbMyListings
+   en un objet "owner" compatible avec la structure historique
+   buildings → units (groupées par ville) + vehicles flat.
+
+   Pourquoi : OwnerDashboard a été conçu sur une hiérarchie
+   immeuble → unités héritée du mock OWNERS. La DB Supabase est
+   plate (table listings sans concept de "building"). On fait
+   le pont en regroupant les listings par city.
+
+   Audit 2026-04-27 — Phase 3 : remplace l'utilisation systématique
+   de OWNERS["Ekwalla M."] qui affichait les biens d'Ekwalla à
+   tous les bailleurs.
+   ═══════════════════════════════════════════════════ */
+function buildOwnerFromDb(currentProfile, dbMyListings) {
+  if (!currentProfile) return null;
+  const props = (dbMyListings || []).filter(l => l.type !== "vehicle");
+  const vehicles = (dbMyListings || []).filter(l => l.type === "vehicle");
+  const byCity = {};
+  props.forEach(p => {
+    const c = p.city || "Sans ville";
+    if (!byCity[c]) byCity[c] = [];
+    byCity[c].push(p);
+  });
+  const buildings = Object.entries(byCity).map(([city, listings], idx) => ({
+    id: `BUILD-${idx}`,
+    name: `Mes biens à ${city}`,
+    address: city,
+    type: "immeuble",
+    floors: listings.length,
+    img: listings[0]?.img || "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=600&q=80",
+    units: listings.map(l => ({
+      id: l.id,
+      label: l.title,
+      floor: "—",
+      propType: l.propType,
+      nightPrice: l.nightPrice,
+      monthPrice: l.monthPrice,
+      available: true,
+      availableFrom: null
+    }))
+  }));
+  return {
+    id: currentProfile.id,
+    name: currentProfile.name || "Mon profil",
+    since: currentProfile.member_since ? new Date(currentProfile.member_since).getFullYear().toString() : new Date().getFullYear().toString(),
+    city: currentProfile.city || "Cameroun",
+    avatar: currentProfile.avatar_letter || (currentProfile.name?.[0] || "U").toUpperCase(),
+    avatarBg: currentProfile.avatar_bg || "#6366F1",
+    photo: currentProfile.photo_url || null,
+    superhost: false,
+    // calculé par trigger côté listings, pas profile
+    rating: 0,
+    reviews: 0,
+    about: currentProfile.bio || "",
+    buildings,
+    vehicles: vehicles.map(v => ({
+      id: v.id,
+      brand: v.brand || "",
+      model: v.model || "",
+      year: v.year,
+      propType: v.propType,
+      city: v.city,
+      img: v.img,
+      nightPrice: v.nightPrice,
+      monthPrice: v.monthPrice,
+      fuel: v.fuel || "",
+      trans: v.trans || "",
+      seats: v.seats,
+      available: true,
+      plate: "—"
+    }))
+  };
+}
+
 /* ─── OWNER DASHBOARD SCREEN ─────────────────────── */
 function OwnerDashboardScreen({
+  currentProfile,
+  dbMyListings,
+  ownerStats,
   onBack,
   onViewBuilding,
   onManageTechs,
@@ -18180,7 +18283,6 @@ function OwnerDashboardScreen({
   onAddListing,
   onViewAll
 }) {
-  const [activeOwner] = useState("Ekwalla M.");
   const [chartPeriod, setChartPeriod] = useState("6m"); // 3m | 6m | 12m
   /* Filtre ville/région — "all" = tout Cameroun, sinon nom de la ville */
   const [cityFilter, setCityFilter] = useState("all");
@@ -18189,7 +18291,15 @@ function OwnerDashboardScreen({
   const [delegationsMap, setDelegationsMap] = useState(() => delegations.getAll());
   /* Re-sync from storage helper après chaque update */
   const refreshDelegations = () => setDelegationsMap(delegations.getAll());
-  const owner = OWNERS[activeOwner];
+
+  /* Phase 3 : si l'utilisateur a publié au moins 1 annonce, on affiche
+     ses VRAIES données (built from currentProfile + dbMyListings).
+     Sinon, fallback sur le mock OWNERS["Ekwalla M."] pour conserver la
+     démo visuelle (avec bandeau "Données de démonstration" affiché
+     plus bas qui prévient l'utilisateur). */
+  const realOwner = buildOwnerFromDb(currentProfile, dbMyListings);
+  const usingRealData = !!(realOwner && (realOwner.buildings.length > 0 || realOwner.vehicles.length > 0));
+  const owner = usingRealData ? realOwner : OWNERS["Ekwalla M."];
   if (!owner) return null;
 
   /* Liste de toutes les villes présentes dans le portefeuille (immo + véhicules)
@@ -18289,7 +18399,7 @@ function OwnerDashboardScreen({
     style: {
       width: 38
     }
-  })), /*#__PURE__*/React.createElement("div", {
+  })), !usingRealData && /*#__PURE__*/React.createElement("div", {
     style: {
       margin: "10px 16px 0",
       padding: "10px 14px",
@@ -33617,6 +33727,63 @@ function ByerApp({
   React.useEffect(() => {
     refreshDbBookings();
   }, [refreshDbBookings]);
+
+  // ─────────────────────────────────────────────────────────────
+  // dbMyListings : annonces publiées par le user connecté.
+  // Sert à brancher OwnerDashboard + Home bailleur sur la vraie DB
+  // au lieu d'afficher les mocks "Ekwalla M." pour tous les bailleurs
+  // (audit 2026-04-27 — Phase 3).
+  // ─────────────────────────────────────────────────────────────
+  const [dbMyListings, setDbMyListings] = useState([]);
+  const refreshDbMyListings = React.useCallback(async () => {
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady || !currentUserId) return;
+    const {
+      data,
+      error
+    } = await db.listings.listMine(currentUserId);
+    if (!error && Array.isArray(data)) {
+      setDbMyListings(data.map(adaptListing).filter(Boolean));
+    } else if (error) {
+      console.warn("[byer] listings.listMine error:", error.message);
+    }
+  }, [currentUserId]);
+  React.useEffect(() => {
+    refreshDbMyListings();
+  }, [refreshDbMyListings]);
+
+  // Stats bailleur agrégées depuis dbMyListings + dbBookings.
+  // Calculées mémoïsées pour éviter les re-calculs à chaque render.
+  // - hostBookings : sous-ensemble des bookings où je suis hôte
+  //                  (dbBookings est déjà filtré côté DB par role, mais
+  //                   on garde le filtre client pour robustesse)
+  // - monthRevenue : somme des total_price des bookings 'active' ou
+  //                  'completed' du mois courant
+  // - incomingReqs : pending/confirmed (host doit valider/préparer)
+  // - activeBookings : status='active' (séjour en cours)
+  const ownerStats = React.useMemo(() => {
+    const hostBookings = role === "bailleur" ? dbBookings : [];
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    const monthRevenue = hostBookings.reduce((sum, b) => {
+      if (!b.checkin || !b.total) return sum;
+      const ci = new Date(b.checkin);
+      if (ci >= monthStart && ci <= monthEnd && (b.rawStatus === "active" || b.rawStatus === "completed" || b.rawStatus === "confirmed")) {
+        return sum + (Number(b.total) || 0);
+      }
+      return sum;
+    }, 0);
+    const incomingReqs = hostBookings.filter(b => b.rawStatus === "pending" || b.rawStatus === "confirmed").length;
+    const activeBookings = hostBookings.filter(b => b.rawStatus === "active").length;
+    return {
+      myListingsCount: dbMyListings.length,
+      monthRevenue,
+      incomingReqs,
+      activeBookings,
+      hasRealData: dbMyListings.length > 0 || hostBookings.length > 0
+    };
+  }, [dbMyListings, dbBookings, role]);
   const toggleSave = (id, e) => {
     e?.stopPropagation();
     setSaved(p => ({
@@ -33843,6 +34010,9 @@ function ByerApp({
     });
   } else if (dashboardOpen) {
     screenContent = /*#__PURE__*/React.createElement(OwnerDashboardScreen, {
+      currentProfile: currentProfile,
+      dbMyListings: dbMyListings,
+      ownerStats: ownerStats,
       onBack: () => setDashboardOpen(false),
       onViewBuilding: b => {
         setDashboardOpen(false);
@@ -34058,7 +34228,12 @@ function ByerApp({
       saved: saved,
       toggleSave: toggleSave,
       openDetail: setDetail,
-      openGallery: openGallery,
+      openGallery: openGallery
+      /* Phase 3 : stats bailleur réelles (Supabase) ; HomeScreen bascule
+         en mode "vraies données" si ownerStats.hasRealData=true.
+         Sinon affiche le bandeau démo + chiffres mock pour design preview. */,
+      ownerStats: ownerStats,
+      dbMyListings: dbMyListings,
       onOpenNotifs: () => setNotifsOpen(true),
       onOpenDashboard: () => setDashboardOpen(true),
       onOpenPublish: seg => {

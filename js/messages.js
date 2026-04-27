@@ -4,16 +4,15 @@
 function MessagesScreen({ role, onChatActiveChange }) {
   const isBailleur = role === "bailleur";
 
-  /* En mode bailleur on simule des conversations entrantes (voyageurs/locataires).
-     On enrichit chaque conv avec un rôle adapté côté bailleur.                  */
-  const baseConvs = isBailleur
-    ? CONVERSATIONS_DATA.map((c,i) => ({
-        ...c,
-        contact: ["Caroline N.","David M.","Aïcha B.","Junior K.","Sandrine T."][i % 5] || c.contact,
-        contactRole: ["Voyageur","Locataire long séjour","Voyageur","Demandeur","Voyageur"][i % 5],
-        lastMsg: ["Bonjour, est-ce disponible le 20 ?","Merci pour les clés !","Le wifi fonctionne pas...","Possible de visiter samedi ?","Tout est parfait, merci !"][i % 5],
-      }))
-    : CONVERSATIONS_DATA;
+  /* En mode bailleur, l'enrichissement avec des contacts fictifs
+     (Caroline N./David M./...) ne sert qu'à animer la démo offline.
+     Dès qu'un user connecté charge ses vraies conversations Supabase
+     (cf. useEffect ligne 38+), elles écrasent baseConvs. Pour ne pas
+     polluer la liste avec des fakes au mount initial des bailleurs
+     authentifiés, on garde CONVERSATIONS_DATA tel quel — l'effet de
+     branchement remplace par la liste réelle (ou empty state si vide).
+     Audit 2026-04-27. */
+  const baseConvs = CONVERSATIONS_DATA;
 
   const [convos, setConvos]     = useState(baseConvs);
   const [openChat, setOpenChat] = useState(null);
