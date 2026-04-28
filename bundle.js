@@ -34883,28 +34883,35 @@ class ByerErrorBoundary extends React.Component {
         boxShadow: "0 4px 12px rgba(255,90,95,0.3)",
         fontFamily: "DM Sans, sans-serif"
       }
-    }, "Recharger l'application"), this.state.error && /*#__PURE__*/React.createElement("details", {
+    }, "Recharger l'application"), this.state.error && /*#__PURE__*/React.createElement("div", {
       style: {
-        marginTop: 24,
+        marginTop: 20,
+        maxWidth: 340,
+        width: "100%"
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
         fontSize: 11,
-        color: "#999",
-        maxWidth: 340
+        fontWeight: 700,
+        color: "#92400E",
+        margin: "0 0 6px",
+        textAlign: "left"
       }
-    }, /*#__PURE__*/React.createElement("summary", {
-      style: {
-        cursor: "pointer"
-      }
-    }, "D\xE9tails techniques"), /*#__PURE__*/React.createElement("pre", {
+    }, "\uD83D\uDCCB Message technique (\xE0 copier-coller \xE0 l'\xE9quipe) :"), /*#__PURE__*/React.createElement("pre", {
       style: {
         textAlign: "left",
         overflow: "auto",
-        padding: 8,
+        padding: 10,
         background: "#fff",
-        borderRadius: 6,
-        marginTop: 8,
+        border: "1px solid #FDE68A",
+        borderRadius: 8,
         fontFamily: "monospace",
-        fontSize: 10,
-        color: "#666"
+        fontSize: 11,
+        color: "#92400E",
+        lineHeight: 1.4,
+        userSelect: "text",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word"
       }
     }, String(this.state.error.message || this.state.error))));
   }

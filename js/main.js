@@ -66,12 +66,19 @@ class ByerErrorBoundary extends React.Component {
           Recharger l'application
         </button>
         {this.state.error && (
-          <details style={{ marginTop:24, fontSize:11, color:"#999", maxWidth:340 }}>
-            <summary style={{ cursor:"pointer" }}>Détails techniques</summary>
-            <pre style={{ textAlign:"left", overflow:"auto", padding:8, background:"#fff", borderRadius:6, marginTop:8, fontFamily:"monospace", fontSize:10, color:"#666" }}>
+          <div style={{ marginTop:20, maxWidth:340, width:"100%" }}>
+            <p style={{ fontSize:11, fontWeight:700, color:"#92400E", margin:"0 0 6px", textAlign:"left" }}>
+              📋 Message technique (à copier-coller à l'équipe) :
+            </p>
+            <pre style={{
+              textAlign:"left", overflow:"auto", padding:10,
+              background:"#fff", border:"1px solid #FDE68A", borderRadius:8,
+              fontFamily:"monospace", fontSize:11, color:"#92400E", lineHeight:1.4,
+              userSelect:"text", whiteSpace:"pre-wrap", wordBreak:"break-word",
+            }}>
               {String(this.state.error.message || this.state.error)}
             </pre>
-          </details>
+          </div>
         )}
       </div>
     );
