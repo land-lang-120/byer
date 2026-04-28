@@ -1,7 +1,12 @@
 /* Byer — Messages & Chat */
 
 /* ─── MESSAGES SCREEN ───────────────────────────── */
-function MessagesScreen({ role, onChatActiveChange, onOpenListing }) {
+// v57 : openChat et setOpenChat sont maintenant fournis par ByerApp
+// (state lifté pour survivre au unmount de MessagesScreen quand DetailScreen
+// prend le dessus depuis "Voir le logement"). Sans ce lift, l'utilisateur
+// retombait dans la liste des conversations au lieu de revenir dans la
+// conversation où il était.
+function MessagesScreen({ role, onChatActiveChange, onOpenListing, openChat, setOpenChat }) {
   const isBailleur = role === "bailleur";
 
   /* En mode bailleur, l'enrichissement avec des contacts fictifs
@@ -15,7 +20,7 @@ function MessagesScreen({ role, onChatActiveChange, onOpenListing }) {
   const baseConvs = CONVERSATIONS_DATA;
 
   const [convos, setConvos]     = useState(baseConvs);
-  const [openChat, setOpenChat] = useState(null);
+  // openChat / setOpenChat reçus en props depuis ByerApp (v57 lift)
   const [search, setSearch]     = useState("");
   const [newConvOpen, setNewConvOpen] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
@@ -31,21 +36,11 @@ function MessagesScreen({ role, onChatActiveChange, onOpenListing }) {
     return () => onChatActiveChange?.(false);
   }, [openChat]);
 
-  /* v52 — Bouton retour téléphone (Android hardware back / iOS swipe back) :
-     intégration via History API. Quand le chat s'ouvre, on push un état
-     d'historique. Quand le user appuie sur le bouton retour téléphone OU
-     glisse depuis le bord (gesture iOS), le navigateur déclenche popstate :
-     on intercepte pour fermer le chat AU LIEU de quitter l'app entière.
-     Le bouton flèche en haut du chat appelle history.back() pour passer
-     par le même chemin (cohérence + un seul code path). */
-  React.useEffect(() => {
-    if (!openChat) return;
-    // Push un marker dans l'historique pour avoir une "couche" à dépiler
-    window.history.pushState({ byerChatOpen: true }, "");
-    const handlePop = () => setOpenChat(null);
-    window.addEventListener("popstate", handlePop);
-    return () => window.removeEventListener("popstate", handlePop);
-  }, [openChat]);
+  /* v57 — Le push d'historique pour le chat est maintenant géré au niveau
+     de ByerApp via le système overlayDepth (qui inclut messagesOpenChat).
+     Le popstate handler de ByerApp (closeTopOverlayRef) ferme l'overlay
+     du dessus dans l'ordre de priorité : detail → ... → messagesOpenChat.
+     Donc plus besoin de popstate listener spécifique au chat ici. */
 
   /* Charge les vraies conversations depuis Supabase si user connecté.
      Les convs Supabase sont préfixées dans la liste, en complément des mocks
@@ -221,7 +216,16 @@ function MessagesScreen({ role, onChatActiveChange, onOpenListing }) {
 
   if (openChat) {
     const conv = convos.find(c => c.id === openChat);
-    if (!conv) { setOpenChat(null); return null; }
+    if (!conv) {
+      // v57 — conv pas encore dans la liste (Supabase fetch en cours par ex).
+      // On n'auto-reset PLUS openChat (sinon back depuis Detail revenait
+      // dans la conv list au lieu de la conv). On affiche un loader fugitif.
+      return (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"60vh",fontFamily:"DM Sans, sans-serif"}}>
+          <p style={{fontSize:13,color:C.mid}}>Chargement de la conversation…</p>
+        </div>
+      );
+    }
     return (
       <ChatScreen
         conv={conv}

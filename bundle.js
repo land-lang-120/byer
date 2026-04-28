@@ -12349,10 +12349,17 @@ function TripsScreen({
 /* Byer — Messages & Chat */
 
 /* ─── MESSAGES SCREEN ───────────────────────────── */
+// v57 : openChat et setOpenChat sont maintenant fournis par ByerApp
+// (state lifté pour survivre au unmount de MessagesScreen quand DetailScreen
+// prend le dessus depuis "Voir le logement"). Sans ce lift, l'utilisateur
+// retombait dans la liste des conversations au lieu de revenir dans la
+// conversation où il était.
 function MessagesScreen({
   role,
   onChatActiveChange,
-  onOpenListing
+  onOpenListing,
+  openChat,
+  setOpenChat
 }) {
   const isBailleur = role === "bailleur";
 
@@ -12366,7 +12373,7 @@ function MessagesScreen({
      Audit 2026-04-27. */
   const baseConvs = CONVERSATIONS_DATA;
   const [convos, setConvos] = useState(baseConvs);
-  const [openChat, setOpenChat] = useState(null);
+  // openChat / setOpenChat reçus en props depuis ByerApp (v57 lift)
   const [search, setSearch] = useState("");
   const [newConvOpen, setNewConvOpen] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
@@ -12384,23 +12391,11 @@ function MessagesScreen({
     return () => onChatActiveChange?.(false);
   }, [openChat]);
 
-  /* v52 — Bouton retour téléphone (Android hardware back / iOS swipe back) :
-     intégration via History API. Quand le chat s'ouvre, on push un état
-     d'historique. Quand le user appuie sur le bouton retour téléphone OU
-     glisse depuis le bord (gesture iOS), le navigateur déclenche popstate :
-     on intercepte pour fermer le chat AU LIEU de quitter l'app entière.
-     Le bouton flèche en haut du chat appelle history.back() pour passer
-     par le même chemin (cohérence + un seul code path). */
-  React.useEffect(() => {
-    if (!openChat) return;
-    // Push un marker dans l'historique pour avoir une "couche" à dépiler
-    window.history.pushState({
-      byerChatOpen: true
-    }, "");
-    const handlePop = () => setOpenChat(null);
-    window.addEventListener("popstate", handlePop);
-    return () => window.removeEventListener("popstate", handlePop);
-  }, [openChat]);
+  /* v57 — Le push d'historique pour le chat est maintenant géré au niveau
+     de ByerApp via le système overlayDepth (qui inclut messagesOpenChat).
+     Le popstate handler de ByerApp (closeTopOverlayRef) ferme l'overlay
+     du dessus dans l'ordre de priorité : detail → ... → messagesOpenChat.
+     Donc plus besoin de popstate listener spécifique au chat ici. */
 
   /* Charge les vraies conversations depuis Supabase si user connecté.
      Les convs Supabase sont préfixées dans la liste, en complément des mocks
@@ -12606,8 +12601,23 @@ function MessagesScreen({
   if (openChat) {
     const conv = convos.find(c => c.id === openChat);
     if (!conv) {
-      setOpenChat(null);
-      return null;
+      // v57 — conv pas encore dans la liste (Supabase fetch en cours par ex).
+      // On n'auto-reset PLUS openChat (sinon back depuis Detail revenait
+      // dans la conv list au lieu de la conv). On affiche un loader fugitif.
+      return /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "60vh",
+          fontFamily: "DM Sans, sans-serif"
+        }
+      }, /*#__PURE__*/React.createElement("p", {
+        style: {
+          fontSize: 13,
+          color: C.mid
+        }
+      }, "Chargement de la conversation\u2026"));
     }
     return /*#__PURE__*/React.createElement(ChatScreen, {
       conv: conv
@@ -33937,6 +33947,13 @@ function ByerApp({
   // Conversation ouverte dans Messages → masque la nav bar (UX chat plein écran)
   const [chatActive, setChatActive] = useState(false);
 
+  /* v57 — openChat lifté ici depuis MessagesScreen pour qu'il survive au
+     unmount de MessagesScreen quand DetailScreen prend la place (cas
+     "Voir le logement" du menu chat). Sans ça, l'utilisateur revenait
+     dans la liste des conversations au lieu de dans la conv où il était
+     (audit Pino 2026-04-28). */
+  const [messagesOpenChat, setMessagesOpenChat] = useState(null);
+
   // New feature screens
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [buildingDetail, setBuildingDetail] = useState(null);
@@ -34191,24 +34208,143 @@ function ByerApp({
      secondaire AVANT de changer d'onglet. */
   const switchTab = newTab => {
     closeAllOverlays();
+    setMessagesOpenChat(null); // v57 : ferme aussi le chat si ouvert
     setTab(newTab);
   };
 
+  /* v57 — closeTopOverlay : ferme UNIQUEMENT l'overlay le plus visible,
+     pas tout. Permet la nav back-stack "page précédente" demandée par
+     Pino : chat → detail → back → revient au chat (au lieu de fermer
+     les deux). Renvoie true si un overlay a été fermé.
+     L'ordre suit la priorité visuelle (cf. screenContent if/else),
+     plus messagesOpenChat (chat) en dernier (chat est sous detail mais
+     au-dessus de la liste de convs). */
+  const closeTopOverlayRef = React.useRef(() => false);
+  closeTopOverlayRef.current = () => {
+    if (detail) {
+      setDetail(null);
+      return true;
+    }
+    if (gallery) {
+      setGallery(null);
+      return true;
+    }
+    if (allReviewsItem) {
+      setAllReviewsItem(null);
+      return true;
+    }
+    if (rentOpen) {
+      setRentOpen(false);
+      return true;
+    }
+    if (ownerProfile) {
+      setOwnerProfile(null);
+      return true;
+    }
+    if (buildingDetail) {
+      setBuildingDetail(null);
+      if (returnToDashboard) {
+        setDashboardOpen(true);
+        setReturnToDashboard(false);
+      }
+      return true;
+    }
+    if (listAllFilter) {
+      setListAllFilter(null);
+      return true;
+    }
+    if (dashboardOpen) {
+      setDashboardOpen(false);
+      return true;
+    }
+    if (techsOpen) {
+      setTechsOpen(false);
+      return true;
+    }
+    if (prosOpen) {
+      setProsOpen(false);
+      return true;
+    }
+    if (boostOpen) {
+      setBoostOpen(false);
+      return true;
+    }
+    if (notifsOpen) {
+      setNotifsOpen(false);
+      return true;
+    }
+    if (publishOpen) {
+      setPublishOpen(false);
+      setPublishSegment(null);
+      if (returnToDashboard) {
+        setDashboardOpen(true);
+        setReturnToDashboard(false);
+      }
+      return true;
+    }
+    if (settingsOpen) {
+      setSettingsOpen(false);
+      return true;
+    }
+    if (kycAdminOpen) {
+      setKycAdminOpen(false);
+      return true;
+    }
+    if (termsOpen) {
+      setTermsOpen(false);
+      return true;
+    }
+    if (privacyOpen) {
+      setPrivacyOpen(false);
+      return true;
+    }
+    if (forgotOpen) {
+      setForgotOpen(false);
+      return true;
+    }
+    if (supportOpen) {
+      setSupportOpen(false);
+      return true;
+    }
+    if (editProfileOpen) {
+      setEditProfileOpen(false);
+      refreshCurrentProfile();
+      return true;
+    }
+    if (bookingItem) {
+      setBookingItem(null);
+      return true;
+    }
+    if (reviewsOpen) {
+      setReviewsOpen(false);
+      return true;
+    }
+    if (historyOpen) {
+      setHistoryOpen(false);
+      return true;
+    }
+    if (messagesOpenChat) {
+      setMessagesOpenChat(null);
+      return true;
+    }
+    return false;
+  };
+
   /* ── Gestion du bouton "Retour" système (Android, navigateur PC) ──
-     Le bouton back natif ne doit PAS quitter l'app quand l'utilisateur
-     est dans un écran secondaire. Stratégie :
+     v57 (refactor v51 : closeAllOverlays → closeTopOverlay) :
      - Au montage : on tag la 1ère entry du history du navigateur comme
        "ancre" (sans en créer une nouvelle).
-     - Quand un écran secondaire s'ouvre : on push une entry "overlay"
-       qui sera consommée par le back système.
-     - Au popstate (back système) :
-       - Si un écran secondaire est actif → on ferme tous les overlays et
-         on revient à l'onglet principal courant. On re-push une ancre pour
-         que l'app ne quitte pas au prochain back immédiat.
-       - Sinon → comportement natif (l'app quitte, comme attendu). */
-  const onSecondaryScreenRef = React.useRef(false);
+     - Quand un overlay/chat NOUVEAU s'ouvre (depth augmente) : on push
+       une entry dédiée → chaque overlay a sa propre entry d'historique.
+     - Au popstate (back système ou history.back()) :
+       - On ferme l'overlay du dessus (closeTopOverlayRef.current()).
+       - Le browser a déjà popé l'entry correspondante.
+       - Pas de re-push : la prochaine entry deviendra le top et le
+         prochain back fermera l'overlay suivant (cas chat → detail :
+         premier back = ferme detail, second back = ferme chat).
+     - Si rien à fermer : on laisse le pop naturel quitter l'app. */
 
-  // Mount-once: anchor + popstate listener (ne re-bind jamais grâce au ref)
+  // Mount-once: anchor + popstate listener
   React.useEffect(() => {
     try {
       const cur = window.history.state || {};
@@ -34220,16 +34356,11 @@ function ByerApp({
       }
     } catch (_) {}
     const onPop = () => {
-      if (onSecondaryScreenRef.current) {
-        closeAllOverlays();
-        // Re-push une ancre pour rester dans l'app
-        try {
-          window.history.pushState({
-            _byerAnchor: true
-          }, "");
-        } catch (_) {}
-      }
-      // Sinon, pop naturel : on est sur un onglet principal → l'app quitte
+      // closeTopOverlayRef.current() lit l'état le plus récent (ref
+      // mise à jour à chaque render au-dessus). Renvoie true si fermé.
+      closeTopOverlayRef.current();
+      // Pas de re-push : chaque overlay a sa propre entry, et si rien à
+      // fermer le pop naturel suit son cours (anchor consumé → exit).
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -34244,26 +34375,27 @@ function ByerApp({
   const onSecondaryScreen = !!detail || !!gallery || !!allReviewsItem || rentOpen || !!ownerProfile || !!buildingDetail || dashboardOpen || !!listAllFilter || techsOpen || prosOpen || boostOpen || notifsOpen || publishOpen || settingsOpen || kycAdminOpen || termsOpen || privacyOpen || forgotOpen || supportOpen || editProfileOpen || !!bookingItem || reviewsOpen || historyOpen;
   const hideGlobalNav = chatActive || !!gallery || qrScanOpen || onSecondaryScreen;
 
-  /* Synchronise le ref avec onSecondaryScreen (lu par popstate listener) */
+  /* v57 — Push UNE entry d'historique pour CHAQUE nouvel overlay/chat
+     ouvert. Avant : un seul push global → le back fermait tout. Maintenant
+     chaque ouverture incrémente la profondeur, et chaque back en pop une.
+     Inclut messagesOpenChat pour que le bouton retour téléphone ferme
+     d'abord le chat puis chaque overlay au-dessus.
+      overlayDepth = nombre d'overlays/chat actuellement ouverts.
+     prevDepthRef = la valeur précédente.
+     Si depth a augmenté → un nouveau s'est ouvert → on push une entry. */
+  const overlayDepth = (detail ? 1 : 0) + (gallery ? 1 : 0) + (allReviewsItem ? 1 : 0) + (rentOpen ? 1 : 0) + (ownerProfile ? 1 : 0) + (buildingDetail ? 1 : 0) + (dashboardOpen ? 1 : 0) + (listAllFilter ? 1 : 0) + (techsOpen ? 1 : 0) + (prosOpen ? 1 : 0) + (boostOpen ? 1 : 0) + (notifsOpen ? 1 : 0) + (publishOpen ? 1 : 0) + (settingsOpen ? 1 : 0) + (kycAdminOpen ? 1 : 0) + (termsOpen ? 1 : 0) + (privacyOpen ? 1 : 0) + (forgotOpen ? 1 : 0) + (supportOpen ? 1 : 0) + (editProfileOpen ? 1 : 0) + (bookingItem ? 1 : 0) + (reviewsOpen ? 1 : 0) + (historyOpen ? 1 : 0) + (messagesOpenChat ? 1 : 0);
+  const prevDepthRef = React.useRef(0);
   React.useEffect(() => {
-    onSecondaryScreenRef.current = onSecondaryScreen;
-  }, [onSecondaryScreen]);
-
-  /* Push une entry "overlay" à chaque transition vers un écran secondaire.
-     Cette entry sera consommée par le bouton back système — qui déclenchera
-     popstate, qui appellera closeAllOverlays() et reviendra à l'onglet. */
-  React.useEffect(() => {
-    if (onSecondaryScreen) {
+    if (overlayDepth > prevDepthRef.current) {
       try {
-        const cur = window.history.state || {};
-        if (!cur._byerOverlay) {
-          window.history.pushState({
-            _byerOverlay: true
-          }, "");
-        }
+        window.history.pushState({
+          _byerOverlay: true,
+          depth: overlayDepth
+        }, "");
       } catch (_) {}
     }
-  }, [onSecondaryScreen]);
+    prevDepthRef.current = overlayDepth;
+  }, [overlayDepth]);
 
   /* renderScreen : sélectionne l'écran courant. Une seule sortie pour
      que le nav bar soit toujours rendu en dessous (au niveau racine). */
@@ -34611,7 +34743,9 @@ function ByerApp({
       onClick: () => setQrInfoOpen(true)
     }), tab === "messages" && /*#__PURE__*/React.createElement(MessagesScreen, {
       role: role,
-      onChatActiveChange: setChatActive
+      onChatActiveChange: setChatActive,
+      openChat: messagesOpenChat,
+      setOpenChat: setMessagesOpenChat
       /* "Voir le logement" depuis le menu d'une conversation :
          résout l'objet listing depuis (1) listingId si fourni
          (Supabase via embed conversations.listing_id) ou (2)
