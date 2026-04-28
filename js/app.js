@@ -45,6 +45,32 @@ function adaptBooking(row) {
     paymentMethod: row.payment_method,
     paymentStatus: row.payment_status,
     _supabase: true,
+    // v57 fix : champs guest/host (avatar lettre + nom) pour éviter
+    // booking.host[0] / booking.guest[0] qui crashe en locataire mode
+    // si la résa Supabase n'a pas de profil joint. Bug observé par Pino :
+    // "Cannot read properties of undefined (reading '0')".
+    // Les profils sont joints via supabase-client bookings.listMine query.
+    host:      row.host?.name || "Hôte",
+    hostPhoto: row.host?.photo_url || null,
+    guest:     row.guest?.name || "Voyageur",
+    guestPhoto: row.guest?.photo_url || null,
+    guestName: row.guest?.name || null,      // pour le bailleur mode mapping
+    // Champs additionnels demandés par le rendu trips.js
+    nights:    (() => {
+                 if (!row.checkin || !row.checkout) return 1;
+                 const ci = new Date(row.checkin);
+                 const co = new Date(row.checkout);
+                 return Math.max(1, Math.round((co - ci) / 86400000));
+               })(),
+    price:     row.total_price && row.checkin && row.checkout
+                 ? Math.round(row.total_price / Math.max(1, Math.round((new Date(row.checkout) - new Date(row.checkin)) / 86400000)))
+                 : 0,
+    address:   lst.address || "",
+    lat:       lst.lat || null,
+    lng:       lst.lng || null,
+    type:      lst.type || "property",
+    checkIn:   row.checkin,                  // alias (rendu trips.js utilise checkIn capitalisé)
+    checkOut:  row.checkout,
   };
 }
 

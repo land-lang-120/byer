@@ -477,7 +477,7 @@ function OwnerDashboardScreen({ currentProfile, dbMyListings, ownerStats, onBack
                           <div style={{display:"flex",marginRight:-4}}>
                             {delegatedPros.slice(0,3).map((p,idx) => (
                               <div key={p.id} style={{marginLeft:idx===0?0:-8,border:"2px solid white",borderRadius:"50%"}}>
-                                <FaceAvatar photo={p.photo} avatar={p.name[0]} bg="#7E22CE" size={22} radius={11}/>
+                                <FaceAvatar photo={p.photo} avatar={p.name?.[0] || "?"} bg="#7E22CE" size={22} radius={11}/>
                               </div>
                             ))}
                           </div>
@@ -713,7 +713,7 @@ function DelegationSheet({ building, delegatedIds, onAdd, onRemove, onClose }) {
             const isDelegated = delegatedIds.includes(pro.id);
             return (
               <div key={pro.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:`1px solid ${C.border}`}}>
-                <FaceAvatar photo={pro.photo} avatar={pro.name[0]} bg={cat?.color||"#7E22CE"} size={42} radius={21}/>
+                <FaceAvatar photo={pro.photo} avatar={pro.name?.[0] || "?"} bg={cat?.color||"#7E22CE"} size={42} radius={21}/>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{display:"flex",alignItems:"center",gap:5}}>
                     <p style={{fontSize:13,fontWeight:600,color:C.black}}>{pro.name}</p>

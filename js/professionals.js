@@ -276,7 +276,7 @@ function ProCard({ pro, onTap, onCall, isBailleur, isAssigned, onAdd, onRemove }
     <div style={{background:C.white,borderRadius:16,padding:"14px",marginBottom:10,boxShadow:"0 1px 8px rgba(0,0,0,.05)",cursor:"pointer"}} onClick={onTap}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <div style={{position:"relative"}}>
-          <FaceAvatar photo={pro.photo} avatar={pro.name[0]} bg={cat?.color||C.mid} size={48} radius={24}/>
+          <FaceAvatar photo={pro.photo} avatar={pro.name?.[0] || "?"} bg={cat?.color||C.mid} size={48} radius={24}/>
           {pro.available && (
             <div style={{position:"absolute",bottom:0,right:0,width:14,height:14,borderRadius:7,background:"#16A34A",border:"2px solid white"}}/>
           )}
@@ -367,7 +367,7 @@ function ProProfileScreen({ pro, onBack, isBailleur, isAssigned, onAssign, onRem
         {/* Identity card */}
         <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"16px 24px 8px"}}>
           <div style={{position:"relative"}}>
-            <FaceAvatar photo={pro.photo} avatar={pro.name[0]} bg={cat?.color||C.mid} size={86} radius={43}/>
+            <FaceAvatar photo={pro.photo} avatar={pro.name?.[0] || "?"} bg={cat?.color||C.mid} size={86} radius={43}/>
             {pro.available && (
               <div style={{position:"absolute",bottom:2,right:2,width:18,height:18,borderRadius:9,background:"#16A34A",border:"3px solid white"}}/>
             )}
@@ -564,7 +564,7 @@ function ContactRequestSheet({ pro, onClose, onSubmit }) {
         <div style={S.sheetHandle}/>
 
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
-          <FaceAvatar photo={pro.photo} avatar={pro.name[0]} bg={cat?.color||C.mid} size={44} radius={22}/>
+          <FaceAvatar photo={pro.photo} avatar={pro.name?.[0] || "?"} bg={cat?.color||C.mid} size={44} radius={22}/>
           <div style={{flex:1}}>
             <p style={{fontSize:15,fontWeight:700,color:C.black}}>Contacter {pro.name.split(" ")[0]}</p>
             <p style={{fontSize:11,color:C.mid}}>{cat?.label} · Réponse sous 24-48h</p>

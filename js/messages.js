@@ -143,7 +143,7 @@ function MessagesScreen({ role, onChatActiveChange, onOpenListing, openChat, set
       id: Date.now(),
       contact: contact.name,
       contactRole: contact.role,
-      avatar: contact.name[0],
+      avatar: contact.name?.[0] || "?",
       avatarBg: contact.bg || "#6366F1",
       photo: contact.photo || null,
       logement: contact.logement || "Nouveau contact",
@@ -467,7 +467,7 @@ function NewConversationSheet({ onClose, onSelect, existingNames = [] }) {
                   fontFamily:"'DM Sans',sans-serif",
                 }}
               >
-                <FaceAvatar photo={c.photo} avatar={c.name[0]} bg={c.bg} size={42}/>
+                <FaceAvatar photo={c.photo} avatar={c.name?.[0] || "?"} bg={c.bg} size={42}/>
                 <div style={{flex:1,minWidth:0}}>
                   <p style={{fontSize:14,fontWeight:600,color:C.black}}>{c.name}</p>
                   <p style={{fontSize:11,color:C.mid,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>

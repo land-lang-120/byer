@@ -507,7 +507,11 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
   const bookings = {
     listMine: async (userId, role = "guest") => {
       const col = role === "host" ? "host_id" : "guest_id";
-      return await sb.from("bookings").select("*, listings(title, city, listing_photos(url))").eq(col, userId).order("checkin", {
+      // v57 : on joint host (pour locataire view) + guest (pour bailleur view)
+      // afin que TripsScreen puisse afficher l'avatar/nom de l'autre partie.
+      // Avant : bug "Cannot read properties of undefined (reading '0')" sur
+      // booking.host[0] (résa réelle sans profil joint).
+      return await sb.from("bookings").select("*, listings(title, city, address, lat, lng, type, listing_photos(url)), host:profiles!host_id(name, photo_url, avatar_letter, avatar_bg), guest:profiles!guest_id(name, photo_url, avatar_letter, avatar_bg)").eq(col, userId).order("checkin", {
         ascending: false
       });
     },
@@ -11844,7 +11848,7 @@ function TripsScreen({
       }
     }, isBailleur ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(FaceAvatar, {
       photo: booking.guestPhoto,
-      avatar: booking.guest[0],
+      avatar: booking.guest?.[0] || "?",
       bg: "#7E22CE",
       size: 30,
       radius: 15
@@ -11854,14 +11858,14 @@ function TripsScreen({
         fontWeight: 600,
         color: C.black
       }
-    }, booking.guest), /*#__PURE__*/React.createElement("p", {
+    }, booking.guest || "Voyageur"), /*#__PURE__*/React.createElement("p", {
       style: {
         fontSize: 10,
         color: C.light
       }
-    }, booking.adults, " voyageur", booking.adults > 1 ? "s" : "", " \xB7 ", booking.ref))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(FaceAvatar, {
+    }, booking.adults || 1, " voyageur", (booking.adults || 1) > 1 ? "s" : "", " \xB7 ", booking.ref))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(FaceAvatar, {
       photo: booking.hostPhoto,
-      avatar: booking.host[0],
+      avatar: booking.host?.[0] || "?",
       bg: "#6366F1",
       size: 30,
       radius: 15
@@ -11871,7 +11875,7 @@ function TripsScreen({
         fontWeight: 600,
         color: C.black
       }
-    }, booking.host), /*#__PURE__*/React.createElement("p", {
+    }, booking.host || "Hôte"), /*#__PURE__*/React.createElement("p", {
       style: {
         fontSize: 10,
         color: C.light,
@@ -12509,7 +12513,7 @@ function MessagesScreen({
       id: Date.now(),
       contact: contact.name,
       contactRole: contact.role,
-      avatar: contact.name[0],
+      avatar: contact.name?.[0] || "?",
       avatarBg: contact.bg || "#6366F1",
       photo: contact.photo || null,
       logement: contact.logement || "Nouveau contact",
@@ -13075,7 +13079,7 @@ function NewConversationSheet({
       }
     }, /*#__PURE__*/React.createElement(FaceAvatar, {
       photo: c.photo,
-      avatar: c.name[0],
+      avatar: c.name?.[0] || "?",
       bg: c.bg,
       size: 42
     }), /*#__PURE__*/React.createElement("div", {
@@ -19248,7 +19252,7 @@ function OwnerDashboardScreen({
       }
     }, /*#__PURE__*/React.createElement(FaceAvatar, {
       photo: p.photo,
-      avatar: p.name[0],
+      avatar: p.name?.[0] || "?",
       bg: "#7E22CE",
       size: 22,
       radius: 11
@@ -19788,7 +19792,7 @@ function DelegationSheet({
       }
     }, /*#__PURE__*/React.createElement(FaceAvatar, {
       photo: pro.photo,
-      avatar: pro.name[0],
+      avatar: pro.name?.[0] || "?",
       bg: cat?.color || "#7E22CE",
       size: 42,
       radius: 21
@@ -20921,7 +20925,7 @@ function TechCard({
     }
   }, /*#__PURE__*/React.createElement(FaceAvatar, {
     photo: tech.photo,
-    avatar: tech.name[0],
+    avatar: tech.name?.[0] || "?",
     bg: cat?.color || C.mid,
     size: 48,
     radius: 24
@@ -21155,7 +21159,7 @@ function TechProfileScreen({
     }
   }, /*#__PURE__*/React.createElement(FaceAvatar, {
     photo: tech.photo,
-    avatar: tech.name[0],
+    avatar: tech.name?.[0] || "?",
     bg: cat?.color || C.mid,
     size: 72,
     radius: 36
@@ -21431,7 +21435,7 @@ function QuoteRequestSheet({
     }
   }, /*#__PURE__*/React.createElement(FaceAvatar, {
     photo: tech.photo,
-    avatar: tech.name[0],
+    avatar: tech.name?.[0] || "?",
     bg: cat?.color || C.mid,
     size: 36,
     radius: 18
@@ -22475,7 +22479,7 @@ function ProCard({
     }
   }, /*#__PURE__*/React.createElement(FaceAvatar, {
     photo: pro.photo,
-    avatar: pro.name[0],
+    avatar: pro.name?.[0] || "?",
     bg: cat?.color || C.mid,
     size: 48,
     radius: 24
@@ -22729,7 +22733,7 @@ function ProProfileScreen({
     }
   }, /*#__PURE__*/React.createElement(FaceAvatar, {
     photo: pro.photo,
-    avatar: pro.name[0],
+    avatar: pro.name?.[0] || "?",
     bg: cat?.color || C.mid,
     size: 86,
     radius: 43
@@ -23263,7 +23267,7 @@ function ContactRequestSheet({
     }
   }, /*#__PURE__*/React.createElement(FaceAvatar, {
     photo: pro.photo,
-    avatar: pro.name[0],
+    avatar: pro.name?.[0] || "?",
     bg: cat?.color || C.mid,
     size: 44,
     radius: 22
@@ -33732,7 +33736,33 @@ function adaptBooking(row) {
     qrToken: row.qr_token || null,
     paymentMethod: row.payment_method,
     paymentStatus: row.payment_status,
-    _supabase: true
+    _supabase: true,
+    // v57 fix : champs guest/host (avatar lettre + nom) pour éviter
+    // booking.host[0] / booking.guest[0] qui crashe en locataire mode
+    // si la résa Supabase n'a pas de profil joint. Bug observé par Pino :
+    // "Cannot read properties of undefined (reading '0')".
+    // Les profils sont joints via supabase-client bookings.listMine query.
+    host: row.host?.name || "Hôte",
+    hostPhoto: row.host?.photo_url || null,
+    guest: row.guest?.name || "Voyageur",
+    guestPhoto: row.guest?.photo_url || null,
+    guestName: row.guest?.name || null,
+    // pour le bailleur mode mapping
+    // Champs additionnels demandés par le rendu trips.js
+    nights: (() => {
+      if (!row.checkin || !row.checkout) return 1;
+      const ci = new Date(row.checkin);
+      const co = new Date(row.checkout);
+      return Math.max(1, Math.round((co - ci) / 86400000));
+    })(),
+    price: row.total_price && row.checkin && row.checkout ? Math.round(row.total_price / Math.max(1, Math.round((new Date(row.checkout) - new Date(row.checkin)) / 86400000))) : 0,
+    address: lst.address || "",
+    lat: lst.lat || null,
+    lng: lst.lng || null,
+    type: lst.type || "property",
+    checkIn: row.checkin,
+    // alias (rendu trips.js utilise checkIn capitalisé)
+    checkOut: row.checkout
   };
 }
 function adaptListing(row) {

@@ -275,7 +275,7 @@ function TechCard({ tech, onTap, onCall, isBailleur, isAssigned, onAdd, onRemove
     <div style={{background:C.white,borderRadius:16,padding:"14px",marginBottom:10,boxShadow:"0 1px 8px rgba(0,0,0,.05)",cursor:"pointer"}} onClick={onTap}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <div style={{position:"relative"}}>
-          <FaceAvatar photo={tech.photo} avatar={tech.name[0]} bg={cat?.color||C.mid} size={48} radius={24}/>
+          <FaceAvatar photo={tech.photo} avatar={tech.name?.[0] || "?"} bg={cat?.color||C.mid} size={48} radius={24}/>
           {tech.available && (
             <div style={{position:"absolute",bottom:0,right:0,width:14,height:14,borderRadius:7,background:"#16A34A",border:"2px solid white"}}/>
           )}
@@ -344,7 +344,7 @@ function TechProfileScreen({ tech, onBack, isBailleur, isAssigned, onAssign, onR
           </button>
           <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"0 20px 16px",display:"flex",alignItems:"flex-end",gap:14}}>
             <div style={{width:72,height:72,borderRadius:36,border:"3px solid white",overflow:"hidden",boxShadow:"0 4px 16px rgba(0,0,0,.2)"}}>
-              <FaceAvatar photo={tech.photo} avatar={tech.name[0]} bg={cat?.color||C.mid} size={72} radius={36}/>
+              <FaceAvatar photo={tech.photo} avatar={tech.name?.[0] || "?"} bg={cat?.color||C.mid} size={72} radius={36}/>
             </div>
             <div style={{paddingBottom:4}}>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -488,7 +488,7 @@ function QuoteRequestSheet({ tech, onClose, onSubmit }) {
                 <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",fontSize:22,color:C.mid,lineHeight:1,padding:0}}>×</button>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.bg,borderRadius:12,marginTop:6}}>
-                <FaceAvatar photo={tech.photo} avatar={tech.name[0]} bg={cat?.color||C.mid} size={36} radius={18}/>
+                <FaceAvatar photo={tech.photo} avatar={tech.name?.[0] || "?"} bg={cat?.color||C.mid} size={36} radius={18}/>
                 <div style={{flex:1,minWidth:0}}>
                   <p style={{fontSize:13,fontWeight:600,color:C.black}}>{tech.name}</p>
                   <p style={{fontSize:11,color:C.light}}>{cat?.icon} {cat?.label} · {tech.city}</p>

@@ -256,8 +256,12 @@
   const bookings = {
     listMine: async (userId, role = "guest") => {
       const col = role === "host" ? "host_id" : "guest_id";
+      // v57 : on joint host (pour locataire view) + guest (pour bailleur view)
+      // afin que TripsScreen puisse afficher l'avatar/nom de l'autre partie.
+      // Avant : bug "Cannot read properties of undefined (reading '0')" sur
+      // booking.host[0] (résa réelle sans profil joint).
       return await sb.from("bookings")
-        .select("*, listings(title, city, listing_photos(url))")
+        .select("*, listings(title, city, address, lat, lng, type, listing_photos(url)), host:profiles!host_id(name, photo_url, avatar_letter, avatar_bg), guest:profiles!guest_id(name, photo_url, avatar_letter, avatar_bg)")
         .eq(col, userId)
         .order("checkin", { ascending: false });
     },

@@ -366,17 +366,20 @@ function TripsScreen({ role, openDetail, userBookings = [], dbBookingsLoaded = f
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     {isBailleur ? (
                       <>
-                        <FaceAvatar photo={booking.guestPhoto} avatar={booking.guest[0]} bg="#7E22CE" size={30} radius={15}/>
+                        {/* v57 fix : optional chaining sur booking.guest[0] pour éviter
+                            crash "reading '0'" si guest est undefined (résa Supabase
+                            sans profil joint). */}
+                        <FaceAvatar photo={booking.guestPhoto} avatar={booking.guest?.[0] || "?"} bg="#7E22CE" size={30} radius={15}/>
                         <div>
-                          <p style={{fontSize:12,fontWeight:600,color:C.black}}>{booking.guest}</p>
-                          <p style={{fontSize:10,color:C.light}}>{booking.adults} voyageur{booking.adults>1?"s":""} · {booking.ref}</p>
+                          <p style={{fontSize:12,fontWeight:600,color:C.black}}>{booking.guest || "Voyageur"}</p>
+                          <p style={{fontSize:10,color:C.light}}>{booking.adults || 1} voyageur{(booking.adults||1)>1?"s":""} · {booking.ref}</p>
                         </div>
                       </>
                     ) : (
                       <>
-                        <FaceAvatar photo={booking.hostPhoto} avatar={booking.host[0]} bg="#6366F1" size={30} radius={15}/>
+                        <FaceAvatar photo={booking.hostPhoto} avatar={booking.host?.[0] || "?"} bg="#6366F1" size={30} radius={15}/>
                         <div>
-                          <p style={{fontSize:12,fontWeight:600,color:C.black}}>{booking.host}</p>
+                          <p style={{fontSize:12,fontWeight:600,color:C.black}}>{booking.host || "Hôte"}</p>
                           <p style={{fontSize:10,color:C.light,fontFamily:"monospace"}}>{booking.ref}</p>
                         </div>
                       </>
