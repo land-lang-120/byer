@@ -122,11 +122,13 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
           else if (duration === "week")    rentalMode = "week";
           else if (duration === "day" && isVehicle) rentalMode = "day";
 
-          // 4) Insert avec décomposition prix complète + audit paiement
-          //    (le trigger compute_payout calcule commission + payout host
-          //     le trigger notify_host_on_booking envoie la notif
-          //     l'EXCLUDE constraint bloque toute double-résa concurrente)
-          const { error: bookErr } = await db.bookings.create({
+          // 4) Insert avec décomposition prix complète + audit paiement.
+          //    v58 : payment_status = "pending" tant que Notch Pay n'a pas
+          //    confirmé via webhook. Avant : on mettait "paid" sans rien
+          //    encaisser → fraude par défaut. Maintenant le statut bouge
+          //    seulement après le webhook pay-webhook.
+          const isOnlinePayment = ["mtn","om","orange","card"].includes(paymentMethod);
+          const { data: createdBooking, error: bookErr } = await db.bookings.create({
             guest_id:       user.id,
             host_id:        item.ownerId,
             listing_id:     item.id,
@@ -141,12 +143,14 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
             price_taxes:    pricing.taxes   || 0,
             price_caution:  pricing.caution || 0,
             total_price:    pricing.total,
-            // Paiement
+            // Paiement — pending pour les méthodes online (CB/MoMo/OM),
+            // restera pending jusqu'au callback webhook Notch Pay.
+            // Pour les méthodes manuelles (virement, EU), on garde aussi
+            // pending → le bailleur valide manuellement à réception.
             payment_method: paymentMap[paymentMethod] || "momo",
             payment_phone:  isMobileMoney ? phone : null,
-            payment_status: "paid",
-            paid_at:        new Date().toISOString(),
-            status:         "confirmed",
+            payment_status: "pending",
+            status:         "pending",
             // Référence client lisible (la colonne `ref` existe en BDD avec
             // default auto-généré ; on l'écrase avec celle affichée à l'utilisateur
             // pour rester cohérent. Le qr_token UUID est généré par défaut.)
@@ -161,6 +165,27 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
             }
             console.warn("[byer] booking insert error:", bookErr.message);
             // Sinon on n'interrompt PAS le flow : la résa locale fonctionne quand même
+          }
+
+          // 5) Si méthode online → init Notch Pay et redirige le user vers
+          //    le hosted checkout. Au retour (callback URL avec ?payment=callback),
+          //    le user voit l'écran de succès basé sur payment_status DB
+          //    (mis à jour en async par le webhook).
+          if (isOnlinePayment && createdBooking?.id) {
+            const { data: payInit, error: payErr } = await db.payments.init({
+              booking_id: createdBooking.id,
+              method: paymentMap[paymentMethod] || "card",
+            });
+            if (payErr || !payInit?.authorization_url) {
+              setBookingError(`Échec de l'initialisation du paiement : ${payErr?.message || "réessayez"}`);
+              setBookingLoading(false);
+              return;
+            }
+            // Redirige vers Notch Pay hosted checkout. Au retour, le user
+            // arrive sur APP_URL/?payment=callback&ref=byer_xxx.
+            // app.js détectera ce param et affichera le statut.
+            window.location.href = payInit.authorization_url;
+            return;  // sortie : le code en dessous ne tournera pas car redirection
           }
         }
       } catch (e) {

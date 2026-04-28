@@ -1,10 +1,10 @@
 # 📖 Byer — Cahier de charges
 
 > Marketplace de location immobilier + véhicules au Cameroun
-> Version : **3.7** — 2026-04-28 (v53→v58 : refactor back-stack chat/detail + fix crash 'reading 0' + ErrorBoundary visible)
+> Version : **3.8** — 2026-04-28 (Phase 4 démarrée : intégration paiement Notch Pay)
 > URL prod : https://byer.landonjouajosephpino.workers.dev
-> Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **13 migrations (mig 0013 préparation V2 multi-rôle), 18 RPCs en service, 1 Edge Function déployée**
-> Bundle frontend : `bundle.js?v=58`
+> Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **14 migrations (0014 paiements), 18 RPCs en service, 3 Edge Functions (kyc-review + pay-init + pay-webhook)**
+> Bundle frontend : `bundle.js?v=58` (v59 dès apply mig 0014 + deploy edge functions)
 > Voir aussi : [PROGRESS.md](PROGRESS.md) (suivi du dev) · [supabase/SETUP.md](supabase/SETUP.md) (procédure migrations)
 
 ---
@@ -191,7 +191,31 @@ Micro-ajustements pré-V2 :
 - Audit `MessagesScreen` mode bailleur : retirer les noms hardcodés (Caroline N., David Mboma, etc.) → si pas de vraies conversations DB, afficher empty state propre.
 - Audit `OWNERS["Ekwalla M."]` : remplacer par `currentProfile` partout dans `owner-dashboard.js` (le bandeau démo est posé mais les chiffres restent ceux de Ekwalla).
 
-**Phase 4 — Paiements (~3-4 h)** — _Stripe non supporté au Cameroun, on bascule sur Flutterwave qui couvre cartes + MoMo + OM dans une seule API_
+**Phase 4 — Paiements via Notch Pay** — _Stripe non supporté au Cameroun, Flutterwave restreint au Nigeria depuis 2025. Choix final : Notch Pay (PSP CM-natif basé Yaoundé, couvre cartes + MTN MoMo + Orange Money + Express Union dans une seule API)_
+
+**Code livré (à activer côté Supabase) :**
+- ✅ `supabase/migrations/0014_payments.sql` : table `payments` (booking_id, user_id, provider, tx_ref, method, amount, currency, status, checkout_url, raw_payload, failure_reason) + colonnes `payment_ref`/`payment_method` sur `bookings` + RLS strict (INSERT/UPDATE bloqués pour client, lecture pour parties prenantes).
+- ✅ Edge Function `pay-init` : valide JWT user → load+autorize booking (guest_id check, refus si déjà payé) → POST Notch Pay `/payments` (Authorization=public_key) → INSERT row payments status=pending → bump bookings.payment_ref → renvoie `authorization_url`.
+- ✅ Edge Function `pay-webhook` : vérifie HMAC SHA-256 sur `x-notch-signature` (constant-time compare) → mappe event → update payments + bookings + crée notifications guest+host. Idempotent.
+- ✅ Wrapper `db.payments` (init/listMine/getForBooking) dans `supabase-client.js`.
+- ✅ Frontend `booking.js` : si méthode = card/MoMo/OM → INSERT booking pending → call `db.payments.init()` → redirect `window.location.href = authorization_url`. Plus de fake "paid" sans encaissement.
+
+**À faire par Pino (séquence) :**
+1. **Appliquer mig 0014** dans Supabase SQL Editor.
+2. **Configurer 3 secrets Supabase** via terminal : `NOTCHPAY_PUBLIC_KEY`, `NOTCHPAY_WEBHOOK_HASH`, `APP_URL`.
+3. **Déployer les 2 Edge Functions** : `supabase functions deploy pay-init` + `pay-webhook`.
+4. **Ajouter le webhook URL** dans le dashboard Notch Pay : `https://xwqnsovfakzraafiudek.supabase.co/functions/v1/pay-webhook` avec events `payment.complete`, `payment.failed`, `payment.canceled`.
+5. **Tester en sandbox** : carte test `5531 8866 5214 2950` PIN `3310` OTP `12345`, MoMo MTN `+237 670 000 000`, Orange Money `+237 690 000 000`.
+6. **KYC production** dans le dashboard Notch Pay (Vérification KYC) : CNI + NUI + RIB UBA → 24-72h validation → bascule sur clés `pk.live_xxx` / `sk.live_xxx`.
+
+**Décisions techniques notables :**
+- L'`Authorization` header de Notch Pay est la **clé directe** (pas Bearer) — vérifié dans la doc.
+- Le `X-Grant` header (avec `sk.test_xxx`) est réservé aux opérations sensibles (transfers/balance) — pas utilisé pour init paiement.
+- Webhook signature sur **body brut** (pas le JSON re-stringified) — important pour la vérif HMAC.
+- Référence interne `byer_<bookingId8>_<timestamp>` envoyée à NP comme `reference` → c'est ce que le webhook recevra dans `data.reference` pour matcher notre row payments.
+- RLS sur `payments` : INSERT/UPDATE strictement bloqués pour `authenticated` → seules les Edge Functions service_role peuvent écrire. Le client lit via la policy `payments_self_read`.
+
+_Ancienne Phase 4 Flutterwave conservée plus bas pour traçabilité technique._
 - Création compte **Flutterwave** côté Pino (mode TEST d'abord) : https://dashboard.flutterwave.com/signup
 - Edge Function `flw-init-payment` : POST avec montant + customer + redirect_url → renvoie `data.link` (URL hosted checkout Flutterwave) qu'on ouvre dans un onglet/iframe.
 - Edge Function `flw-webhook` : reçoit notification post-paiement, vérifie signature `verif-hash` (secret hash configuré dans dashboard FLW), update `bookings.payment_status` + insert `payments`.

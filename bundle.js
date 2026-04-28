@@ -773,6 +773,73 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
   };
 
   // ──────────────────────────────────────────────────
+  //  PAYMENTS (Notch Pay v1, abstrait pour swap futur)
+  // ──────────────────────────────────────────────────
+  const payments = {
+    // Initie un paiement pour une réservation. Retourne authorization_url
+    // (redirection vers le hosted checkout du PSP) et tx_ref interne.
+    // Le user doit être authentifié (JWT vérifié côté Edge Function).
+    init: async ({
+      booking_id,
+      method
+    }) => {
+      const {
+        data: sess
+      } = await sb.auth.getSession();
+      const jwt = sess?.session?.access_token;
+      if (!jwt) return {
+        data: null,
+        error: {
+          message: "not_authenticated"
+        }
+      };
+      try {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/pay-init`, {
+          method: "POST",
+          headers: {
+            "apikey": SUPABASE_ANON_KEY,
+            "Authorization": `Bearer ${jwt}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            booking_id,
+            method: method || null
+          })
+        });
+        const json = await res.json();
+        if (!res.ok) return {
+          data: null,
+          error: {
+            message: json?.error || "init_failed",
+            details: json
+          }
+        };
+        return {
+          data: json,
+          error: null
+        };
+      } catch (e) {
+        return {
+          data: null,
+          error: {
+            message: "network_error",
+            details: String(e)
+          }
+        };
+      }
+    },
+    // Liste les tentatives de paiement de l'utilisateur (audit / SAV).
+    listMine: async userId => sb.from("payments").select("*").eq("user_id", userId).order("created_at", {
+      ascending: false
+    }),
+    // Statut courant pour une réservation (utile pour polling après retour
+    // depuis le hosted checkout — le webhook met à jour la DB en async).
+    getForBooking: async bookingId => sb.from("payments").select("*").eq("booking_id", bookingId).order("created_at", {
+      ascending: false
+    }).limit(1).maybeSingle()
+  };
+
+  // ──────────────────────────────────────────────────
   //  EXPORT GLOBAL
   // ──────────────────────────────────────────────────
   window.byer = window.byer || {};
@@ -784,6 +851,7 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
     kyc,
     devices,
     listings,
+    payments,
     photos,
     bookings,
     chat,
@@ -904,6 +972,11 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
         uploadPhoto: off,
         deletePhoto: off,
         uploadAvatar: off
+      },
+      payments: {
+        init: off,
+        listMine: off,
+        getForBooking: off
       }
     };
   }
@@ -30100,11 +30173,14 @@ function BookingScreen({
           let rentalMode = "night";
           if (duration === "month") rentalMode = "month";else if (duration === "week") rentalMode = "week";else if (duration === "day" && isVehicle) rentalMode = "day";
 
-          // 4) Insert avec décomposition prix complète + audit paiement
-          //    (le trigger compute_payout calcule commission + payout host
-          //     le trigger notify_host_on_booking envoie la notif
-          //     l'EXCLUDE constraint bloque toute double-résa concurrente)
+          // 4) Insert avec décomposition prix complète + audit paiement.
+          //    v58 : payment_status = "pending" tant que Notch Pay n'a pas
+          //    confirmé via webhook. Avant : on mettait "paid" sans rien
+          //    encaisser → fraude par défaut. Maintenant le statut bouge
+          //    seulement après le webhook pay-webhook.
+          const isOnlinePayment = ["mtn", "om", "orange", "card"].includes(paymentMethod);
           const {
+            data: createdBooking,
             error: bookErr
           } = await db.bookings.create({
             guest_id: user.id,
@@ -30121,12 +30197,14 @@ function BookingScreen({
             price_taxes: pricing.taxes || 0,
             price_caution: pricing.caution || 0,
             total_price: pricing.total,
-            // Paiement
+            // Paiement — pending pour les méthodes online (CB/MoMo/OM),
+            // restera pending jusqu'au callback webhook Notch Pay.
+            // Pour les méthodes manuelles (virement, EU), on garde aussi
+            // pending → le bailleur valide manuellement à réception.
             payment_method: paymentMap[paymentMethod] || "momo",
             payment_phone: isMobileMoney ? phone : null,
-            payment_status: "paid",
-            paid_at: new Date().toISOString(),
-            status: "confirmed",
+            payment_status: "pending",
+            status: "pending",
             // Référence client lisible (la colonne `ref` existe en BDD avec
             // default auto-généré ; on l'écrase avec celle affichée à l'utilisateur
             // pour rester cohérent. Le qr_token UUID est généré par défaut.)
@@ -30141,6 +30219,30 @@ function BookingScreen({
             }
             console.warn("[byer] booking insert error:", bookErr.message);
             // Sinon on n'interrompt PAS le flow : la résa locale fonctionne quand même
+          }
+
+          // 5) Si méthode online → init Notch Pay et redirige le user vers
+          //    le hosted checkout. Au retour (callback URL avec ?payment=callback),
+          //    le user voit l'écran de succès basé sur payment_status DB
+          //    (mis à jour en async par le webhook).
+          if (isOnlinePayment && createdBooking?.id) {
+            const {
+              data: payInit,
+              error: payErr
+            } = await db.payments.init({
+              booking_id: createdBooking.id,
+              method: paymentMap[paymentMethod] || "card"
+            });
+            if (payErr || !payInit?.authorization_url) {
+              setBookingError(`Échec de l'initialisation du paiement : ${payErr?.message || "réessayez"}`);
+              setBookingLoading(false);
+              return;
+            }
+            // Redirige vers Notch Pay hosted checkout. Au retour, le user
+            // arrive sur APP_URL/?payment=callback&ref=byer_xxx.
+            // app.js détectera ce param et affichera le statut.
+            window.location.href = payInit.authorization_url;
+            return; // sortie : le code en dessous ne tournera pas car redirection
           }
         }
       } catch (e) {

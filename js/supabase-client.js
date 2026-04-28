@@ -514,6 +514,51 @@
   };
 
   // ──────────────────────────────────────────────────
+  //  PAYMENTS (Notch Pay v1, abstrait pour swap futur)
+  // ──────────────────────────────────────────────────
+  const payments = {
+    // Initie un paiement pour une réservation. Retourne authorization_url
+    // (redirection vers le hosted checkout du PSP) et tx_ref interne.
+    // Le user doit être authentifié (JWT vérifié côté Edge Function).
+    init: async ({ booking_id, method }) => {
+      const { data: sess } = await sb.auth.getSession();
+      const jwt = sess?.session?.access_token;
+      if (!jwt) return { data: null, error: { message: "not_authenticated" } };
+      try {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/pay-init`, {
+          method: "POST",
+          headers: {
+            "apikey":        SUPABASE_ANON_KEY,
+            "Authorization": `Bearer ${jwt}`,
+            "Content-Type":  "application/json",
+          },
+          body: JSON.stringify({ booking_id, method: method || null }),
+        });
+        const json = await res.json();
+        if (!res.ok) return { data: null, error: { message: json?.error || "init_failed", details: json } };
+        return { data: json, error: null };
+      } catch (e) {
+        return { data: null, error: { message: "network_error", details: String(e) } };
+      }
+    },
+
+    // Liste les tentatives de paiement de l'utilisateur (audit / SAV).
+    listMine: async (userId) => sb.from("payments")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false }),
+
+    // Statut courant pour une réservation (utile pour polling après retour
+    // depuis le hosted checkout — le webhook met à jour la DB en async).
+    getForBooking: async (bookingId) => sb.from("payments")
+      .select("*")
+      .eq("booking_id", bookingId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  };
+
+  // ──────────────────────────────────────────────────
   //  EXPORT GLOBAL
   // ──────────────────────────────────────────────────
   window.byer = window.byer || {};
@@ -524,6 +569,7 @@
     kyc,
     devices,
     listings,
+    payments,
     photos,
     bookings,
     chat,
@@ -572,6 +618,7 @@
       },
       counters: { getUnreadCount: off },
       storage: { uploadPhoto: off, deletePhoto: off, uploadAvatar: off },
+      payments: { init: off, listMine: off, getForBooking: off },
     };
   }
 })();
