@@ -1,10 +1,10 @@
 # 📖 Byer — Cahier de charges
 
 > Marketplace de location immobilier + véhicules au Cameroun
-> Version : **3.6** — 2026-04-27 (v52 : FaceAvatar fix + ChatScreen exits + mig 0013 multi-rôle + boutons Bientôt + KYC pro hiérarchique)
+> Version : **3.7** — 2026-04-28 (v53→v58 : refactor back-stack chat/detail + fix crash 'reading 0' + ErrorBoundary visible)
 > URL prod : https://byer.landonjouajosephpino.workers.dev
 > Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **13 migrations (mig 0013 préparation V2 multi-rôle), 18 RPCs en service, 1 Edge Function déployée**
-> Bundle frontend : `bundle.js?v=52`
+> Bundle frontend : `bundle.js?v=58`
 > Voir aussi : [PROGRESS.md](PROGRESS.md) (suivi du dev) · [supabase/SETUP.md](supabase/SETUP.md) (procédure migrations)
 
 ---
@@ -49,6 +49,17 @@
 
 8. **Tests utilisateur** : ne JAMAIS dire "prêt à tester" sans avoir mentalement
    simulé le parcours principal de l'utilisateur final sur le code post-deploy.
+
+**Pour les adaptateurs Supabase (`adaptListing`, `adaptBooking`, etc.) :**
+9. **Comparer exhaustivement avec la shape mock** : pour chaque adapter, lister
+   TOUS les champs accédés dans les composants consommateurs (`grep -nE "<obj>\.[a-z]" js/*.js`)
+   et s'assurer que l'adapter les fournit avec des fallbacks défensifs.
+   Bug v58 (crash "reading '0'") = adaptBooking ne fournissait pas
+   `booking.host` / `booking.guest`, et trips.js faisait `booking.host[0]`.
+
+10. **Optional chaining systématique** sur les accès `[0]`, `.split()[0]`,
+    `obj.maybe.field` quand la donnée vient d'une source asynchrone (DB,
+    fetch, file upload). Pattern : `xxx?.[0] || "fallback"`.
 
 > 💡 Cette checklist est la dette technique à payer après chaque audit foiré.
 > Elle reste applicable pour Phases 4, 5 et toutes les apps suivantes
@@ -153,6 +164,13 @@ Bug fixes signalés par Pino post-v51 :
   4. **Removed messages.js's local popstate handler** : le push/listen est centralisé dans ByerApp pour éviter conflits.
   5. **Loader gracieux pour conv pas encore chargée** : si openChat pointe vers une conv en cours de fetch Supabase, on affiche "Chargement de la conversation…" au lieu de reset à null.
   6. switchTab : reset également `messagesOpenChat` pour cleanslate quand on change de tab.
+
+- **v58 — Hotfix crash "reading '0'" + résa Supabase host/guest joints** : Pino screenshot ErrorBoundary visible (grâce v56) avec `Cannot read properties of undefined (reading '0')`. Diagnostic : trips.js ligne 369/377 faisait `booking.host[0]` / `booking.guest[0]` (lettre d'avatar). adaptBooking ne fournissait pas ces champs pour les vraies réservations Supabase (seuls les mocks BOOKINGS les avaient). Fix triple-couche :
+  1. **`bookings.listMine` query enrichie** : joint `profiles!host_id` ET `profiles!guest_id` pour récupérer noms+photos+avatars des deux parties (en plus du listing avec address/lat/lng/type).
+  2. **adaptBooking peuple host/guest** : `host: row.host?.name || "Hôte"`, `guest: row.guest?.name || "Voyageur"`, + `hostPhoto`, `guestPhoto`, `nights`, `price` (calculé), `address`, `lat`, `lng`, `type`, `checkIn`/`checkOut` (alias) — alignés sur la shape mock pour zéro régression dans le rendu trips.js.
+  3. **Defense en profondeur — sed global** : tous les `.name[0]` du codebase remplacés par `.name?.[0] || "?"` (optional chaining + fallback). Couvre messages.js, owner-dashboard.js, professionals.js, technicians.js. Plus aucun crash similaire ne peut arriver, même si un futur ajout oublie de fournir un nom.
+
+  **Leçon checklist senior (ajoutée à 0bis)** : avant chaque commit qui ajoute des données depuis Supabase (adapter), exhaustivement comparer avec la shape mock et s'assurer que TOUS les champs accédés en render existent (ex: trips.js attendait `booking.host`, `booking.guest`, `booking.checkIn`, etc.).
 
 Micro-ajustements pré-V2 :
 - **Migration `0013_profiles_multirole_prep.sql`** : ajout colonne `roles text[]` sur profiles (avec backfill depuis `role` + contrainte CHECK + trigger sync `role` → `roles[]` + REVOKE column-level UPDATE). Permet en V2 qu'un user cumule plusieurs rôles (locataire + bailleur + agent + concierge + technicien + convoyeur). Backward compat préservée.
