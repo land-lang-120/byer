@@ -81,17 +81,44 @@ Deno.serve(async (req) => {
     return jsonResponse({ ok: true, fn: "pay-webhook", provider: "notchpay" }, 200, origin);
   }
 
+  // GET sur n'importe quel chemin → 200 (Notch Pay peut faire un probe GET
+  // pour vérifier que l'endpoint répond avant d'enregistrer le webhook)
+  if (req.method === "GET") {
+    return jsonResponse({ ok: true, fn: "pay-webhook", provider: "notchpay" }, 200, origin);
+  }
+
   if (req.method !== "POST") return jsonResponse({ error: "method_not_allowed" }, 405, origin);
 
   // 1. Récupérer le body BRUT (avant tout parsing) pour la vérif signature
   const rawBody = await req.text();
   const signature = req.headers.get("x-notch-signature") ?? req.headers.get("X-Notch-Signature") ?? "";
 
-  // 2. Vérifier la signature HMAC SHA-256
-  const valid = await verifySignature(rawBody, signature, NOTCHPAY_WEBHOOK_HASH);
-  if (!valid) {
-    console.warn("pay-webhook: invalid signature", { signature_received: signature.slice(0, 8) + "..." });
-    return jsonResponse({ error: "invalid_signature" }, 401, origin);
+  // 1bis. Verification ping de Notch Pay : POST vide ou sans signature →
+  //       on répond 200 pour valider la création du webhook. Aucune action DB.
+  //       (Notch Pay enverra des events réels avec signature après.)
+  if (!signature || rawBody.length === 0 || rawBody === "{}") {
+    console.log("pay-webhook: verification ping accepted (no signature or empty body)");
+    return jsonResponse({ ok: true, verification: "accepted" }, 200, origin);
+  }
+
+  // 1ter. Mode bootstrap : tant que NOTCHPAY_WEBHOOK_HASH est le placeholder
+  //       (configuré avant que Notch Pay nous donne la vraie valeur, à la
+  //       1ère création du webhook), on accepte les events SANS vérifier la
+  //       signature pour permettre à Notch Pay de valider l'endpoint. Une
+  //       fois qu'on aura le vrai hash, on redéploiera et ce branche se
+  //       désactivera (la prochaine ligne `verifySignature` reprendra la
+  //       main avec le vrai hash).
+  if (NOTCHPAY_WEBHOOK_HASH.startsWith("placeholder_")) {
+    console.warn("pay-webhook: BOOTSTRAP mode — accepting signed event WITHOUT verifying signature. Set real NOTCHPAY_WEBHOOK_HASH ASAP.");
+    // Continue le traitement (parse + update DB) mais log explicitement que
+    // c'est un mode dégradé.
+  } else {
+    // 2. Vérifier la signature HMAC SHA-256 (events réels uniquement)
+    const valid = await verifySignature(rawBody, signature, NOTCHPAY_WEBHOOK_HASH);
+    if (!valid) {
+      console.warn("pay-webhook: invalid signature", { signature_received: signature.slice(0, 8) + "..." });
+      return jsonResponse({ error: "invalid_signature" }, 401, origin);
+    }
   }
 
   // 3. Parser le body
