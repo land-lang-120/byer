@@ -76,11 +76,13 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
   const [bookingLoading, setBookingLoading] = useState(false);
 
   const handleConfirmPayment = async () => {
+    console.log("[byer] handleConfirmPayment FIRED. paymentMethod =", paymentMethod, "termsAccepted =", termsAccepted, "canConfirmPayment =", canConfirmPayment, "item._supabase =", item?._supabase, "item.ownerId =", item?.ownerId);
     setBookingError("");
     setBookingLoading(true);
 
     const ref = 'BYR-' + String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
     setConfirmationRef(ref);
+    console.log("[byer] generated ref =", ref);
 
     // ─── INSERT dans Supabase si l'annonce vient de la BDD ───────
     // (item._supabase === true → listing réel avec owner_id)
@@ -171,11 +173,14 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
           //    le hosted checkout. Au retour (callback URL avec ?payment=callback),
           //    le user voit l'écran de succès basé sur payment_status DB
           //    (mis à jour en async par le webhook).
+          console.log("[byer] booking insert result. createdBooking =", createdBooking, "isOnlinePayment =", isOnlinePayment, "bookErr =", bookErr);
           if (isOnlinePayment && createdBooking?.id) {
+            console.log("[byer] calling db.payments.init for booking_id =", createdBooking.id);
             const { data: payInit, error: payErr } = await db.payments.init({
               booking_id: createdBooking.id,
               method: paymentMap[paymentMethod] || "card",
             });
+            console.log("[byer] payments.init result. payInit =", payInit, "payErr =", payErr);
             if (payErr || !payInit?.authorization_url) {
               setBookingError(`Échec de l'initialisation du paiement : ${payErr?.message || "réessayez"}`);
               setBookingLoading(false);
@@ -189,10 +194,13 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
           }
         }
       } catch (e) {
-        console.warn("[byer] booking error:", e);
+        console.warn("[byer] booking error caught:", e, e?.stack);
       }
+    } else {
+      console.log("[byer] SKIPPING Supabase insert. db.isReady =", !!db?.isReady, "item._supabase =", item?._supabase, "item.ownerId =", item?.ownerId);
     }
     setBookingLoading(false);
+    console.log("[byer] reached fall-through (no online redirect). Will setStep(3).");
 
     // Construire un booking persistable + l'ajouter à la liste utilisateur
     if (onCreateBooking && item) {
