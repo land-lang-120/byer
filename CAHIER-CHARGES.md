@@ -1,10 +1,10 @@
 # 📖 Byer — Cahier de charges
 
 > Marketplace de location immobilier + véhicules au Cameroun
-> Version : **3.9** — 2026-05-01 (Phase 4 — Notch Pay validée E2E ; v65 = polish overlay)
+> Version : **3.10** — 2026-05-01 (Phase 4 — Notch Pay validée E2E ; v65 = debug logs callback overlay)
 > URL prod : https://byer.landonjouajosephpino.workers.dev
 > Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **14 migrations (0014 paiements), 18 RPCs en service, 3 Edge Functions (kyc-review + pay-init + pay-webhook)**
-> Bundle frontend : `bundle.js?v=64` (callback overlay + EU retiré + phone field retiré)
+> Bundle frontend : `bundle.js?v=65` (instrumenté `[byer-cb]` logs au mount + poll + render — v66 dès diagnostic terminé)
 > Voir aussi : [PROGRESS.md](PROGRESS.md) (suivi du dev) · [supabase/SETUP.md](supabase/SETUP.md) (procédure migrations)
 
 ---
@@ -237,8 +237,38 @@ Micro-ajustements pré-V2 :
 | Notifications insertées | ✅ 2 rows (guest + host) |
 | **Callback overlay v64** | ⚠️ **À FINALISER v65** — flash bref puis disparaît (probablement cache SW ou state non set) |
 
-**Outstanding pour v65 (~30 min) :**
-- 🔧 **Callback overlay flicker** : ouvrir Byer avec `?payment=callback&ref=byer_xxx` → l'overlay flash brièvement et disparaît, alors que le bundle est OK (v64 chargé, `window.byer === object`, supabase ready, pas d'erreur console). Ce qu'on sait : le flash est probablement le loading screen de `index.html` (`#byer-loading` qui fade out après l'event `byer-ready`), pas notre overlay React. Hypothèses à tester : (a) `paymentCallback` state n'est jamais set car `params.get("payment")` retourne null au moment du useEffect mount-once (URL déjà cleanée par autre code, ou param strip côté Cloudflare Worker) — instrumenter le useEffect avec des `console.log("[byer-cb] mount", search, params)` ; (b) le state IS set mais le composant `<PaymentCallbackOverlay>` plante en render → catcher avec un error boundary ou ajouter try/catch dans le composant ; (c) la query polling échoue silencieusement — vérifier que `db.raw.from("payments").select(...).eq("tx_ref", ...)` autorise la lecture côté `authenticated` (RLS `payments_self_read` doit matcher `user_id = auth.uid()` mais le payment row a `user_id = guest_id` qui = current user, donc OK en théorie). **Action concrète v65** : ajouter au tout début du mount-once useEffect `console.log("[byer-cb] mount", { search: window.location.search, isCallback, ref })` et au début de `PaymentCallbackOverlay` `console.log("[byer-cb] render", callback)`. Pino ouvre l'URL avec console F12 ouverte → on aura les 2 logs et on saura immédiatement où ça pète.
+**Outstanding pour v65/v66 (~30 min) :**
+
+**v65 (déployée 2026-05-01 22h, commit `0f51c2d`) — Diagnostic en cours :**
+Trois points d'instrumentation `[byer-cb]` ont été ajoutés au code v65 :
+1. **mount-once useEffect** (`app.js` ~ligne 167) : log `search`, `isCallback`, `ref` au moment de l'analyse de l'URL ; log explicite quand `setPaymentCallback` est appelé ; log quand `replaceState` clean l'URL.
+2. **poll useEffect** (`app.js` ~ligne 184) : log lifecycle (entrée, exit conditions, db ready check) ; log de chaque poll #N avec `data` et `error` ; log explicite quand un statut terminal est détecté (success/failed/cancelled/timeout).
+3. **`PaymentCallbackOverlay` component** : log à chaque render avec le callback prop.
+
+**Procédure de test pour v65 :**
+1. Hard refresh sur Byer (Ctrl+Shift+R)
+2. Ouvrir DevTools (F12) → onglet Console → `clear()`
+3. Coller l'URL de test **dans la barre d'adresse** (pas la console !) :
+   `https://byer.landonjouajosephpino.workers.dev/?payment=callback&ref=byer_209dc18b_1777605781791`
+4. Attendre 3-5 sec que la page charge
+5. Screenshot la console → matrice de diagnostic ci-dessous
+
+**Matrice de diagnostic** (selon les logs `[byer-cb]` qui apparaissent ou pas) :
+
+| Logs visibles | Diagnostic | Fix v66 |
+|---|---|---|
+| Aucun `[byer-cb]` | ByerApp ne monte pas (autre crash) | Inspecter erreur amont, error boundary global |
+| `mount-once... search = ""` | URL déjà cleanée avant mon useEffect | Trouver le code qui clean (autre useEffect en amont, navigation prop) |
+| `parsed: isCallback=false, ref=null` | URL params malformée à la réception | Vérifier callback URL côté pay-init (encodage) |
+| `SETTING paymentCallback...` puis silence | State set mais re-render bloqué | Vérifier que `paymentCallback` n'est pas dans une closure stale ailleurs |
+| `poll... db NOT READY` | Timing : Supabase pas encore initialisé | Ajouter dépendance sur `db.isReady` ou retry après init |
+| `poll #1 result: data = null` | RLS bloque la lecture | Vérifier policy `payments_self_read` matche `user_id = auth.uid()` |
+| `data.status = success` puis overlay disparaît | Overlay rend "paid" mais re-démonté | Bug dans `<PaymentCallbackOverlay>` — error boundary, missing key |
+| `PaymentCallbackOverlay RENDER` plusieurs fois | Re-render non maîtrisé | Vérifier que `paymentCallback` reference n'est pas re-créée à chaque render parent |
+
+**Une fois Pino test OK, le fix v66 sera ciblé** (probablement 1-2 lignes) puis cleanup `phone` state inutilisé dans `booking.js` qui peut piggyback dans le même commit.
+
+**Décision pratique 2026-05-01** : Pino a pu se reposer après la session marathon ; on reprend sur v65 instrumenté. Backend 100% validé, simulate.js prouve le success path E2E (BYR-327349 → tx_ref `byer_209dc18b_1777605781791` → DB confirmed/paid/success). Seul reste le polish UX overlay.
 - 🧹 Cleanup booking.js : retirer le `phone` state désormais inutilisé (le champ n'est plus rendu).
 - 📚 Doc Notch Pay sandbox : noter qu'**en sandbox, le paiement ne se finalise jamais naturellement** (pas de PIN/OTP réel) → impossible de tester payment.complete sans le simulate.js. Le passage en production (clés `pk.live_xxx`) résout ce point.
 - 🚀 Bascule production : Pino active "Activate payments" dans dashboard Notch Pay → reçoit clés `pk.live_xxx` + `sk.live_xxx` + nouveau webhook hash → re-set secrets Supabase + re-deploy → un dernier test E2E avec un vrai paiement minime (500 XAF) pour valider le live path.
