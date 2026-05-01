@@ -117,8 +117,11 @@ Deno.serve(async (req) => {
   const route = url.pathname.split("/").filter(Boolean).pop();
   const origin = req.headers.get("origin");
 
-  // CORS preflight
-  if (req.method === "OPTIONS") return preflight(origin);
+  // CORS preflight — IMPORTANT : retour 204 inline (pas via preflight(origin)
+  // qui était un bug de typing : preflight() attend un Request, pas une string).
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders(origin) });
+  }
 
   if (!ENV_OK) {
     return jsonResponse({ error: "server_misconfigured", details: "env vars missing" }, 500, origin);

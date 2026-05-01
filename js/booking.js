@@ -114,14 +114,21 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
           }
 
           // 2) Mapping payment method → enum DB
+          // ⚠️ IMPORTANT : ces valeurs DOIVENT matcher le CHECK constraint
+          // de payments.method (mig 0014) :
+          //   ('card','mtn_momo','orange_money','bank_transfer','manual')
+          // Sinon l'INSERT pay-init échoue silencieusement → payments
+          // table vide → webhook ne trouve pas la row → paiement ignored.
+          // Bug observé v62 : Pino paye en sandbox, callback OK, mais
+          // booking.payment_status reste 'pending' car pas de payments row.
           const paymentMap = {
-            mtn:      "momo",
-            om:       "om",
-            orange:   "om",
+            mtn:      "mtn_momo",
+            om:       "orange_money",
+            orange:   "orange_money",
             card:     "card",
             visa:     "card",
-            virement: "card",
-            eu:       "card",
+            virement: "bank_transfer",
+            eu:       "bank_transfer",
           };
           const isMobileMoney = paymentMethod === "mtn" || paymentMethod === "om" || paymentMethod === "orange";
 
@@ -159,7 +166,7 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
             // restera pending jusqu'au callback webhook Notch Pay.
             // Pour les méthodes manuelles (virement, EU), on garde aussi
             // pending → le bailleur valide manuellement à réception.
-            payment_method: paymentMap[paymentMethod] || "momo",
+            payment_method: paymentMap[paymentMethod] || "mtn_momo",
             payment_phone:  isMobileMoney ? phone : null,
             payment_status: "pending",
             status:         "pending",
