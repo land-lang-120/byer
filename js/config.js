@@ -110,10 +110,12 @@ const SLIDES = [
 ];
 
 /* ── Payment methods ── */
+// v64 : retiré "Express Union" (peu utilisé au Cameroun, ~90% des paiements
+// passent par MoMo/Orange Money. EU était un placeholder hérité). Si un user
+// veut payer par virement, on garde l'option (audit + transparence).
 const PAYMENT_METHODS = [
   { id: "mtn",      label: "MTN Mobile Money",  short: "MoMo", sub: "Paiement instantané via MoMo",   accent: "#FFCB05", textColor: "#1A1A1A" },
   { id: "orange",   label: "Orange Money",       short: "OM",   sub: "Paiement via Orange Money",       accent: "#FF6600", textColor: "white" },
-  { id: "eu",       label: "Express Union",      short: "EU",   sub: "Transfert en agence",             accent: "#1B4D89", textColor: "white" },
   { id: "virement", label: "Virement bancaire",  short: "VIR",  sub: "Paiement par virement classique", accent: "#6366F1", textColor: "white" },
 ];
 

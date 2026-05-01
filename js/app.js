@@ -157,6 +157,74 @@ function ByerApp({ onLogout }) {
   // ─────────────────────────────────────────────────────────────
   const [dbListings, setDbListings] = useState([]);
   const [dbLoading, setDbLoading]   = useState(false);
+
+  // ─── v64 : Payment Callback Handler ─────────────────────────────────
+  // Quand l'utilisateur revient de Notch Pay avec ?payment=callback&ref=byer_xxx,
+  // on affiche un overlay qui poll le statut du paiement en DB toutes les 2s
+  // (le webhook met à jour async, donc le statut peut prendre 1-30s à arriver).
+  // États : "checking" → "paid" → "failed" / "cancelled" / "timeout"
+  const [paymentCallback, setPaymentCallback] = useState(null);
+  React.useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const isCallback = params.get("payment") === "callback";
+      const ref = params.get("ref");
+      if (!isCallback || !ref) return;
+      setPaymentCallback({ ref, status: "checking", startedAt: Date.now() });
+      // Clean URL après detection (laisse l'historique propre)
+      try {
+        window.history.replaceState({}, "", window.location.pathname);
+      } catch (_) {}
+    } catch (_) {}
+  }, []); // mount-once
+
+  // Poll DB toutes les 2s pour voir si le webhook a updaté payments.status.
+  // Timeout 60s au total (30 polls). Si toujours pending → on affiche
+  // "En attente de confirmation" + bouton "Voir ma résa".
+  React.useEffect(() => {
+    if (!paymentCallback || !paymentCallback.ref) return;
+    if (paymentCallback.status !== "checking") return;
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) return;
+    let cancelled = false;
+    let pollCount = 0;
+    const MAX_POLLS = 30; // 30 * 2s = 60s
+    const poll = async () => {
+      if (cancelled) return;
+      pollCount++;
+      try {
+        // Query payments by tx_ref (notre ref interne envoyée à Notch Pay)
+        const { data, error } = await db.raw
+          .from("payments")
+          .select("status, booking_id, failure_reason, amount, currency")
+          .eq("provider", "notchpay")
+          .eq("tx_ref", paymentCallback.ref)
+          .maybeSingle();
+        if (cancelled) return;
+        if (data && data.status === "success") {
+          setPaymentCallback(p => ({ ...p, status: "paid", payment: data }));
+          // Refresh la liste des bookings pour qu'elle apparaisse comme confirmée
+          try { refreshDbBookings(); } catch (_) {}
+          return; // stop polling
+        }
+        if (data && (data.status === "failed" || data.status === "cancelled")) {
+          setPaymentCallback(p => ({ ...p, status: data.status, payment: data }));
+          return;
+        }
+        // Still pending → continue polling
+        if (pollCount >= MAX_POLLS) {
+          setPaymentCallback(p => ({ ...p, status: "timeout", payment: data }));
+          return;
+        }
+        setTimeout(poll, 2000);
+      } catch (e) {
+        if (!cancelled) setTimeout(poll, 2000);
+      }
+    };
+    poll();
+    return () => { cancelled = true; };
+  }, [paymentCallback]);
+
   React.useEffect(() => {
     let cancelled = false;
     const db = window.byer && window.byer.db;
@@ -865,7 +933,102 @@ function ByerApp({ onLogout }) {
       }}>
         <BottomNavBar tab={tab} setTab={switchTab}/>
       </div>
+
+      {/* v64 : Payment Callback Overlay — affiché au retour de Notch Pay
+           avec ?payment=callback&ref=byer_xxx. Poll DB jusqu'à un statut
+           terminal (paid / failed / cancelled) ou timeout 60s. */}
+      {paymentCallback && (
+        <PaymentCallbackOverlay
+          callback={paymentCallback}
+          onClose={() => setPaymentCallback(null)}
+          onViewBooking={() => { setPaymentCallback(null); switchTab("trips"); }}
+        />
+      )}
     </>
+  );
+}
+
+/* ─── Payment Callback Overlay (v64) ───────────────────────────────
+   Plein écran semi-transparent avec carte centrée. État dérivé de
+   callback.status :
+   - "checking"  : spinner + "Vérification du paiement…"
+   - "paid"      : ✅ vert + "Paiement confirmé" + bouton Voir ma résa
+   - "failed"    : ❌ rouge + raison + bouton Réessayer / Fermer
+   - "cancelled" : ⚠️ orange + "Paiement annulé" + bouton Fermer
+   - "timeout"   : ⏳ "Confirmation en cours côté banque" + bouton Voir ma résa */
+function PaymentCallbackOverlay({ callback, onClose, onViewBooking }) {
+  const status = callback.status;
+  const isFinal = status === "paid" || status === "failed" || status === "cancelled" || status === "timeout";
+  const config = {
+    checking:  { icon: "⏳", color: "#6366F1", bg: "#EEF2FF",  title: "Vérification du paiement…",        sub: "Nous attendons la confirmation de votre banque. Cela prend quelques secondes." },
+    paid:      { icon: "✅", color: "#16A34A", bg: "#DCFCE7",  title: "Paiement confirmé",                   sub: "Votre réservation est confirmée. L'hôte a été notifié." },
+    failed:    { icon: "❌", color: "#DC2626", bg: "#FEE2E2",  title: "Paiement échoué",                     sub: callback.payment?.failure_reason || "Le paiement n'a pas pu être finalisé. Réessayez." },
+    cancelled: { icon: "⚠️", color: "#EA580C", bg: "#FED7AA",  title: "Paiement annulé",                     sub: "Vous avez annulé le paiement. Vous pouvez réessayer depuis vos voyages." },
+    timeout:   { icon: "⏳", color: "#0891B2", bg: "#CFFAFE",  title: "Confirmation en cours",               sub: "Le paiement est toujours en traitement côté opérateur. Vous serez notifié quand il sera confirmé." },
+  }[status] || {};
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: 20, animation: "fadeIn 0.2s ease",
+    }}>
+      <div style={{
+        backgroundColor: "#fff", borderRadius: 20, padding: "32px 24px",
+        maxWidth: 380, width: "100%", textAlign: "center",
+        boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+      }}>
+        <div style={{
+          width: 72, height: 72, borderRadius: "50%",
+          backgroundColor: config.bg, color: config.color,
+          fontSize: 36, lineHeight: "72px",
+          margin: "0 auto 20px", display: "inline-block",
+        }}>{config.icon}</div>
+        {status === "checking" && (
+          <div style={{
+            width: 28, height: 28, margin: "0 auto 16px",
+            border: "3px solid #E0E7FF", borderTopColor: config.color,
+            borderRadius: "50%", animation: "byer-spin 0.8s linear infinite",
+          }}/>
+        )}
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#1A1A1A", marginBottom: 8 }}>
+          {config.title}
+        </div>
+        <div style={{ fontSize: 13, color: "#6B6B6B", lineHeight: 1.5, marginBottom: 24 }}>
+          {config.sub}
+        </div>
+        {callback.payment?.amount && (
+          <div style={{
+            fontSize: 13, color: "#1A1A1A", fontWeight: 600,
+            padding: "10px 14px", backgroundColor: "#F7F7F7",
+            borderRadius: 10, marginBottom: 20, display: "inline-block",
+          }}>
+            {callback.payment.amount.toLocaleString("fr-FR")} {callback.payment.currency || "FCFA"}
+          </div>
+        )}
+        {isFinal && (
+          <div style={{ display: "flex", gap: 10, flexDirection: "column" }}>
+            {(status === "paid" || status === "timeout") && (
+              <button onClick={onViewBooking} style={{
+                width: "100%", padding: "13px 16px", borderRadius: 12,
+                border: "none", backgroundColor: "#FF5A5F", color: "white",
+                fontSize: 14, fontWeight: 700, cursor: "pointer",
+              }}>
+                Voir ma réservation
+              </button>
+            )}
+            <button onClick={onClose} style={{
+              width: "100%", padding: "13px 16px", borderRadius: 12,
+              border: "1.5px solid #EBEBEB", backgroundColor: "#fff", color: "#1A1A1A",
+              fontSize: 14, fontWeight: 600, cursor: "pointer",
+            }}>
+              {status === "paid" ? "Continuer" : "Fermer"}
+            </button>
+          </div>
+        )}
+      </div>
+      <style>{`@keyframes byer-spin { from {transform:rotate(0)} to {transform:rotate(360deg)} } @keyframes fadeIn { from {opacity:0} to {opacity:1} }`}</style>
+    </div>
   );
 }
 

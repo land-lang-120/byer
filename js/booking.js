@@ -66,11 +66,9 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
 
   const pricing = calculatePrice();
   const canContinueStep1 = arrivalDate && departDate && arrivalDate < departDate;
-  const canConfirmPayment = termsAccepted && (
-    paymentMethod === 'eu' ||
-    paymentMethod === 'virement' ||
-    (paymentMethod && phone)
-  );
+  // v64 : canConfirmPayment ne dépend plus de phone (Notch Pay le redemande).
+  // Suffit de cocher CGU + choisir une méthode. Express Union retiré.
+  const canConfirmPayment = !!termsAccepted && !!paymentMethod;
 
   const [bookingError, setBookingError] = useState("");
   const [bookingLoading, setBookingLoading] = useState(false);
@@ -676,39 +674,14 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
             ))}
           </div>
 
-          {/* Phone Input for MoMo/OM */}
-          {(paymentMethod === 'mtn' || paymentMethod === 'orange') && (
-            <div style={{
-              backgroundColor: C.bg,
-              borderRadius: 16,
-              padding: 16,
-              marginBottom: 20
-            }}>
-              <div style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: C.dark,
-                marginBottom: 12
-              }}>
-                Numéro de téléphone
-              </div>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+237 6XX XXX XXX"
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  borderRadius: 12,
-                  border: `1.5px solid ${C.border}`,
-                  fontSize: 14,
-                  fontFamily: 'DM Sans, sans-serif',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
-          )}
+          {/* v64 : champ "Numéro de téléphone" RETIRÉ pour MTN/Orange.
+              Notch Pay redemande le numéro sur son hosted checkout (étape
+              obligatoire pour le push USSD côté MoMo/OM). Demander 2 fois
+              était redondant et confondait l'utilisateur. On garde le user
+              flow propre : choisir la méthode → "Confirmer et payer" →
+              entrer le numéro UNE FOIS chez Notch Pay → recevoir le push.
+              Le champ "Numéro de téléphone" reste implicite pour le mode
+              "virement" — on stocke null en DB, le hôte gère manuellement. */}
 
           {/* EU Agence Info */}
           {paymentMethod === 'eu' && (
