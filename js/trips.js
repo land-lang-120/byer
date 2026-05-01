@@ -395,9 +395,12 @@ function TripsScreen({ role, openDetail, userBookings = [], dbBookingsLoaded = f
                   </div>
                 </div>
 
-                {/* Amenities tags */}
+                {/* Amenities tags — optional chaining v67 : les bookings
+                     Supabase n'ont pas toujours amenities (adaptBooking peut
+                     retourner undefined si la jointure listings.amenities est
+                     absente). Sans ce ?., crash global ErrorBoundary. */}
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",paddingBottom:12}}>
-                  {booking.amenities.map(a => (
+                  {(booking.amenities || []).map(a => (
                     <span key={a} style={S.tag}>{a}</span>
                   ))}
                 </div>

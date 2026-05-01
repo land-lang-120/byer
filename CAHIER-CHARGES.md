@@ -1,10 +1,10 @@
 # 📖 Byer — Cahier de charges
 
 > Marketplace de location immobilier + véhicules au Cameroun
-> Version : **3.10** — 2026-05-01 (Phase 4 — Notch Pay validée E2E ; v65 = debug logs callback overlay)
+> Version : **3.11** — 2026-05-01 (Phase 4 — Notch Pay 100% TERMINÉE et validée E2E sandbox ; bascule live = next step)
 > URL prod : https://byer.landonjouajosephpino.workers.dev
 > Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **14 migrations (0014 paiements), 18 RPCs en service, 3 Edge Functions (kyc-review + pay-init + pay-webhook)**
-> Bundle frontend : `bundle.js?v=65` (instrumenté `[byer-cb]` logs au mount + poll + render — v66 dès diagnostic terminé)
+> Bundle frontend : `bundle.js?v=66` (callback overlay fixé via sessionStorage persistence — survit au remount Auth/Supabase)
 > Voir aussi : [PROGRESS.md](PROGRESS.md) (suivi du dev) · [supabase/SETUP.md](supabase/SETUP.md) (procédure migrations)
 
 ---
@@ -237,9 +237,41 @@ Micro-ajustements pré-V2 :
 | Notifications insertées | ✅ 2 rows (guest + host) |
 | **Callback overlay v64** | ⚠️ **À FINALISER v65** — flash bref puis disparaît (probablement cache SW ou state non set) |
 
-**Outstanding pour v65/v66 (~30 min) :**
+**Phase 4 = 100% TERMINÉE ✅ (2026-05-01 22h05, commit `cdcd025`)**
 
-**v65 (déployée 2026-05-01 22h, commit `0f51c2d`) — Diagnostic en cours :**
+L'intégralité du flow Notch Pay est validée bout-en-bout en sandbox :
+
+| Étape | Validation |
+|---|---|
+| Click "Confirmer et payer" | ✅ |
+| INSERT booking en DB | ✅ |
+| pay-init Edge Function (JWT auth + INSERT payments + Notch Pay /payments API) | ✅ |
+| Browser redirect vers hosted checkout pay.notchpay.co/test.xxx | ✅ |
+| Callback URL retour `?payment=callback&ref=byer_xxx` | ✅ |
+| Webhook signé HMAC SHA-256 vers pay-webhook | ✅ (3 webhooks SUCCESS dashboard NP) |
+| Lookup `merchant_reference` puis UPDATE payments+bookings+notifications | ✅ (validé via simulate.js) |
+| Callback overlay visible avec ✅ "Paiement confirmé" + montant + boutons | ✅ (v66 sessionStorage fix) |
+
+**Reste pour passer en production live (~1h) :**
+1. **Configure les payout methods** dans dashboard Notch Pay → Paramètres → Comptes de retrait :
+   - RIB UBA (compte bancaire principal)
+   - MTN MoMo (`+237 67…` enregistré au nom du compte)
+   - Orange Money (optionnel)
+2. **Clique "Activate payments"** dans le dashboard Notch Pay (le badge "Sandbox Mode" disparaît)
+3. **Récupère les nouvelles clés** : `pk.live_xxx`, `sk.live_xxx`, et nouveau `WEBHOOK_HASH` live
+4. **Update les secrets Supabase** :
+   ```
+   supabase secrets set NOTCHPAY_PUBLIC_KEY=pk.live_xxx
+   supabase secrets set NOTCHPAY_WEBHOOK_HASH=hsk.live_xxx
+   ```
+5. **Re-déploie les Edge Functions** : `supabase functions deploy pay-init pay-webhook`
+6. **Test live minime** : 500 FCFA via MoMo → vérifie que le solde NP grossit → demande un retrait test vers UBA → confirme virement reçu en banque
+
+**Cleanup de polish à faire (~10 min) :**
+- 🧹 Retirer le state `phone` désormais inutilisé dans `booking.js` (déclaré mais plus rendu)
+- 🧹 Retirer les `console.log [byer-cb]` de v65/v66 (debug terminé) — soit les garder en mode debug-only via un flag, soit les supprimer
+
+**v65 (déployée 2026-05-01 22h, commit `0f51c2d`) — Diagnostic terminé :**
 Trois points d'instrumentation `[byer-cb]` ont été ajoutés au code v65 :
 1. **mount-once useEffect** (`app.js` ~ligne 167) : log `search`, `isCallback`, `ref` au moment de l'analyse de l'URL ; log explicite quand `setPaymentCallback` est appelé ; log quand `replaceState` clean l'URL.
 2. **poll useEffect** (`app.js` ~ligne 184) : log lifecycle (entrée, exit conditions, db ready check) ; log de chaque poll #N avec `data` et `error` ; log explicite quand un statut terminal est détecté (success/failed/cancelled/timeout).

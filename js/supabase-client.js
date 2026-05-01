@@ -260,8 +260,13 @@
       // afin que TripsScreen puisse afficher l'avatar/nom de l'autre partie.
       // Avant : bug "Cannot read properties of undefined (reading '0')" sur
       // booking.host[0] (résa réelle sans profil joint).
+      // v67 fix : `amenities` ajouté à la jointure listings sinon
+      // adaptBooking ne peut pas remonter le champ → trips.js crash
+      // sur booking.amenities.map(...) si l'optional chaining n'a pas
+      // été shipped (cf. checklist senior #9 : adapter doit fournir
+      // tous les champs accédés en render).
       return await sb.from("bookings")
-        .select("*, listings(title, city, address, lat, lng, type, listing_photos(url)), host:profiles!host_id(name, photo_url, avatar_letter, avatar_bg), guest:profiles!guest_id(name, photo_url, avatar_letter, avatar_bg)")
+        .select("*, listings(title, city, address, lat, lng, type, amenities, listing_photos(url)), host:profiles!host_id(name, photo_url, avatar_letter, avatar_bg), guest:profiles!guest_id(name, photo_url, avatar_letter, avatar_bg)")
         .eq(col, userId)
         .order("checkin", { ascending: false });
     },

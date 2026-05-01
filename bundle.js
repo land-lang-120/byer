@@ -507,7 +507,12 @@ const fmtM = n => n ? n.toLocaleString("fr-FR") + " F/mois" : "—";
       // afin que TripsScreen puisse afficher l'avatar/nom de l'autre partie.
       // Avant : bug "Cannot read properties of undefined (reading '0')" sur
       // booking.host[0] (résa réelle sans profil joint).
-      return await sb.from("bookings").select("*, listings(title, city, address, lat, lng, type, listing_photos(url)), host:profiles!host_id(name, photo_url, avatar_letter, avatar_bg), guest:profiles!guest_id(name, photo_url, avatar_letter, avatar_bg)").eq(col, userId).order("checkin", {
+      // v67 fix : `amenities` ajouté à la jointure listings sinon
+      // adaptBooking ne peut pas remonter le champ → trips.js crash
+      // sur booking.amenities.map(...) si l'optional chaining n'a pas
+      // été shipped (cf. checklist senior #9 : adapter doit fournir
+      // tous les champs accédés en render).
+      return await sb.from("bookings").select("*, listings(title, city, address, lat, lng, type, amenities, listing_photos(url)), host:profiles!host_id(name, photo_url, avatar_letter, avatar_bg), guest:profiles!guest_id(name, photo_url, avatar_letter, avatar_bg)").eq(col, userId).order("checkin", {
         ascending: false
       });
     },
@@ -11973,7 +11978,7 @@ function TripsScreen({
         flexWrap: "wrap",
         paddingBottom: 12
       }
-    }, booking.amenities.map(a => /*#__PURE__*/React.createElement("span", {
+    }, (booking.amenities || []).map(a => /*#__PURE__*/React.createElement("span", {
       key: a,
       style: S.tag
     }, a)))), /*#__PURE__*/React.createElement("div", {
@@ -33871,7 +33876,11 @@ function adaptBooking(row) {
     type: lst.type || "property",
     checkIn: row.checkin,
     // alias (rendu trips.js utilise checkIn capitalisé)
-    checkOut: row.checkout
+    checkOut: row.checkout,
+    // v67 fix : amenities depuis listings (jsonb array). Sans ça,
+    // trips.js ligne 400 `booking.amenities.map(...)` crashait global
+    // après "Voir ma réservation" du callback overlay v66.
+    amenities: Array.isArray(lst.amenities) ? lst.amenities.slice(0, 6) : []
   };
 }
 function adaptListing(row) {

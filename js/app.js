@@ -71,6 +71,10 @@ function adaptBooking(row) {
     type:      lst.type || "property",
     checkIn:   row.checkin,                  // alias (rendu trips.js utilise checkIn capitalisé)
     checkOut:  row.checkout,
+    // v67 fix : amenities depuis listings (jsonb array). Sans ça,
+    // trips.js ligne 400 `booking.amenities.map(...)` crashait global
+    // après "Voir ma réservation" du callback overlay v66.
+    amenities: Array.isArray(lst.amenities) ? lst.amenities.slice(0, 6) : [],
   };
 }
 
