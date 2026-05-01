@@ -790,25 +790,42 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
           </div>
         </div>
 
+        {/* Error message — affichage CRUCIAL : sans cela les erreurs setBookingError étaient invisibles */}
+        {bookingError && (
+          <div style={{
+            padding: '12px 14px',
+            borderRadius: 12,
+            backgroundColor: '#FFE5E7',
+            color: '#D32F2F',
+            fontSize: 13,
+            fontWeight: 500,
+            marginBottom: 12,
+            border: '1px solid #FFB0B5',
+            lineHeight: 1.4
+          }}>
+            ⚠️ {bookingError}
+          </div>
+        )}
+
         {/* Confirm Button */}
         <button
           onClick={handleConfirmPayment}
-          disabled={!canConfirmPayment}
+          disabled={!canConfirmPayment || bookingLoading}
           style={{
             width: '100%',
             padding: '14px 16px',
             borderRadius: 14,
             border: 'none',
-            backgroundColor: canConfirmPayment ? C.coral : C.border,
+            backgroundColor: (canConfirmPayment && !bookingLoading) ? C.coral : C.border,
             color: C.white,
             fontSize: 14,
             fontWeight: 700,
-            cursor: canConfirmPayment ? 'pointer' : 'not-allowed',
+            cursor: (canConfirmPayment && !bookingLoading) ? 'pointer' : 'not-allowed',
             transition: 'all 0.3s',
-            opacity: canConfirmPayment ? 1 : 0.6
+            opacity: (canConfirmPayment && !bookingLoading) ? 1 : 0.6
           }}
         >
-          Confirmer et payer
+          {bookingLoading ? 'Traitement…' : 'Confirmer et payer'}
         </button>
       </div>
     );
