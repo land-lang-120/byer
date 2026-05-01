@@ -33972,11 +33972,17 @@ function ByerApp({
   // États : "checking" → "paid" → "failed" / "cancelled" / "timeout"
   const [paymentCallback, setPaymentCallback] = useState(null);
   React.useEffect(() => {
+    console.log("[byer-cb] mount-once useEffect FIRED. search =", window.location.search);
     try {
       const params = new URLSearchParams(window.location.search);
       const isCallback = params.get("payment") === "callback";
       const ref = params.get("ref");
-      if (!isCallback || !ref) return;
+      console.log("[byer-cb] parsed params: isCallback =", isCallback, "ref =", ref);
+      if (!isCallback || !ref) {
+        console.log("[byer-cb] no callback in URL → return early (normal at first load)");
+        return;
+      }
+      console.log("[byer-cb] SETTING paymentCallback state to {checking, ref}");
       setPaymentCallback({
         ref,
         status: "checking",
@@ -33985,24 +33991,41 @@ function ByerApp({
       // Clean URL après detection (laisse l'historique propre)
       try {
         window.history.replaceState({}, "", window.location.pathname);
-      } catch (_) {}
-    } catch (_) {}
+        console.log("[byer-cb] URL cleaned via replaceState");
+      } catch (e) {
+        console.warn("[byer-cb] replaceState failed:", e);
+      }
+    } catch (e) {
+      console.warn("[byer-cb] mount useEffect error:", e);
+    }
   }, []); // mount-once
 
   // Poll DB toutes les 2s pour voir si le webhook a updaté payments.status.
   // Timeout 60s au total (30 polls). Si toujours pending → on affiche
   // "En attente de confirmation" + bouton "Voir ma résa".
   React.useEffect(() => {
-    if (!paymentCallback || !paymentCallback.ref) return;
-    if (paymentCallback.status !== "checking") return;
+    console.log("[byer-cb] poll useEffect ran. paymentCallback =", paymentCallback);
+    if (!paymentCallback || !paymentCallback.ref) {
+      console.log("[byer-cb] no paymentCallback → exit poll effect");
+      return;
+    }
+    if (paymentCallback.status !== "checking") {
+      console.log("[byer-cb] status =", paymentCallback.status, "(not checking) → exit poll effect");
+      return;
+    }
     const db = window.byer && window.byer.db;
-    if (!db || !db.isReady) return;
+    if (!db || !db.isReady) {
+      console.warn("[byer-cb] db NOT READY at poll start! db =", db);
+      return;
+    }
+    console.log("[byer-cb] starting poll loop for ref =", paymentCallback.ref);
     let cancelled = false;
     let pollCount = 0;
     const MAX_POLLS = 30; // 30 * 2s = 60s
     const poll = async () => {
       if (cancelled) return;
       pollCount++;
+      console.log("[byer-cb] poll #" + pollCount + " querying payments table...");
       try {
         // Query payments by tx_ref (notre ref interne envoyée à Notch Pay)
         const {
@@ -34010,7 +34033,9 @@ function ByerApp({
           error
         } = await db.raw.from("payments").select("status, booking_id, failure_reason, amount, currency").eq("provider", "notchpay").eq("tx_ref", paymentCallback.ref).maybeSingle();
         if (cancelled) return;
+        console.log("[byer-cb] poll #" + pollCount + " result: data =", data, "error =", error);
         if (data && data.status === "success") {
+          console.log("[byer-cb] ✅ payment SUCCESS detected → set status=paid");
           setPaymentCallback(p => ({
             ...p,
             status: "paid",
@@ -34023,6 +34048,7 @@ function ByerApp({
           return; // stop polling
         }
         if (data && (data.status === "failed" || data.status === "cancelled")) {
+          console.log("[byer-cb] ❌ payment", data.status, "detected → set status=" + data.status);
           setPaymentCallback(p => ({
             ...p,
             status: data.status,
@@ -34032,6 +34058,7 @@ function ByerApp({
         }
         // Still pending → continue polling
         if (pollCount >= MAX_POLLS) {
+          console.log("[byer-cb] ⏳ max polls reached → status=timeout");
           setPaymentCallback(p => ({
             ...p,
             status: "timeout",
@@ -34041,11 +34068,13 @@ function ByerApp({
         }
         setTimeout(poll, 2000);
       } catch (e) {
+        console.warn("[byer-cb] poll #" + pollCount + " EXCEPTION:", e);
         if (!cancelled) setTimeout(poll, 2000);
       }
     };
     poll();
     return () => {
+      console.log("[byer-cb] poll effect cleanup (cancel)");
       cancelled = true;
     };
   }, [paymentCallback]);
@@ -35069,6 +35098,7 @@ function PaymentCallbackOverlay({
   onClose,
   onViewBooking
 }) {
+  console.log("[byer-cb] PaymentCallbackOverlay RENDER with callback =", callback);
   const status = callback.status;
   const isFinal = status === "paid" || status === "failed" || status === "cancelled" || status === "timeout";
   const config = {
