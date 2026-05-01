@@ -163,27 +163,62 @@ function ByerApp({ onLogout }) {
   // on affiche un overlay qui poll le statut du paiement en DB toutes les 2s
   // (le webhook met à jour async, donc le statut peut prendre 1-30s à arriver).
   // États : "checking" → "paid" → "failed" / "cancelled" / "timeout"
-  const [paymentCallback, setPaymentCallback] = useState(null);
-  React.useEffect(() => {
-    console.log("[byer-cb] mount-once useEffect FIRED. search =", window.location.search);
+  // v66 fix : ByerApp se démonte/remonte au boot (probablement quand la
+  // session Supabase finit de charger), donc le state local paymentCallback
+  // est perdu. On persiste le ref dans sessionStorage pour survivre au
+  // remount. Storage cleared dès que le statut devient terminal (paid/
+  // failed/cancelled/timeout) ou que l'user ferme l'overlay.
+  const PAYMENT_CB_KEY = "byer.paymentCallback";
+  const [paymentCallback, setPaymentCallback] = useState(() => {
+    // Initial state lazy : lire d'abord sessionStorage, sinon URL
+    try {
+      const cached = sessionStorage.getItem(PAYMENT_CB_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        // Si le cache date de plus de 10 min, on l'ignore (sécurité)
+        if (parsed && parsed.startedAt && (Date.now() - parsed.startedAt) < 600000) {
+          console.log("[byer-cb] initial state restored from sessionStorage", parsed);
+          return parsed;
+        }
+        sessionStorage.removeItem(PAYMENT_CB_KEY);
+      }
+    } catch (_) {}
+    // Fallback : lire l'URL au tout premier mount
     try {
       const params = new URLSearchParams(window.location.search);
-      const isCallback = params.get("payment") === "callback";
-      const ref = params.get("ref");
-      console.log("[byer-cb] parsed params: isCallback =", isCallback, "ref =", ref);
-      if (!isCallback || !ref) {
-        console.log("[byer-cb] no callback in URL → return early (normal at first load)");
-        return;
+      if (params.get("payment") === "callback") {
+        const ref = params.get("ref");
+        if (ref) {
+          const initial = { ref, status: "checking", startedAt: Date.now() };
+          try { sessionStorage.setItem(PAYMENT_CB_KEY, JSON.stringify(initial)); } catch (_) {}
+          console.log("[byer-cb] initial state set from URL on mount", initial);
+          return initial;
+        }
       }
-      console.log("[byer-cb] SETTING paymentCallback state to {checking, ref}");
-      setPaymentCallback({ ref, status: "checking", startedAt: Date.now() });
-      // Clean URL après detection (laisse l'historique propre)
+    } catch (_) {}
+    return null;
+  });
+  // Effect : nettoie l'URL une fois que le state est set (juste cosmétique).
+  React.useEffect(() => {
+    console.log("[byer-cb] mount-once useEffect FIRED. search =", window.location.search, "paymentCallback =", paymentCallback);
+    if (paymentCallback && window.location.search.includes("payment=callback")) {
       try {
         window.history.replaceState({}, "", window.location.pathname);
-        console.log("[byer-cb] URL cleaned via replaceState");
+        console.log("[byer-cb] URL cleaned via replaceState (state already set)");
       } catch (e) { console.warn("[byer-cb] replaceState failed:", e); }
-    } catch (e) { console.warn("[byer-cb] mount useEffect error:", e); }
+    }
   }, []); // mount-once
+
+  // Persist paymentCallback à chaque changement (survit au remount du composant).
+  React.useEffect(() => {
+    try {
+      if (paymentCallback) {
+        sessionStorage.setItem(PAYMENT_CB_KEY, JSON.stringify(paymentCallback));
+      } else {
+        sessionStorage.removeItem(PAYMENT_CB_KEY);
+      }
+    } catch (_) {}
+  }, [paymentCallback]);
 
   // Poll DB toutes les 2s pour voir si le webhook a updaté payments.status.
   // Timeout 60s au total (30 polls). Si toujours pending → on affiche
