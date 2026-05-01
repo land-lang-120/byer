@@ -4,7 +4,8 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
   const [arrivalDate, setArrivalDate] = useState(new Date().toISOString().split('T')[0]);
   const [departDate, setDepartDate] = useState(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState(null);
-  const [phone, setPhone] = useState('');
+  // v68 : `phone` state retiré (n'était plus rendu depuis v64). Le numéro
+  // est collecté par Notch Pay sur son hosted checkout, pas chez nous.
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [confirmationRef, setConfirmationRef] = useState('');
 
@@ -74,35 +75,25 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
   const [bookingLoading, setBookingLoading] = useState(false);
 
   const handleConfirmPayment = async () => {
-    console.log("[byer] handleConfirmPayment FIRED. paymentMethod =", paymentMethod, "termsAccepted =", termsAccepted, "canConfirmPayment =", canConfirmPayment, "item._supabase =", item?._supabase, "item.ownerId =", item?.ownerId);
     setBookingError("");
     setBookingLoading(true);
 
     const ref = 'BYR-' + String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
     setConfirmationRef(ref);
-    console.log("[byer] generated ref =", ref);
 
     // ─── INSERT dans Supabase si l'annonce vient de la BDD ───────
     // (item._supabase === true → listing réel avec owner_id)
     const db = window.byer && window.byer.db;
-    console.log("[byer] step A: db ready ?", !!db?.isReady, "item._supabase=", item?._supabase, "item.ownerId=", item?.ownerId);
     if (db && db.isReady && item && item._supabase && item.ownerId) {
       try {
-        console.log("[byer] step B: about to call db.auth.getSession()");
-        const t0 = Date.now();
         const { data: sess } = await db.auth.getSession();
-        console.log("[byer] step C: getSession returned in", Date.now()-t0, "ms. sess=", sess);
         const user = sess && sess.session && sess.session.user;
-        console.log("[byer] step D: user=", user?.id || null);
         if (user) {
           // 1) Vérification disponibilité côté serveur (RPC migration 0006)
           //    → bloque le double-clic et les conflits de fenêtre
-          console.log("[byer] step E: about to call db.bookings.isAvailable for listing", item.id, "checkin=", arrivalDate, "checkout=", departDate);
-          const t1 = Date.now();
           const { data: avail, error: availErr } = await db.bookings.isAvailable(
             item.id, arrivalDate, departDate
           );
-          console.log("[byer] step F: isAvailable returned in", Date.now()-t1, "ms. avail=", avail, "err=", availErr);
           if (availErr) {
             console.warn("[byer] availability check failed:", availErr.message);
           } else if (avail === false) {
@@ -128,7 +119,6 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
             virement: "bank_transfer",
             eu:       "bank_transfer",
           };
-          const isMobileMoney = paymentMethod === "mtn" || paymentMethod === "om" || paymentMethod === "orange";
 
           // 3) Détermination rental_mode pour le serveur (calcul payout/durée)
           const isVehicle = item.type === "vehicle";
@@ -143,8 +133,6 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
           //    encaisser → fraude par défaut. Maintenant le statut bouge
           //    seulement après le webhook pay-webhook.
           const isOnlinePayment = ["mtn","om","orange","card"].includes(paymentMethod);
-          console.log("[byer] step G: about to call db.bookings.create()");
-          const t2 = Date.now();
           const { data: createdBooking, error: bookErr } = await db.bookings.create({
             guest_id:       user.id,
             host_id:        item.ownerId,
@@ -165,7 +153,7 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
             // Pour les méthodes manuelles (virement, EU), on garde aussi
             // pending → le bailleur valide manuellement à réception.
             payment_method: paymentMap[paymentMethod] || "mtn_momo",
-            payment_phone:  isMobileMoney ? phone : null,
+            payment_phone:  null,    // v68 : Notch Pay collecte le numéro côté hosted checkout
             payment_status: "pending",
             status:         "pending",
             // Référence client lisible (la colonne `ref` existe en BDD avec
@@ -188,14 +176,11 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
           //    le hosted checkout. Au retour (callback URL avec ?payment=callback),
           //    le user voit l'écran de succès basé sur payment_status DB
           //    (mis à jour en async par le webhook).
-          console.log("[byer] step H: bookings.create returned in", Date.now()-t2, "ms. createdBooking =", createdBooking, "isOnlinePayment =", isOnlinePayment, "bookErr =", bookErr);
           if (isOnlinePayment && createdBooking?.id) {
-            console.log("[byer] calling db.payments.init for booking_id =", createdBooking.id);
             const { data: payInit, error: payErr } = await db.payments.init({
               booking_id: createdBooking.id,
               method: paymentMap[paymentMethod] || "card",
             });
-            console.log("[byer] payments.init result. payInit =", payInit, "payErr =", payErr);
             if (payErr || !payInit?.authorization_url) {
               setBookingError(`Échec de l'initialisation du paiement : ${payErr?.message || "réessayez"}`);
               setBookingLoading(false);
@@ -209,13 +194,10 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
           }
         }
       } catch (e) {
-        console.warn("[byer] booking error caught:", e, e?.stack);
+        console.warn("[byer] booking error caught:", e?.message || e);
       }
-    } else {
-      console.log("[byer] SKIPPING Supabase insert. db.isReady =", !!db?.isReady, "item._supabase =", item?._supabase, "item.ownerId =", item?.ownerId);
     }
     setBookingLoading(false);
-    console.log("[byer] reached fall-through (no online redirect). Will setStep(3).");
 
     // Construire un booking persistable + l'ajouter à la liste utilisateur
     if (onCreateBooking && item) {

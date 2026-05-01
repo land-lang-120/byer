@@ -162,32 +162,30 @@ function ByerApp({ onLogout }) {
   const [dbListings, setDbListings] = useState([]);
   const [dbLoading, setDbLoading]   = useState(false);
 
-  // ─── v64 : Payment Callback Handler ─────────────────────────────────
+  // ─── Payment Callback Handler ───────────────────────────────────────
   // Quand l'utilisateur revient de Notch Pay avec ?payment=callback&ref=byer_xxx,
   // on affiche un overlay qui poll le statut du paiement en DB toutes les 2s
   // (le webhook met à jour async, donc le statut peut prendre 1-30s à arriver).
-  // États : "checking" → "paid" → "failed" / "cancelled" / "timeout"
-  // v66 fix : ByerApp se démonte/remonte au boot (probablement quand la
-  // session Supabase finit de charger), donc le state local paymentCallback
-  // est perdu. On persiste le ref dans sessionStorage pour survivre au
-  // remount. Storage cleared dès que le statut devient terminal (paid/
-  // failed/cancelled/timeout) ou que l'user ferme l'overlay.
+  // États : "checking" → "paid" / "failed" / "cancelled" / "timeout".
+  //
+  // ⚠️ Persistence sessionStorage : ByerApp se démonte/remonte au boot
+  // (quand la session Supabase finit de charger), donc le state local
+  // serait perdu. On persiste pour survivre au remount. Cleared dès que
+  // le statut devient terminal ou que l'user ferme l'overlay.
   const PAYMENT_CB_KEY = "byer.paymentCallback";
   const [paymentCallback, setPaymentCallback] = useState(() => {
-    // Initial state lazy : lire d'abord sessionStorage, sinon URL
+    // Lazy init : sessionStorage d'abord, puis URL en fallback
     try {
       const cached = sessionStorage.getItem(PAYMENT_CB_KEY);
       if (cached) {
         const parsed = JSON.parse(cached);
-        // Si le cache date de plus de 10 min, on l'ignore (sécurité)
+        // TTL 10 min : évite les états zombies entre sessions
         if (parsed && parsed.startedAt && (Date.now() - parsed.startedAt) < 600000) {
-          console.log("[byer-cb] initial state restored from sessionStorage", parsed);
           return parsed;
         }
         sessionStorage.removeItem(PAYMENT_CB_KEY);
       }
     } catch (_) {}
-    // Fallback : lire l'URL au tout premier mount
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.get("payment") === "callback") {
@@ -195,25 +193,21 @@ function ByerApp({ onLogout }) {
         if (ref) {
           const initial = { ref, status: "checking", startedAt: Date.now() };
           try { sessionStorage.setItem(PAYMENT_CB_KEY, JSON.stringify(initial)); } catch (_) {}
-          console.log("[byer-cb] initial state set from URL on mount", initial);
           return initial;
         }
       }
     } catch (_) {}
     return null;
   });
-  // Effect : nettoie l'URL une fois que le state est set (juste cosmétique).
+
+  // Nettoie l'URL une fois le state hydraté (cosmétique).
   React.useEffect(() => {
-    console.log("[byer-cb] mount-once useEffect FIRED. search =", window.location.search, "paymentCallback =", paymentCallback);
     if (paymentCallback && window.location.search.includes("payment=callback")) {
-      try {
-        window.history.replaceState({}, "", window.location.pathname);
-        console.log("[byer-cb] URL cleaned via replaceState (state already set)");
-      } catch (e) { console.warn("[byer-cb] replaceState failed:", e); }
+      try { window.history.replaceState({}, "", window.location.pathname); } catch (_) {}
     }
   }, []); // mount-once
 
-  // Persist paymentCallback à chaque changement (survit au remount du composant).
+  // Persist à chaque changement (survit au remount du composant).
   React.useEffect(() => {
     try {
       if (paymentCallback) {
@@ -225,67 +219,51 @@ function ByerApp({ onLogout }) {
   }, [paymentCallback]);
 
   // Poll DB toutes les 2s pour voir si le webhook a updaté payments.status.
-  // Timeout 60s au total (30 polls). Si toujours pending → on affiche
-  // "En attente de confirmation" + bouton "Voir ma résa".
+  // Timeout 60s au total (30 polls). Si toujours pending → "Confirmation
+  // en cours côté banque" + bouton "Voir ma résa".
   React.useEffect(() => {
-    console.log("[byer-cb] poll useEffect ran. paymentCallback =", paymentCallback);
-    if (!paymentCallback || !paymentCallback.ref) {
-      console.log("[byer-cb] no paymentCallback → exit poll effect");
-      return;
-    }
-    if (paymentCallback.status !== "checking") {
-      console.log("[byer-cb] status =", paymentCallback.status, "(not checking) → exit poll effect");
-      return;
-    }
+    if (!paymentCallback || !paymentCallback.ref) return;
+    if (paymentCallback.status !== "checking") return;
     const db = window.byer && window.byer.db;
-    if (!db || !db.isReady) {
-      console.warn("[byer-cb] db NOT READY at poll start! db =", db);
-      return;
-    }
-    console.log("[byer-cb] starting poll loop for ref =", paymentCallback.ref);
+    if (!db || !db.isReady) return;
     let cancelled = false;
     let pollCount = 0;
     const MAX_POLLS = 30; // 30 * 2s = 60s
     const poll = async () => {
       if (cancelled) return;
       pollCount++;
-      console.log("[byer-cb] poll #" + pollCount + " querying payments table...");
       try {
-        // Query payments by tx_ref (notre ref interne envoyée à Notch Pay)
-        const { data, error } = await db.raw
+        // Query payments par tx_ref (notre ref interne envoyée à Notch Pay)
+        const { data } = await db.raw
           .from("payments")
           .select("status, booking_id, failure_reason, amount, currency")
           .eq("provider", "notchpay")
           .eq("tx_ref", paymentCallback.ref)
           .maybeSingle();
         if (cancelled) return;
-        console.log("[byer-cb] poll #" + pollCount + " result: data =", data, "error =", error);
         if (data && data.status === "success") {
-          console.log("[byer-cb] ✅ payment SUCCESS detected → set status=paid");
           setPaymentCallback(p => ({ ...p, status: "paid", payment: data }));
-          // Refresh la liste des bookings pour qu'elle apparaisse comme confirmée
+          // Refresh la liste des bookings pour qu'elle apparaisse confirmée
           try { refreshDbBookings(); } catch (_) {}
-          return; // stop polling
+          return;
         }
         if (data && (data.status === "failed" || data.status === "cancelled")) {
-          console.log("[byer-cb] ❌ payment", data.status, "detected → set status=" + data.status);
           setPaymentCallback(p => ({ ...p, status: data.status, payment: data }));
           return;
         }
         // Still pending → continue polling
         if (pollCount >= MAX_POLLS) {
-          console.log("[byer-cb] ⏳ max polls reached → status=timeout");
           setPaymentCallback(p => ({ ...p, status: "timeout", payment: data }));
           return;
         }
         setTimeout(poll, 2000);
       } catch (e) {
-        console.warn("[byer-cb] poll #" + pollCount + " EXCEPTION:", e);
+        // Erreur réseau transitoire → on retente
         if (!cancelled) setTimeout(poll, 2000);
       }
     };
     poll();
-    return () => { console.log("[byer-cb] poll effect cleanup (cancel)"); cancelled = true; };
+    return () => { cancelled = true; };
   }, [paymentCallback]);
 
   React.useEffect(() => {
@@ -1020,7 +998,6 @@ function ByerApp({ onLogout }) {
    - "cancelled" : ⚠️ orange + "Paiement annulé" + bouton Fermer
    - "timeout"   : ⏳ "Confirmation en cours côté banque" + bouton Voir ma résa */
 function PaymentCallbackOverlay({ callback, onClose, onViewBooking }) {
-  console.log("[byer-cb] PaymentCallbackOverlay RENDER with callback =", callback);
   const status = callback.status;
   const isFinal = status === "paid" || status === "failed" || status === "cancelled" || status === "timeout";
   const config = {

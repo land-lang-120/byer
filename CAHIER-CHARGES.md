@@ -1,10 +1,10 @@
 # 📖 Byer — Cahier de charges
 
 > Marketplace de location immobilier + véhicules au Cameroun
-> Version : **3.11** — 2026-05-01 (Phase 4 — Notch Pay 100% TERMINÉE et validée E2E sandbox ; bascule live = next step)
+> Version : **3.12** — 2026-05-02 (Phase 4 = DONE & cleaned ; bascule live next)
 > URL prod : https://byer.landonjouajosephpino.workers.dev
 > Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **14 migrations (0014 paiements), 18 RPCs en service, 3 Edge Functions (kyc-review + pay-init + pay-webhook)**
-> Bundle frontend : `bundle.js?v=66` (callback overlay fixé via sessionStorage persistence — survit au remount Auth/Supabase)
+> Bundle frontend : `bundle.js?v=68` (Phase 4 close-up : logs debug retirés, phone state inutilisé retiré, optional chaining défensif sur amenities)
 > Voir aussi : [PROGRESS.md](PROGRESS.md) (suivi du dev) · [supabase/SETUP.md](supabase/SETUP.md) (procédure migrations)
 
 ---
