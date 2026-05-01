@@ -87,16 +87,24 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
     // ─── INSERT dans Supabase si l'annonce vient de la BDD ───────
     // (item._supabase === true → listing réel avec owner_id)
     const db = window.byer && window.byer.db;
+    console.log("[byer] step A: db ready ?", !!db?.isReady, "item._supabase=", item?._supabase, "item.ownerId=", item?.ownerId);
     if (db && db.isReady && item && item._supabase && item.ownerId) {
       try {
+        console.log("[byer] step B: about to call db.auth.getSession()");
+        const t0 = Date.now();
         const { data: sess } = await db.auth.getSession();
+        console.log("[byer] step C: getSession returned in", Date.now()-t0, "ms. sess=", sess);
         const user = sess && sess.session && sess.session.user;
+        console.log("[byer] step D: user=", user?.id || null);
         if (user) {
           // 1) Vérification disponibilité côté serveur (RPC migration 0006)
           //    → bloque le double-clic et les conflits de fenêtre
+          console.log("[byer] step E: about to call db.bookings.isAvailable for listing", item.id, "checkin=", arrivalDate, "checkout=", departDate);
+          const t1 = Date.now();
           const { data: avail, error: availErr } = await db.bookings.isAvailable(
             item.id, arrivalDate, departDate
           );
+          console.log("[byer] step F: isAvailable returned in", Date.now()-t1, "ms. avail=", avail, "err=", availErr);
           if (availErr) {
             console.warn("[byer] availability check failed:", availErr.message);
           } else if (avail === false) {
@@ -130,6 +138,8 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
           //    encaisser → fraude par défaut. Maintenant le statut bouge
           //    seulement après le webhook pay-webhook.
           const isOnlinePayment = ["mtn","om","orange","card"].includes(paymentMethod);
+          console.log("[byer] step G: about to call db.bookings.create()");
+          const t2 = Date.now();
           const { data: createdBooking, error: bookErr } = await db.bookings.create({
             guest_id:       user.id,
             host_id:        item.ownerId,
@@ -173,7 +183,7 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
           //    le hosted checkout. Au retour (callback URL avec ?payment=callback),
           //    le user voit l'écran de succès basé sur payment_status DB
           //    (mis à jour en async par le webhook).
-          console.log("[byer] booking insert result. createdBooking =", createdBooking, "isOnlinePayment =", isOnlinePayment, "bookErr =", bookErr);
+          console.log("[byer] step H: bookings.create returned in", Date.now()-t2, "ms. createdBooking =", createdBooking, "isOnlinePayment =", isOnlinePayment, "bookErr =", bookErr);
           if (isOnlinePayment && createdBooking?.id) {
             console.log("[byer] calling db.payments.init for booking_id =", createdBooking.id);
             const { data: payInit, error: payErr } = await db.payments.init({
