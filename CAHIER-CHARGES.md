@@ -1,10 +1,10 @@
 # 📖 Byer — Cahier de charges
 
 > Marketplace de location immobilier + véhicules au Cameroun
-> Version : **3.8** — 2026-04-28 (Phase 4 démarrée : intégration paiement Notch Pay)
+> Version : **3.9** — 2026-05-01 (Phase 4 — Notch Pay validée E2E ; v65 = polish overlay)
 > URL prod : https://byer.landonjouajosephpino.workers.dev
 > Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **14 migrations (0014 paiements), 18 RPCs en service, 3 Edge Functions (kyc-review + pay-init + pay-webhook)**
-> Bundle frontend : `bundle.js?v=58` (v59 dès apply mig 0014 + deploy edge functions)
+> Bundle frontend : `bundle.js?v=64` (callback overlay + EU retiré + phone field retiré)
 > Voir aussi : [PROGRESS.md](PROGRESS.md) (suivi du dev) · [supabase/SETUP.md](supabase/SETUP.md) (procédure migrations)
 
 ---
@@ -191,29 +191,65 @@ Micro-ajustements pré-V2 :
 - Audit `MessagesScreen` mode bailleur : retirer les noms hardcodés (Caroline N., David Mboma, etc.) → si pas de vraies conversations DB, afficher empty state propre.
 - Audit `OWNERS["Ekwalla M."]` : remplacer par `currentProfile` partout dans `owner-dashboard.js` (le bandeau démo est posé mais les chiffres restent ceux de Ekwalla).
 
-**Phase 4 — Paiements via Notch Pay** — _Stripe non supporté au Cameroun, Flutterwave restreint au Nigeria depuis 2025. Choix final : Notch Pay (PSP CM-natif basé Yaoundé, couvre cartes + MTN MoMo + Orange Money + Express Union dans une seule API)_
+**Phase 4 — Paiements via Notch Pay** — ✅ **VALIDÉE E2E le 2026-05-01** (sandbox, success path) — _Stripe non supporté au Cameroun, Flutterwave restreint au Nigeria depuis 2025. Choix final : Notch Pay (PSP CM-natif basé Yaoundé, couvre cartes + MTN MoMo + Orange Money dans une seule API)_
 
-**Code livré (à activer côté Supabase) :**
-- ✅ `supabase/migrations/0014_payments.sql` : table `payments` (booking_id, user_id, provider, tx_ref, method, amount, currency, status, checkout_url, raw_payload, failure_reason) + colonnes `payment_ref`/`payment_method` sur `bookings` + RLS strict (INSERT/UPDATE bloqués pour client, lecture pour parties prenantes).
-- ✅ Edge Function `pay-init` : valide JWT user → load+autorize booking (guest_id check, refus si déjà payé) → POST Notch Pay `/payments` (Authorization=public_key) → INSERT row payments status=pending → bump bookings.payment_ref → renvoie `authorization_url`.
-- ✅ Edge Function `pay-webhook` : vérifie HMAC SHA-256 sur `x-notch-signature` (constant-time compare) → mappe event → update payments + bookings + crée notifications guest+host. Idempotent.
+**État actuel : 95% livré, 5% polish UI restant (overlay callback v65).**
+
+**Backend — 100% validé :**
+- ✅ `supabase/migrations/0014_payments.sql` appliquée : table `payments` (booking_id, user_id, provider, tx_ref, method enum CHECK, amount, currency, status enum CHECK, checkout_url, raw_payload, failure_reason) + colonnes `payment_ref`/`payment_method` sur `bookings` + RLS strict (INSERT/UPDATE bloqués pour client, lecture via `payments_self_read`).
+- ✅ Edge Function `pay-init` déployée + corrigée v64 : valide JWT user → load+autorize booking (guest_id check, refus si déjà payé) → POST Notch Pay `/payments` (Authorization=public_key direct) → INSERT row payments status=pending → bump bookings.payment_ref → renvoie `authorization_url`. **Bug fix v64 : OPTIONS preflight handler — `preflight(origin)` au lieu de `preflight(req)` faisait crash 502 EDGE_FUNCTION_ERROR sur le preflight CORS, bloquant le browser avec `TypeError: Failed to fetch`. Corrigé en inline.**
+- ✅ Edge Function `pay-webhook` déployée + corrigée v64 : vérifie HMAC SHA-256 sur `x-notch-signature` (constant-time compare via Web Crypto API) → mappe event → update payments + bookings + crée notifications guest+host. Idempotent. Bootstrap mode (verification ping accepté avant qu'on ait le hash secret final). **Bug fix v64 : utilisait `data.reference` (ID Notch Pay = `trx.test_xxx`) pour lookup `payments.tx_ref` (où on stocke notre `byer_xxx`) → 0 match → ignored silencieusement → DB jamais updatée. Corrigé : `data.merchant_reference || data.trxref || data.reference` en fallback chain.**
 - ✅ Wrapper `db.payments` (init/listMine/getForBooking) dans `supabase-client.js`.
-- ✅ Frontend `booking.js` : si méthode = card/MoMo/OM → INSERT booking pending → call `db.payments.init()` → redirect `window.location.href = authorization_url`. Plus de fake "paid" sans encaissement.
+- ✅ Frontend `booking.js` : si méthode = card/MoMo/OM → INSERT booking pending → call `db.payments.init()` → redirect `window.location.href = authorization_url`. Plus de fake "paid" sans encaissement. **Bug fix v63 : `paymentMap` mappait `mtn → "momo"` mais le CHECK constraint de payments.method n'accepte que `('card','mtn_momo','orange_money','bank_transfer','manual')`. INSERT échouait silencieusement → pas de payments row → webhook ignored. Corrigé en alignant les valeurs sur l'enum DB.**
+- ✅ Script `supabase/functions/pay-webhook/simulate.js` : POST signé HMAC SHA-256 d'un payload `payment.complete` factice → permet de valider le success path E2E sans dépendre du sandbox flaky de Notch Pay. **Validé : webhook accepté 200, payments.status=success, bookings.payment_status=paid, bookings.status=confirmed, notifications insérées.**
 
-**À faire par Pino (séquence) :**
-1. **Appliquer mig 0014** dans Supabase SQL Editor.
-2. **Configurer 3 secrets Supabase** via terminal : `NOTCHPAY_PUBLIC_KEY`, `NOTCHPAY_WEBHOOK_HASH`, `APP_URL`.
-3. **Déployer les 2 Edge Functions** : `supabase functions deploy pay-init` + `pay-webhook`.
-4. **Ajouter le webhook URL** dans le dashboard Notch Pay : `https://xwqnsovfakzraafiudek.supabase.co/functions/v1/pay-webhook` avec events `payment.complete`, `payment.failed`, `payment.canceled`.
-5. **Tester en sandbox** : carte test `5531 8866 5214 2950` PIN `3310` OTP `12345`, MoMo MTN `+237 670 000 000`, Orange Money `+237 690 000 000`.
-6. **KYC production** dans le dashboard Notch Pay (Vérification KYC) : CNI + NUI + RIB UBA → 24-72h validation → bascule sur clés `pk.live_xxx` / `sk.live_xxx`.
+**KYC Notch Pay — 100% validé :**
+- ✅ Compte créé sur business.notchpay.co
+- ✅ KYC Niveau 1 actif (25M XAF/mois)
+- ✅ Webhook configuré dashboard → URL pay-webhook + events `payment.complete`, `payment.failed`, `payment.canceled`, `payment.processing`
+- ✅ Hash webhook secret `hsk_test.xxx` configuré côté Supabase via `supabase secrets set NOTCHPAY_WEBHOOK_HASH=...`
+- ✅ Public key `pk_test.xxx` configurée via `NOTCHPAY_PUBLIC_KEY`
+- ✅ APP_URL = `https://byer.landonjouajosephpino.workers.dev` configurée
+
+**Frontend UX (v60 → v64) — corrections en cascade :**
+- v60 : logs console pour tracer le clic "Confirmer et payer"
+- v61 : logs granulaires step A → H pour identifier l'await Supabase qui hang
+- v62 : **render `bookingError` dans le JSX** (était set en state mais jamais affiché → user voyait le bouton "ne rien faire" alors que le code avait setBookingError pour signaler un conflit dates) + bouton désactivé pendant `bookingLoading`
+- v63 : fix `paymentMap` enum DB
+- v64 : 3 fixes UX en réponse aux retours Pino post-test sandbox :
+  1. **Callback overlay** : modal plein écran qui poll `payments.status` toutes les 2s pendant 60s max au retour de Notch Pay (`?payment=callback&ref=byer_xxx`). États : checking → paid (✅) / failed (❌) / cancelled (⚠️) / timeout (⏳). Bouton "Voir ma réservation" sur succès / timeout.
+  2. **Express Union retiré** de `PAYMENT_METHODS` (~90% des paiements CM = MoMo/OM, EU peu utilisé)
+  3. **Champ téléphone retiré au step 2** pour MTN/Orange (Notch Pay le redemande sur son hosted checkout — éviter la double saisie)
+
+**Validation E2E (2026-05-01, BYR-327349) :**
+| Étape | Résultat |
+|---|---|
+| Click "Confirmer et payer" | ✅ handler React fire |
+| INSERT booking | ✅ status=pending, payment_status=pending |
+| pay-init Edge Function | ✅ JWT validé, payments row INSERT (method=mtn_momo) |
+| Notch Pay /payments API | ✅ retourne `authorization_url` |
+| Browser redirect | ✅ pay.notchpay.co/test.xxx |
+| Callback retour | ✅ `?payment=callback&ref=byer_xxx&reference=trx.test_xxx&trxref=byer_xxx` |
+| Webhook signé HMAC | ✅ 3 webhooks SUCCESS visibles dashboard NP, signature validée côté pay-webhook |
+| Lookup merchant_reference | ✅ payments row trouvée |
+| UPDATE payments.status | ✅ → success |
+| UPDATE bookings | ✅ payment_status=paid, status=confirmed |
+| Notifications insertées | ✅ 2 rows (guest + host) |
+| **Callback overlay v64** | ⚠️ **À FINALISER v65** — flash bref puis disparaît (probablement cache SW ou state non set) |
+
+**Outstanding pour v65 (~30 min) :**
+- 🔧 **Callback overlay flicker** : ouvrir Byer avec `?payment=callback&ref=byer_xxx` → l'overlay flash brièvement et disparaît, alors que le bundle est OK (v64 chargé, `window.byer === object`, supabase ready, pas d'erreur console). Ce qu'on sait : le flash est probablement le loading screen de `index.html` (`#byer-loading` qui fade out après l'event `byer-ready`), pas notre overlay React. Hypothèses à tester : (a) `paymentCallback` state n'est jamais set car `params.get("payment")` retourne null au moment du useEffect mount-once (URL déjà cleanée par autre code, ou param strip côté Cloudflare Worker) — instrumenter le useEffect avec des `console.log("[byer-cb] mount", search, params)` ; (b) le state IS set mais le composant `<PaymentCallbackOverlay>` plante en render → catcher avec un error boundary ou ajouter try/catch dans le composant ; (c) la query polling échoue silencieusement — vérifier que `db.raw.from("payments").select(...).eq("tx_ref", ...)` autorise la lecture côté `authenticated` (RLS `payments_self_read` doit matcher `user_id = auth.uid()` mais le payment row a `user_id = guest_id` qui = current user, donc OK en théorie). **Action concrète v65** : ajouter au tout début du mount-once useEffect `console.log("[byer-cb] mount", { search: window.location.search, isCallback, ref })` et au début de `PaymentCallbackOverlay` `console.log("[byer-cb] render", callback)`. Pino ouvre l'URL avec console F12 ouverte → on aura les 2 logs et on saura immédiatement où ça pète.
+- 🧹 Cleanup booking.js : retirer le `phone` state désormais inutilisé (le champ n'est plus rendu).
+- 📚 Doc Notch Pay sandbox : noter qu'**en sandbox, le paiement ne se finalise jamais naturellement** (pas de PIN/OTP réel) → impossible de tester payment.complete sans le simulate.js. Le passage en production (clés `pk.live_xxx`) résout ce point.
+- 🚀 Bascule production : Pino active "Activate payments" dans dashboard Notch Pay → reçoit clés `pk.live_xxx` + `sk.live_xxx` + nouveau webhook hash → re-set secrets Supabase + re-deploy → un dernier test E2E avec un vrai paiement minime (500 XAF) pour valider le live path.
 
 **Décisions techniques notables :**
 - L'`Authorization` header de Notch Pay est la **clé directe** (pas Bearer) — vérifié dans la doc.
 - Le `X-Grant` header (avec `sk.test_xxx`) est réservé aux opérations sensibles (transfers/balance) — pas utilisé pour init paiement.
 - Webhook signature sur **body brut** (pas le JSON re-stringified) — important pour la vérif HMAC.
-- Référence interne `byer_<bookingId8>_<timestamp>` envoyée à NP comme `reference` → c'est ce que le webhook recevra dans `data.reference` pour matcher notre row payments.
+- **Référence : confusion historique résolue** → notre `byer_<bookingId8>_<timestamp>` est envoyée à NP comme `reference` dans `/payments init`. Au webhook, NP renvoie cette ref dans `data.merchant_reference` (et alias `data.trxref`), tandis que `data.reference` contient leur ID interne `trx.test_xxx`. Notre lookup utilise donc `merchant_reference || trxref || reference`.
 - RLS sur `payments` : INSERT/UPDATE strictement bloqués pour `authenticated` → seules les Edge Functions service_role peuvent écrire. Le client lit via la policy `payments_self_read`.
+- Edge Functions déployées avec `--no-verify-jwt` : nos fonctions font leur propre auth (pay-init via `authenticate()` qui valide JWT côté code, pay-webhook via signature HMAC). Le gateway Supabase ne doit pas pré-bloquer (sinon OPTIONS preflight bloqué = CORS échoue).
 
 _Ancienne Phase 4 Flutterwave conservée plus bas pour traçabilité technique._
 - Création compte **Flutterwave** côté Pino (mode TEST d'abord) : https://dashboard.flutterwave.com/signup
