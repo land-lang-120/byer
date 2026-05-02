@@ -602,6 +602,14 @@ function PublishScreen({ onBack, initialSegment }) {
 
   const [submitError, setSubmitError] = useState("");
 
+  /* v69 — Wizard onboarding bailleur : avant la 1ère publication, on
+     vérifie que le bailleur a configuré ses infos de payout (méthode +
+     numéro + nom inscrit au compte MoMo/OM). Sans ça, le système payout
+     auto (mig 0015 + payout-host Edge Function) ne pourrait pas le payer
+     et la commission Byer reste en limbo. UX strict. */
+  const [payoutModalOpen, setPayoutModalOpen] = useState(false);
+  const [pendingSubmit, setPendingSubmit]     = useState(false);  // re-déclenchera handleSubmit après save
+
   const handleSubmit = async () => {
     setSubmitError("");
     setSubmitting(true);
@@ -620,6 +628,24 @@ function PublishScreen({ onBack, initialSegment }) {
       if (!user) {
         setSubmitting(false);
         setSubmitError("Vous devez être connecté pour publier une annonce.");
+        return;
+      }
+
+      // ─── Pré-flight : check infos payout bailleur ───────────────
+      // Si manquantes → on ouvre la modal et on suspend la publication.
+      // L'utilisateur saisit, valide, et la modal re-déclenche handleSubmit.
+      const { data: profileRow } = await db.raw
+        .from("profiles")
+        .select("payout_method, payout_phone, payout_name")
+        .eq("id", user.id)
+        .maybeSingle();
+      const hasPayoutInfo = profileRow
+        && profileRow.payout_method
+        && profileRow.payout_phone
+        && profileRow.payout_name;
+      if (!hasPayoutInfo) {
+        setSubmitting(false);
+        setPayoutModalOpen(true);
         return;
       }
 
@@ -2020,6 +2046,202 @@ function PublishScreen({ onBack, initialSegment }) {
           </div>
         </div>
       )}
+
+      {/* v69 — Modal "Configurer vos infos de paiement" : déclenchée
+          au moment du Submit si le bailleur n'a pas encore enregistré
+          son numéro MoMo/OM pour recevoir les paiements. UX strict :
+          pas d'annulation possible, soit l'user remplit, soit il quitte. */}
+      {payoutModalOpen && (
+        <HostPayoutInfoModal
+          onClose={() => setPayoutModalOpen(false)}
+          onSaved={() => {
+            setPayoutModalOpen(false);
+            // Re-déclenche la publication automatiquement
+            setTimeout(() => handleSubmit(), 100);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   HostPayoutInfoModal — v69
+   Capture payout_method + payout_phone + payout_name pour le bailleur,
+   puis UPDATE profiles. Affichée la 1ère fois qu'un user tente de
+   publier. Sans ces infos, le système payout auto ne peut pas le payer.
+   ═══════════════════════════════════════════════════════════════════ */
+function HostPayoutInfoModal({ onClose, onSaved }) {
+  const [method,  setMethod]  = useState("mtn_momo");
+  const [phone,   setPhone]   = useState("");
+  const [name,    setName]    = useState("");
+  const [saving,  setSaving]  = useState(false);
+  const [error,   setError]   = useState("");
+
+  const handleSave = async () => {
+    setError("");
+    // Validation basique : phone numérique CM (+237 6XX XXX XXX)
+    const phoneClean = (phone || "").replace(/\s+/g, "");
+    if (!/^(\+237)?6[0-9]{8}$/.test(phoneClean)) {
+      setError("Numéro invalide. Format attendu : 6XXXXXXXX (9 chiffres) ou +2376XXXXXXXX.");
+      return;
+    }
+    if (!(name || "").trim() || name.trim().length < 3) {
+      setError("Nom inscrit au compte requis (au moins 3 caractères).");
+      return;
+    }
+    const phoneNormalized = phoneClean.startsWith("+237") ? phoneClean : "+237" + phoneClean;
+
+    setSaving(true);
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) {
+      setSaving(false);
+      setError("Connexion impossible. Réessayez dans un instant.");
+      return;
+    }
+    try {
+      const { data: sess } = await db.auth.getSession();
+      const user = sess && sess.session && sess.session.user;
+      if (!user) {
+        setSaving(false);
+        setError("Session expirée. Reconnectez-vous.");
+        return;
+      }
+      const { error: upErr } = await db.raw
+        .from("profiles")
+        .update({
+          payout_method: method,
+          payout_phone:  phoneNormalized,
+          payout_name:   name.trim(),
+        })
+        .eq("id", user.id);
+      if (upErr) {
+        setSaving(false);
+        setError("Erreur d'enregistrement : " + (upErr.message || "inconnue"));
+        return;
+      }
+      setSaving(false);
+      onSaved && onSaved();
+    } catch (e) {
+      setSaving(false);
+      setError("Erreur réseau. Réessayez.");
+    }
+  };
+
+  return (
+    <div style={{
+      position:"fixed", inset:0, background:"rgba(0,0,0,.55)", backdropFilter:"blur(4px)",
+      display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:9100,
+    }}>
+      <div className="sheet" onClick={e => e.stopPropagation()} style={{
+        background:C.white, width:"100%", maxWidth:480,
+        borderRadius:"20px 20px 0 0",
+        padding:"22px 22px calc(22px + env(safe-area-inset-bottom,0px))",
+        boxShadow:"0 -6px 24px rgba(0,0,0,.18)",
+        maxHeight:"92vh", overflowY:"auto",
+      }}>
+        <div style={{ width:38, height:4, background:C.border, borderRadius:2, margin:"0 auto 16px" }}/>
+        <p style={{ fontSize:20, fontWeight:800, color:C.black, marginBottom:6, textAlign:"center" }}>
+          Comment souhaitez-vous être payé ?
+        </p>
+        <p style={{ fontSize:13, color:C.mid, marginBottom:20, textAlign:"center", lineHeight:1.5 }}>
+          Pour publier votre 1ère annonce, indiquez où Byer doit vous envoyer les paiements après chaque séjour. Vous recevrez automatiquement le montant sous 24h après la fin de chaque réservation.
+        </p>
+
+        {/* Méthode */}
+        <div style={{ display:"flex", gap:10, marginBottom:16 }}>
+          {[
+            { id:"mtn_momo",     label:"MTN MoMo",     accent:"#FFCB05" },
+            { id:"orange_money", label:"Orange Money", accent:"#FF6600" },
+          ].map(opt => (
+            <button
+              key={opt.id}
+              onClick={() => setMethod(opt.id)}
+              style={{
+                flex:1, padding:"14px", borderRadius:12,
+                border: method === opt.id ? `2.5px solid ${opt.accent}` : `1.5px solid ${C.border}`,
+                background: method === opt.id ? opt.accent + "20" : C.white,
+                color:C.black, fontSize:14, fontWeight:700, cursor:"pointer",
+                fontFamily:"'DM Sans',sans-serif",
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Phone */}
+        <label style={{ fontSize:13, fontWeight:600, color:C.dark, marginBottom:6, display:"block" }}>
+          Numéro {method === "mtn_momo" ? "MTN MoMo" : "Orange Money"}
+        </label>
+        <input
+          type="tel"
+          inputMode="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="6XXXXXXXX"
+          style={{
+            width:"100%", padding:"14px 16px", borderRadius:12,
+            border:`1.5px solid ${C.border}`, fontSize:15,
+            fontFamily:"'DM Sans',sans-serif", boxSizing:"border-box", marginBottom:14,
+          }}
+        />
+
+        {/* Name */}
+        <label style={{ fontSize:13, fontWeight:600, color:C.dark, marginBottom:6, display:"block" }}>
+          Nom inscrit sur le compte
+        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Ex : Lando Njoua Joseph Pino"
+          style={{
+            width:"100%", padding:"14px 16px", borderRadius:12,
+            border:`1.5px solid ${C.border}`, fontSize:15,
+            fontFamily:"'DM Sans',sans-serif", boxSizing:"border-box", marginBottom:8,
+          }}
+        />
+        <p style={{ fontSize:11, color:C.mid, marginBottom:18, lineHeight:1.4 }}>
+          ⚠️ Le nom doit correspondre exactement à celui enregistré chez votre opérateur. Sinon le paiement échouera.
+        </p>
+
+        {error && (
+          <div style={{
+            background:"#FEE2E2", border:"1px solid #FCA5A5", color:"#991B1B",
+            padding:"10px 12px", borderRadius:10, fontSize:13, marginBottom:14, lineHeight:1.4,
+          }}>
+            ⚠️ {error}
+          </div>
+        )}
+
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={{
+            width:"100%", padding:"14px", borderRadius:12, border:"none",
+            background: saving ? C.border : C.coral,
+            color:C.white, fontSize:15, fontWeight:700,
+            cursor: saving ? "wait" : "pointer",
+            fontFamily:"'DM Sans',sans-serif", marginBottom:10,
+          }}
+        >
+          {saving ? "Enregistrement…" : "Enregistrer et publier"}
+        </button>
+        <button
+          onClick={onClose}
+          disabled={saving}
+          style={{
+            width:"100%", padding:"12px", borderRadius:12,
+            border:`1.5px solid ${C.border}`, background:C.white,
+            color:C.mid, fontSize:14, fontWeight:600,
+            cursor: saving ? "wait" : "pointer",
+            fontFamily:"'DM Sans',sans-serif",
+          }}
+        >
+          Annuler
+        </button>
+      </div>
     </div>
   );
 }
