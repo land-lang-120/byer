@@ -1,11 +1,37 @@
 # 📖 Byer — Cahier de charges
 
 > Marketplace de location immobilier + véhicules au Cameroun
-> Version : **3.12** — 2026-05-02 (Phase 4 = DONE & cleaned ; bascule live next)
+> Version : **3.13** — 2026-05-02 (Phase 4 V1 final = automatisation payouts MoMo/OM via Notch Pay Transfers ; commission Byer **2,5%**)
 > URL prod : https://byer.landonjouajosephpino.workers.dev
-> Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **14 migrations (0014 paiements), 18 RPCs en service, 3 Edge Functions (kyc-review + pay-init + pay-webhook)**
-> Bundle frontend : `bundle.js?v=68` (Phase 4 close-up : logs debug retirés, phone state inutilisé retiré, optional chaining défensif sur amenities)
+> Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **14 migrations (0014 paiements appliquée), 18 RPCs en service, 3 Edge Functions (kyc-review + pay-init + pay-webhook). Mig 0015 payouts à venir.**
+> Bundle frontend : `bundle.js?v=68` (Phase 4 base livrée ; v69 dès payout-host + UI bailleur)
 > Voir aussi : [PROGRESS.md](PROGRESS.md) (suivi du dev) · [supabase/SETUP.md](supabase/SETUP.md) (procédure migrations)
+
+---
+
+## 0ter. 🌐 CONTEXTE MULTI-APPS (vue d'ensemble écosystème Pino)
+
+> Byer est la 1ère app finalisée d'un portefeuille de **plusieurs apps mobiles**.
+> Le cahier capture les décisions Byer mais la stratégie paiement est partagée :
+> chaque app a son propre flow d'encaissement selon son domaine.
+
+| App | Type | Paiements entrants | Réception fonds Pino |
+|---|---|---|---|
+| **Byer** | Marketplace location (CM) | Locataires → MoMo/OM/Carte via Notch Pay | Solde Notch Pay → MoMo/OM Pino, retrait manuel banque |
+| **CarExpress** | Marketplace véhicules (CM) | Idem Byer | Idem Byer (réutilise schéma payouts) |
+| **Tetroid** | Jeu (Play Store) | Achats intégrés (boosters) via **Google Play Billing** | RIB UBA direct via Google Play Console |
+| **Switchr** | App utilitaire (Play Store) | Achats intégrés (premium features) via Google Play Billing | RIB UBA direct |
+| **SecretNote** | App notes (Play Store) | Achats intégrés (storage / sync) via Google Play Billing | RIB UBA direct |
+| **DailyNote** | App agenda (Play Store) | Achats intégrés (cloud sync) via Google Play Billing | RIB UBA direct |
+| **Chrome Messenger** | Extension Chrome | Page web externe pour achat (Stripe via Wise Business) | Wise Business → UBA |
+| _futurs_ | TBD | TBD | TBD |
+
+**Pourquoi Notch Pay UNIQUEMENT pour Byer + CarExpress** : ces 2 apps sont des **marketplaces** où le client paye un prestataire (bailleur/loueur) qui n'a pas de RIB. Le seul moyen de payer ces prestataires est MoMo/OM. Notch Pay fait l'aggregateur.
+
+**Pourquoi Google Play Billing pour les autres** : ce sont des apps directes (B2C, pas marketplace). Google encaisse, prend 15-30% commission, verse le solde net **directement sur le RIB UBA configuré dans Google Play Console**. Aucun PSP intermédiaire, aucun travail de payout côté Pino. Le store fait tout.
+
+→ **Phase 5 (Byer)** : compte Google Play Developer ($25 USD lifetime) + soumission Byer + bascule live Notch Pay.
+→ **Phases ultérieures (autres apps)** : chaque app reçoit son propre Phase 5 mais sans complexité paiement (le store gère).
 
 ---
 
@@ -252,24 +278,101 @@ L'intégralité du flow Notch Pay est validée bout-en-bout en sandbox :
 | Lookup `merchant_reference` puis UPDATE payments+bookings+notifications | ✅ (validé via simulate.js) |
 | Callback overlay visible avec ✅ "Paiement confirmé" + montant + boutons | ✅ (v66 sessionStorage fix) |
 
-**Reste pour passer en production live (~1h) :**
-1. **Configure les payout methods** dans dashboard Notch Pay → Paramètres → Comptes de retrait :
-   - RIB UBA (compte bancaire principal)
-   - MTN MoMo (`+237 67…` enregistré au nom du compte)
-   - Orange Money (optionnel)
-2. **Clique "Activate payments"** dans le dashboard Notch Pay (le badge "Sandbox Mode" disparaît)
-3. **Récupère les nouvelles clés** : `pk.live_xxx`, `sk.live_xxx`, et nouveau `WEBHOOK_HASH` live
-4. **Update les secrets Supabase** :
-   ```
-   supabase secrets set NOTCHPAY_PUBLIC_KEY=pk.live_xxx
-   supabase secrets set NOTCHPAY_WEBHOOK_HASH=hsk.live_xxx
-   ```
-5. **Re-déploie les Edge Functions** : `supabase functions deploy pay-init pay-webhook`
-6. **Test live minime** : 500 FCFA via MoMo → vérifie que le solde NP grossit → demande un retrait test vers UBA → confirme virement reçu en banque
+**🚧 Phase 4 V1 FINAL = à coder maintenant (~3h) — Système payouts auto bailleurs**
 
-**Cleanup de polish à faire (~10 min) :**
-- 🧹 Retirer le state `phone` désormais inutilisé dans `booking.js` (déclaré mais plus rendu)
-- 🧹 Retirer les `console.log [byer-cb]` de v65/v66 (debug terminé) — soit les garder en mode debug-only via un flag, soit les supprimer
+> ⚠️ **Décision business CRITIQUE prise 2026-05-02** : refus du payout manuel. À l'échelle prévue (30K+ transactions/mois), reverser manuellement à chaque bailleur est physiquement impossible. On code l'**automatisation totale** via Notch Pay Transfers API. Pino n'intervient QUE pour vérifier le dashboard et dépanner les payouts en `failed`.
+>
+> **Commission Byer révisée : 2,5%** (au lieu de 5% initialement envisagé). Loyer 100 000 FCFA → bailleur reçoit 97 500 FCFA, Byer garde 2 500 FCFA.
+
+**Architecture — flow complet automatisé :**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Locataire paye 100 000 FCFA via Notch Pay (carte/MoMo/OM)       │
+└────────────────────────────┬────────────────────────────────────┘
+                             ↓
+        webhook payment.complete → pay-webhook → DB update
+                             ↓
+       INSERT row payouts (status=pending, due_at=checkout+24h)
+       ↑ trigger SQL automatique sur payments.status=success
+                             ↓
+       ⏳ pg_cron quotidien (extension cron_job, ts 02:00 GMT)
+                             ↓
+       SELECT payouts WHERE status='pending' AND due_at < now()
+                             ↓
+       Pour chaque ligne → invoke Edge Function `payout-host` :
+         • Lit profile bailleur (payout_method, payout_phone, payout_name)
+         • Calcule montant net = montant_loyer × 0,975 (commission 2,5%)
+         • POST Notch Pay /transfers (Authorization: sk.live_xxx)
+         • UPDATE payouts.status='processing'
+                             ↓
+       Notch Pay traite le transfer → webhook transfer.complete
+                             ↓
+       UPDATE payouts.status='paid' + paid_at + payout_ref (NP transfer id)
+       INSERT notification au bailleur "Vous avez reçu X FCFA"
+```
+
+**Délai 24h après checkout** : sécurité anti-fraude. Si le locataire signale un problème, payout gelé. Sinon libéré auto.
+
+**Code à livrer :**
+
+1. **Migration `0015_payouts.sql`** :
+   - Table `payouts` : `id`, `booking_id` (FK on delete restrict), `host_id` (FK profiles), `amount_gross`, `commission_byer` (= gross × 0,025), `amount_net`, `currency`, `status` CHECK ('pending','processing','paid','failed','cancelled','refunded'), `due_at`, `paid_at`, `payout_ref` (Notch Pay transfer id), `payout_phone`, `payout_method`, `failure_reason`, `raw_payload jsonb`, `created_at`, `updated_at`
+   - Trigger `payouts_touch_updated_at`
+   - Colonnes ajoutées sur `profiles` : `payout_method` text CHECK ('mtn_momo','orange_money'), `payout_phone` text, `payout_name` text
+   - Trigger SQL `auto_create_payout_on_payment_success` : à chaque UPDATE payments.status → 'success', INSERT row payouts (montant calculé via la fonction `calc_byer_commission`).
+   - RLS : `payouts_self_read` (host peut SELECT ses propres payouts), aucun INSERT/UPDATE depuis client (`with check (false)` → service_role only).
+
+2. **Edge Function `payout-host`** :
+   - Endpoint POST `{ payout_id }`
+   - Lit la payout row + profile bailleur
+   - Idempotent : refuse si déjà `processing` ou `paid`
+   - Appelle `POST https://api.notchpay.co/transfers` avec `Authorization: sk.live_xxx`
+   - UPDATE payouts.status='processing' + payout_ref
+   - Retries auto (3× espacé) en cas d'erreur 5xx ou timeout NP
+
+3. **pg_cron job quotidien** (à ajouter dans mig 0015 ou nouvelle 0016) :
+   ```sql
+   select cron.schedule('byer_payouts_daily', '0 2 * * *', $$
+     -- pour chaque payout pending éligible, on appelle l'Edge Function via http
+   $$);
+   ```
+
+4. **`pay-webhook` upgrade** : reconnaître les events `transfer.complete` / `transfer.failed` / `transfer.canceled` de Notch Pay → UPDATE payouts.status accordingly + insert notification bailleur.
+
+5. **Frontend `booking.js`** : retirer **"Virement bancaire"** de `PAYMENT_METHODS` (les bailleurs n'ont pas de banque, donc le locataire ne peut pas non plus payer par virement — pas de retransfert possible). Reste : **MTN MoMo / Orange Money / Carte bancaire**.
+
+6. **Wizard onboarding bailleur** dans `publish.js` (étape OBLIGATOIRE à la 1ère publication d'annonce) :
+   - "Comment souhaitez-vous être payé ?" — choix MTN MoMo / Orange Money
+   - "Numéro où nous enverrons les paiements" — input tel
+   - "Nom inscrit sur le compte" — input texte (nécessaire pour matching Notch Pay)
+   - UPDATE profiles → ces 3 champs sont alors permanent (modifiable depuis ProfileScreen).
+   - ❌ Sans ces infos → publication d'annonce bloquée avec UI explicite.
+
+7. **Dashboard admin Pino** (`OwnerDashboard` upgrade ou nouvel écran "Reversements") :
+   - Tabs : `pending` / `processing` / `paid` / `failed`
+   - Pour chaque ligne : booking ref, bailleur (avatar + nom), montant brut, commission Byer, montant net, payout_phone, status, paid_at, payout_ref NP
+   - Action "Retry" sur les failed (re-invoke payout-host)
+   - Stats globales : total reversé ce mois, total commission Byer ce mois, total à reverser
+
+8. **Notification bailleur** (déjà géré par `notifications` table) : trigger inséré par `pay-webhook` à chaque `transfer.complete`, type=`payment`, body="Vous avez reçu X FCFA pour votre logement Y".
+
+**À l'échelle 30 000 transactions/mois** : zéro intervention humaine sauf vérifier le dashboard hebdo pour fixer les `failed` (numéro MoMo invalide, nom non concordant, solde NP insuffisant). Le pg_cron quotidien batch tous les payouts éligibles.
+
+**Cleanup additionnel (déjà partiellement fait en v68) :**
+- ✅ Retiré le state `phone` inutilisé dans `booking.js` (v68)
+- ✅ Retiré les logs debug `[byer-cb]` (v68)
+- 🚧 Retirer "Virement bancaire" de PAYMENT_METHODS (v69 dans le scope ci-dessus)
+
+**Bascule production live (après dev V1 final) :**
+1. Configurer les payouts dans dashboard Notch Pay → ✅ DÉJÀ FAIT (MTN + OM, 2026-05-02 00:49)
+2. Cliquer "Activate payments" dans le dashboard
+3. Récupérer les clés live : `pk.live_xxx`, `sk.live_xxx`, nouveau `WEBHOOK_HASH` live
+4. Update secrets Supabase : `NOTCHPAY_PUBLIC_KEY`, `NOTCHPAY_SECRET_KEY` (NEW pour /transfers), `NOTCHPAY_WEBHOOK_HASH`
+5. Re-déployer pay-init + pay-webhook + payout-host
+6. Test live minime : 500 FCFA via MoMo (compte bailleur test = 2e numéro Pino) → vérifier réception + payout auto sur le 1er numéro.
+
+**RIB UBA — clarification importante :** Notch Pay au Cameroun **ne supporte PAS les retraits bancaires directs**. Le marché CM est ~90% Mobile Money. Pour mettre l'argent sur compte bancaire UBA, il faudra (a) retirer NP→MoMo, (b) cash-out MoMo en agence ou via service "MoMo→Banque" MTN/Orange. Pas un blocker. Pour les autres apps Pino (Tetroid, etc. via Google Play), le RIB UBA est utilisable directement via Google Play Console banking.
 
 **v65 (déployée 2026-05-01 22h, commit `0f51c2d`) — Diagnostic terminé :**
 Trois points d'instrumentation `[byer-cb]` ont été ajoutés au code v65 :
@@ -322,14 +425,22 @@ _Ancienne Phase 4 Flutterwave conservée plus bas pour traçabilité technique._
 - Tests CM : carte test `5531 8866 5214 2950` PIN `3310` OTP `12345`, MoMo MTN `+237 670 000 000`, Orange Money `+237 690 000 000`.
 - Bonus : Flutterwave permet aussi **virement bancaire** (Express Union) via le même endpoint — un seul code couvre toutes les méthodes du Cameroun.
 
-**Phase 5 — Soumission Play Store (~3 h)**
+**Phase 5 — Soumission Play Store (~3 h pour Byer, puis répétable pour les autres apps)**
+
+> 💡 Ce compte Google Play Developer ($25 USD lifetime) sera **mutualisé** pour
+> toutes les apps de Pino : Byer (1ère), CarExpress, Tetroid, Switchr,
+> SecretNote, DailyNote, Chrome Messenger (extension Chrome séparée), etc.
+> Une seule inscription couvre toutes les futures soumissions.
+
 - Lighthouse + perf audit (mobile 3G, low-end Android).
-- Compte Google Play Developer payé (Pino, 25 USD lifetime).
+- **Compte Google Play Developer payé** (Pino, 25 USD lifetime — **prérequis avant de commencer Phase 5**).
+- Configuration Google Play Console → **Banking** → renseigner RIB UBA pour les versements futurs (utile dès Tetroid/Switchr/etc. avec achats intégrés Google Play Billing).
 - Build APK/AAB via PWABuilder.com (input PWA URL → output AAB signé).
-- Politique de confidentialité (URL publique avec mention KYC + photos + Supabase + Cloudflare + Stripe).
+- Politique de confidentialité (URL publique avec mention KYC + photos + Supabase + Cloudflare + Notch Pay).
 - Screenshots store (5-8 captures portrait 1080x1920) + icône 512x512 + bannière 1024x500.
 - Description marketplace (FR + EN, ASO keywords).
 - Soumission revue Google Play (24-72 h en moyenne).
+- **Ordre de soumission** : Byer (cette phase) → puis Tetroid → Switchr → SecretNote → DailyNote → CarExpress → Chrome Messenger (Chrome Web Store, séparé).
 
 ### 📅 Prévu plus tard (post-v1)
 
@@ -538,17 +649,40 @@ Note finale = moyenne arithmétique des 8 critères, calculée **côté serveur*
 5. **Règlement** (règles pré-définies par type + jusqu'à 10 règles personnalisées, ajouté en v41)
 6. **Récap** + bouton **Publier l'annonce ✓**
 
-### 3.6 Paiement
-- 4 méthodes :
-  - MTN Mobile Money (instantané)
-  - Orange Money (instantané)
-  - Express Union (en agence physique)
-  - Virement bancaire classique
-- Décomposition prix stockée côté DB : `price_base`, `price_service`, `price_dossier`, `price_taxes`, `price_caution` (migration 0006)
-- Audit paiement : `payment_phone` (numéro MoMo/OM utilisé), `ref` (référence transaction), `paid_at`
-- **Anti double-réservation** : contrainte EXCLUDE Postgres + `btree_gist` qui bloque toute insertion `(listing_id, daterange checkin/checkout)` en chevauchement avec une autre confirmée — code erreur SQL `23P01` capturé côté frontend pour message clair
-- Confirmation instantanée après paiement (RPC `is_listing_available` en pré-flight)
-- **Politique d'annulation** : `cancellation_policy` (`flexible`/`moderate`/`strict`) + RPC `cancel_booking` qui calcule automatiquement le pourcentage de remboursement selon la date d'annulation
+### 3.6 Paiement (mis à jour 2026-05-02 v3.13)
+
+**Méthodes de paiement disponibles côté locataire (3, via Notch Pay) :**
+- MTN Mobile Money (instantané)
+- Orange Money (instantané)
+- Carte bancaire (Visa, Mastercard — encaisse internationalement)
+
+> ❌ **Express Union retiré v64** : trop peu utilisé au CM (90% MoMo/OM, ~10% banque, EU négligeable).
+> ❌ **Virement bancaire retiré v69** : raison structurelle — les bailleurs n'ont pas tous de compte bancaire et sont payés en MoMo/OM. Permettre au locataire de payer par virement créerait une asymétrie impossible à reverser. Décision actée 2026-05-02.
+
+**Commission Byer : 2,5%** (révisée de 5% le 2026-05-02). Locataire paye 100 000 FCFA → bailleur reçoit 97 500 FCFA, Byer encaisse 2 500 FCFA. Frais Notch Pay (~2-3%) sont absorbés par Byer sur sa marge.
+
+**Système de payout aux bailleurs : AUTOMATISÉ** (Phase 4 V1 final, migration 0015) :
+- À chaque `payment.status = success`, INSERT auto d'une row `payouts` (status=pending, due_at=checkout+24h)
+- pg_cron quotidien à 02:00 GMT scanne les payouts éligibles → invoke Edge Function `payout-host`
+- L'Edge Function appelle `POST https://api.notchpay.co/transfers` avec sk.live_xxx → Notch Pay débite le solde Byer et envoie au numéro MoMo/OM du bailleur
+- Webhook `transfer.complete` met à jour `payouts.status='paid'` + insère notification "Vous avez reçu X FCFA"
+- Pas d'intervention humaine sauf gestion du dashboard admin Pino pour les `failed`
+
+**Wizard bailleur — onboarding obligatoire** (à la 1ère publication d'annonce) :
+- Choix méthode de réception : `mtn_momo` ou `orange_money`
+- Numéro de paiement (`+237 6XX XXX XXX`)
+- Nom inscrit sur le compte (pour matching Notch Pay)
+- Sans ces 3 infos → publication d'annonce bloquée (UX strict)
+
+**Décomposition prix stockée côté DB** : `price_base`, `price_service`, `price_dossier`, `price_taxes`, `price_caution` (migration 0006). Le `commission_byer` est ajouté en colonne séparée sur `payouts` (migration 0015).
+
+**Audit paiement** : `payment_phone` (numéro MoMo/OM), `ref` (référence transaction), `paid_at`. Pour les payouts : `payout_ref` (Notch Pay transfer id), `paid_at`, `payout_phone`, `payout_method`.
+
+**Anti double-réservation** : contrainte EXCLUDE Postgres + `btree_gist` qui bloque toute insertion `(listing_id, daterange checkin/checkout)` en chevauchement avec une autre confirmée — code erreur SQL `23P01` capturé côté frontend pour message clair.
+
+**Confirmation instantanée après paiement** : RPC `is_listing_available` en pré-flight + callback overlay v66 polling DB jusqu'à confirmation webhook (~1-30s).
+
+**Politique d'annulation** : `cancellation_policy` (`flexible`/`moderate`/`strict`) + RPC `cancel_booking` qui calcule automatiquement le pourcentage de remboursement selon la date d'annulation. Si annulation avant checkout, le payout est gelé (status='cancelled').
 - **Payout host** : `host_commission_rate` + `host_payout_amount` (montant net après commission Byer) générés au moment du paiement
 - Reçu PDF (V2)
 
