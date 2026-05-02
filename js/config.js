@@ -110,13 +110,18 @@ const SLIDES = [
 ];
 
 /* ── Payment methods ── */
-// v64 : retiré "Express Union" (peu utilisé au Cameroun, ~90% des paiements
-// passent par MoMo/Orange Money. EU était un placeholder hérité). Si un user
-// veut payer par virement, on garde l'option (audit + transparence).
+// v64 : retiré "Express Union" (peu utilisé au CM, EU placeholder hérité).
+// v69 : retiré "Virement bancaire" — décision business 2026-05-02. Raison
+// structurelle : les bailleurs n'ont pas tous de compte bancaire (90% MoMo
+// au CM), et le payout auto via Notch Pay /transfers ne passe que par
+// MoMo/OM. Permettre au locataire de payer par virement créerait une
+// asymétrie irrécupérable (encaissement banque côté Pino, mais
+// reversement bailleur impossible vers compte qu'il n'a pas).
+// v69 : carte bancaire ajoutée explicitement (Notch Pay encaisse Visa/Mastercard).
 const PAYMENT_METHODS = [
   { id: "mtn",      label: "MTN Mobile Money",  short: "MoMo", sub: "Paiement instantané via MoMo",   accent: "#FFCB05", textColor: "#1A1A1A" },
   { id: "orange",   label: "Orange Money",       short: "OM",   sub: "Paiement via Orange Money",       accent: "#FF6600", textColor: "white" },
-  { id: "virement", label: "Virement bancaire",  short: "VIR",  sub: "Paiement par virement classique", accent: "#6366F1", textColor: "white" },
+  { id: "card",     label: "Carte bancaire",     short: "Card", sub: "Visa, Mastercard (international)", accent: "#1E40AF", textColor: "white" },
 ];
 
 /* ── Helpers ── */

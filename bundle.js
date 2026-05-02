@@ -180,9 +180,14 @@ const SLIDES = [{
 }];
 
 /* ── Payment methods ── */
-// v64 : retiré "Express Union" (peu utilisé au Cameroun, ~90% des paiements
-// passent par MoMo/Orange Money. EU était un placeholder hérité). Si un user
-// veut payer par virement, on garde l'option (audit + transparence).
+// v64 : retiré "Express Union" (peu utilisé au CM, EU placeholder hérité).
+// v69 : retiré "Virement bancaire" — décision business 2026-05-02. Raison
+// structurelle : les bailleurs n'ont pas tous de compte bancaire (90% MoMo
+// au CM), et le payout auto via Notch Pay /transfers ne passe que par
+// MoMo/OM. Permettre au locataire de payer par virement créerait une
+// asymétrie irrécupérable (encaissement banque côté Pino, mais
+// reversement bailleur impossible vers compte qu'il n'a pas).
+// v69 : carte bancaire ajoutée explicitement (Notch Pay encaisse Visa/Mastercard).
 const PAYMENT_METHODS = [{
   id: "mtn",
   label: "MTN Mobile Money",
@@ -198,11 +203,11 @@ const PAYMENT_METHODS = [{
   accent: "#FF6600",
   textColor: "white"
 }, {
-  id: "virement",
-  label: "Virement bancaire",
-  short: "VIR",
-  sub: "Paiement par virement classique",
-  accent: "#6366F1",
+  id: "card",
+  label: "Carte bancaire",
+  short: "Card",
+  sub: "Visa, Mastercard (international)",
+  accent: "#1E40AF",
   textColor: "white"
 }];
 
@@ -30174,8 +30179,11 @@ function BookingScreen({
             orange: "orange_money",
             card: "card",
             visa: "card",
-            virement: "bank_transfer",
-            eu: "bank_transfer"
+            // v69 : virement et eu retirés de PAYMENT_METHODS (cf. config.js).
+            // Restent ici en mappage défensif si jamais un ancien client mobile
+            // cached envoie l'un d'eux : on bascule en card pour ne pas crash.
+            virement: "card",
+            eu: "card"
           };
 
           // 3) Détermination rental_mode pour le serveur (calcul payout/durée)
@@ -30207,10 +30215,10 @@ function BookingScreen({
             price_taxes: pricing.taxes || 0,
             price_caution: pricing.caution || 0,
             total_price: pricing.total,
-            // Paiement — pending pour les méthodes online (CB/MoMo/OM),
-            // restera pending jusqu'au callback webhook Notch Pay.
-            // Pour les méthodes manuelles (virement, EU), on garde aussi
-            // pending → le bailleur valide manuellement à réception.
+            // Paiement — toujours pending à la création. Le webhook
+            // Notch Pay payment.complete bumpera à 'paid' (le trigger SQL
+            // payments_to_payouts crée alors une row payouts en pending).
+            // v69 : plus de méthodes manuelles, tout passe par Notch Pay.
             payment_method: paymentMap[paymentMethod] || "mtn_momo",
             payment_phone: null,
             // v68 : Notch Pay collecte le numéro côté hosted checkout
@@ -30723,59 +30731,7 @@ function BookingScreen({
         borderRadius: '50%',
         backgroundColor: C.white
       }
-    }))))), paymentMethod === 'eu' && /*#__PURE__*/React.createElement("div", {
-      style: {
-        backgroundColor: '#E3F2FD',
-        borderRadius: 12,
-        padding: 12,
-        marginBottom: 20,
-        borderLeft: `4px solid #1B4D89`
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 13,
-        color: '#1B4D89',
-        fontWeight: 500
-      }
-    }, "Rendez-vous en agence Express Union pour finaliser votre paiement")), paymentMethod === 'virement' && /*#__PURE__*/React.createElement("div", {
-      style: {
-        backgroundColor: C.bg,
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 20
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 13,
-        fontWeight: 600,
-        color: C.dark,
-        marginBottom: 12
-      }
-    }, "D\xE9tails de virement"), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        fontSize: 13,
-        color: C.dark
-      }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: C.light
-      }
-    }, "IBAN: "), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontWeight: 600
-      }
-    }, "CM21 30070 00000 00001234567890")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: C.light
-      }
-    }, "BIC: "), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontWeight: 600
-      }
-    }, "BYERCMCX")))), /*#__PURE__*/React.createElement("div", {
+    }))))), /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'flex',
         alignItems: 'flex-start',

@@ -116,8 +116,11 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
             orange:   "orange_money",
             card:     "card",
             visa:     "card",
-            virement: "bank_transfer",
-            eu:       "bank_transfer",
+            // v69 : virement et eu retirés de PAYMENT_METHODS (cf. config.js).
+            // Restent ici en mappage défensif si jamais un ancien client mobile
+            // cached envoie l'un d'eux : on bascule en card pour ne pas crash.
+            virement: "card",
+            eu:       "card",
           };
 
           // 3) Détermination rental_mode pour le serveur (calcul payout/durée)
@@ -148,10 +151,10 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
             price_taxes:    pricing.taxes   || 0,
             price_caution:  pricing.caution || 0,
             total_price:    pricing.total,
-            // Paiement — pending pour les méthodes online (CB/MoMo/OM),
-            // restera pending jusqu'au callback webhook Notch Pay.
-            // Pour les méthodes manuelles (virement, EU), on garde aussi
-            // pending → le bailleur valide manuellement à réception.
+            // Paiement — toujours pending à la création. Le webhook
+            // Notch Pay payment.complete bumpera à 'paid' (le trigger SQL
+            // payments_to_payouts crée alors une row payouts en pending).
+            // v69 : plus de méthodes manuelles, tout passe par Notch Pay.
             payment_method: paymentMap[paymentMethod] || "mtn_momo",
             payment_phone:  null,    // v68 : Notch Pay collecte le numéro côté hosted checkout
             payment_status: "pending",
@@ -658,66 +661,10 @@ function BookingScreen({ item, duration, onBack, onComplete, onCreateBooking }) 
 
           {/* v64 : champ "Numéro de téléphone" RETIRÉ pour MTN/Orange.
               Notch Pay redemande le numéro sur son hosted checkout (étape
-              obligatoire pour le push USSD côté MoMo/OM). Demander 2 fois
-              était redondant et confondait l'utilisateur. On garde le user
-              flow propre : choisir la méthode → "Confirmer et payer" →
-              entrer le numéro UNE FOIS chez Notch Pay → recevoir le push.
-              Le champ "Numéro de téléphone" reste implicite pour le mode
-              "virement" — on stocke null en DB, le hôte gère manuellement. */}
-
-          {/* EU Agence Info */}
-          {paymentMethod === 'eu' && (
-            <div style={{
-              backgroundColor: '#E3F2FD',
-              borderRadius: 12,
-              padding: 12,
-              marginBottom: 20,
-              borderLeft: `4px solid #1B4D89`
-            }}>
-              <div style={{
-                fontSize: 13,
-                color: '#1B4D89',
-                fontWeight: 500
-              }}>
-                Rendez-vous en agence Express Union pour finaliser votre paiement
-              </div>
-            </div>
-          )}
-
-          {/* Virement Info */}
-          {paymentMethod === 'virement' && (
-            <div style={{
-              backgroundColor: C.bg,
-              borderRadius: 16,
-              padding: 16,
-              marginBottom: 20
-            }}>
-              <div style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: C.dark,
-                marginBottom: 12
-              }}>
-                Détails de virement
-              </div>
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-                fontSize: 13,
-                color: C.dark
-              }}>
-                <div>
-                  <span style={{ color: C.light }}>IBAN: </span>
-                  <span style={{ fontWeight: 600 }}>CM21 30070 00000 00001234567890</span>
-                </div>
-                <div>
-                  <span style={{ color: C.light }}>BIC: </span>
-                  <span style={{ fontWeight: 600 }}>BYERCMCX</span>
-                </div>
-              </div>
-            </div>
-          )}
+              obligatoire pour le push USSD côté MoMo/OM).
+              v69 : blocs UI "EU agence" et "Virement bancaire" RETIRÉS
+              car les méthodes correspondantes ont été ôtées de
+              PAYMENT_METHODS. Reste : MTN MoMo, Orange Money, Carte. */}
 
           {/* Terms Checkbox */}
           <div style={{
