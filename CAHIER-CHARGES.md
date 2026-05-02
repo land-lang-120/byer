@@ -1,10 +1,11 @@
 # 📖 Byer — Cahier de charges
 
 > Marketplace de location immobilier + véhicules au Cameroun
-> Version : **3.13** — 2026-05-02 (Phase 4 V1 final = automatisation payouts MoMo/OM via Notch Pay Transfers ; commission Byer **2,5%**)
-> URL prod : https://byer.landonjouajosephpino.workers.dev
-> Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **14 migrations (0014 paiements appliquée), 18 RPCs en service, 3 Edge Functions (kyc-review + pay-init + pay-webhook). Mig 0015 payouts à venir.**
-> Bundle frontend : `bundle.js?v=68` (Phase 4 base livrée ; v69 dès payout-host + UI bailleur)
+> Version : **3.14** — 2026-05-02 (Phase 4 V1 final + admin web LIVRÉS ; bascule live = next)
+> URL prod : https://byer.landonjouajosephpino.workers.dev (app principale)
+> URL admin : https://byer.landonjouajosephpino.workers.dev/admin (console admin séparée)
+> Backend : Supabase `xwqnsovfakzraafiudek` (région eu-west-1) — **17 migrations appliquées (0001 → 0017), 18 RPCs en service, 4 Edge Functions (kyc-review + pay-init + pay-webhook + payout-host)**
+> Bundle frontend : `bundle.js?v=71` (33 fichiers JS, 1099 KB)
 > Voir aussi : [PROGRESS.md](PROGRESS.md) (suivi du dev) · [supabase/SETUP.md](supabase/SETUP.md) (procédure migrations)
 
 ---
@@ -278,7 +279,23 @@ L'intégralité du flow Notch Pay est validée bout-en-bout en sandbox :
 | Lookup `merchant_reference` puis UPDATE payments+bookings+notifications | ✅ (validé via simulate.js) |
 | Callback overlay visible avec ✅ "Paiement confirmé" + montant + boutons | ✅ (v66 sessionStorage fix) |
 
-**🚧 Phase 4 V1 FINAL = à coder maintenant (~3h) — Système payouts auto bailleurs**
+**✅ Phase 4 V1 FINAL = LIVRÉ 2026-05-02 (commit `ed1c703` + v71) — Système payouts auto bailleurs**
+
+> 📦 **Livraison complète** :
+> - 3 nouvelles migrations (0015 payouts, 0016 cron, 0017 admin)
+> - 1 nouvelle Edge Function (`payout-host`)
+> - 1 upgrade Edge Function (`pay-webhook` gère les events `transfer.*`)
+> - 1 nouvelle entrée HTML (`admin.html` → `/admin`)
+> - 1 nouveau composant React (`AdminApp` avec sidebar)
+> - 1 wizard onboarding bailleur (`HostPayoutInfoModal` dans publish.js)
+> - 1 dashboard admin frontend (`PayoutsAdminScreen` avec tabs/stats/retry/NP-links)
+> - Cleanup : virement retiré, EU retiré, debug logs retirés, phone state retiré
+>
+> 🔐 **Defense in depth** :
+> - Frontend gating : ADMIN_EMAILS whitelist (app.js + admin-app.js sync)
+> - Backend gating : RLS Postgres via `is_byer_admin()` (mig 0017)
+> - Edge Function gating : kyc-review revérifie le JWT côté serveur
+> - Webhook signature : HMAC SHA-256 constant-time compare
 
 > ⚠️ **Décision business CRITIQUE prise 2026-05-02** : refus du payout manuel. À l'échelle prévue (30K+ transactions/mois), reverser manuellement à chaque bailleur est physiquement impossible. On code l'**automatisation totale** via Notch Pay Transfers API. Pino n'intervient QUE pour vérifier le dashboard et dépanner les payouts en `failed`.
 >
