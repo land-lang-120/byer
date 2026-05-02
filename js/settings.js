@@ -1,4 +1,4 @@
-function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPassword, onOpenSupport, onLogout, onDeleteAccount, isAdmin, onOpenKycAdmin }) {
+function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPassword, onOpenSupport, onLogout, onDeleteAccount, isAdmin, onOpenKycAdmin, onOpenPayoutsAdmin }) {
   // Hook i18n : force le re-render quand la langue change globalement.
   window.byerI18n.useLangTick();
 
@@ -353,6 +353,11 @@ function SettingsScreen({ onBack, onOpenTerms, onOpenPrivacy, onOpenForgotPasswo
               label="Modérer les pièces d'identité (KYC)"
               rightElement={<ChevronElement />}
               onPress={onOpenKycAdmin}
+            />
+            <RowItem
+              label="Reversements bailleurs (payouts auto)"
+              rightElement={<ChevronElement />}
+              onPress={onOpenPayoutsAdmin}
             />
           </>
         )}

@@ -34,6 +34,7 @@ const FILES = [
   'js/settings.js',
   'js/edit-profile.js',
   'js/booking.js',
+  'js/payouts-admin.js',
   'js/history.js',
   'js/legal.js',
   'js/kyc.js',

@@ -28912,7 +28912,8 @@ function SettingsScreen({
   onLogout,
   onDeleteAccount,
   isAdmin,
-  onOpenKycAdmin
+  onOpenKycAdmin,
+  onOpenPayoutsAdmin
 }) {
   // Hook i18n : force le re-render quand la langue change globalement.
   window.byerI18n.useLangTick();
@@ -29261,6 +29262,10 @@ function SettingsScreen({
     label: "Mod\xE9rer les pi\xE8ces d'identit\xE9 (KYC)",
     rightElement: /*#__PURE__*/React.createElement(ChevronElement, null),
     onPress: onOpenKycAdmin
+  }), /*#__PURE__*/React.createElement(RowItem, {
+    label: "Reversements bailleurs (payouts auto)",
+    rightElement: /*#__PURE__*/React.createElement(ChevronElement, null),
+    onPress: onOpenPayoutsAdmin
   })), /*#__PURE__*/React.createElement(SectionHeader, {
     title: t("settings.help")
   }), /*#__PURE__*/React.createElement(RowItem, {
@@ -31278,6 +31283,446 @@ function BookingScreen({
           }
         `));
   }
+}
+
+/* ═══ js/payouts-admin.js ═══ */
+"use strict";
+
+/* ═══════════════════════════════════════════════════════════════════
+   Byer — Payouts Admin Dashboard (v70)
+   ═══════════════════════════════════════════════════════════════════
+   Écran réservé à l'admin (Pino) pour inspecter le système de payout
+   automatique. Données :
+     • Liste des payouts (filtrés par status via tabs)
+     • Stats du mois en cours (commission Byer encaissée, total reversé,
+       payouts en attente, payouts en échec)
+     • Bouton "Retry" sur les payouts failed → invoke payout-host
+   ═══════════════════════════════════════════════════════════════════ */
+
+const PAYOUT_STATUS_TABS = [{
+  id: "pending",
+  label: "En attente",
+  color: "#6366F1"
+}, {
+  id: "processing",
+  label: "En cours",
+  color: "#0891B2"
+}, {
+  id: "paid",
+  label: "Reversés",
+  color: "#16A34A"
+}, {
+  id: "failed",
+  label: "Échecs",
+  color: "#DC2626"
+}];
+const PAYOUT_METHOD_LABELS = {
+  mtn_momo: "MTN MoMo",
+  orange_money: "Orange Money",
+  bank_transfer: "Virement",
+  card: "Carte"
+};
+function fmtFCFA(n) {
+  if (n == null) return "—";
+  try {
+    return new Intl.NumberFormat("fr-FR").format(n) + " FCFA";
+  } catch (_) {
+    return n + " FCFA";
+  }
+}
+function fmtDate(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("fr-FR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    }) + " " + d.toLocaleTimeString("fr-FR", {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  } catch (_) {
+    return iso;
+  }
+}
+function PayoutsAdminScreen({
+  onBack
+}) {
+  const [activeTab, setActiveTab] = useState("pending");
+  const [payouts, setPayouts] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [retrying, setRetrying] = useState({}); // {payoutId: true}
+
+  const refresh = React.useCallback(async () => {
+    setLoading(true);
+    setError("");
+    const db = window.byer && window.byer.db;
+    if (!db || !db.isReady) {
+      setError("Connexion DB indisponible.");
+      setLoading(false);
+      return;
+    }
+    try {
+      // Liste payouts filtrés par tab
+      const {
+        data: rows,
+        error: e1
+      } = await db.raw.from("payouts").select(`
+          id, booking_id, host_id, amount_gross, commission_byer, amount_net,
+          currency, status, due_at, paid_at, payout_ref, payout_phone,
+          payout_method, failure_reason, created_at,
+          bookings(ref, checkin, checkout, listings(title, city)),
+          host:profiles!host_id(name, payout_name)
+        `).eq("status", activeTab).order("created_at", {
+        ascending: false
+      }).limit(100);
+      if (e1) throw e1;
+      setPayouts(rows || []);
+
+      // Stats du mois en cours (vue byer_payouts_stats)
+      const {
+        data: statsRows
+      } = await db.raw.from("byer_payouts_stats").select("*").order("month", {
+        ascending: false
+      }).limit(1);
+      setStats(statsRows && statsRows[0] || null);
+    } catch (e) {
+      setError("Erreur de chargement : " + (e.message || "inconnue"));
+    } finally {
+      setLoading(false);
+    }
+  }, [activeTab]);
+  React.useEffect(() => {
+    refresh();
+  }, [refresh]);
+  const handleRetry = async payout => {
+    setRetrying(prev => ({
+      ...prev,
+      [payout.id]: true
+    }));
+    try {
+      const SUPABASE_URL_ = typeof SUPABASE_URL !== "undefined" ? SUPABASE_URL : "";
+      const ANON_KEY_ = typeof SUPABASE_ANON_KEY !== "undefined" ? SUPABASE_ANON_KEY : "";
+      const res = await fetch(`${SUPABASE_URL_}/functions/v1/payout-host`, {
+        method: "POST",
+        headers: {
+          "apikey": ANON_KEY_,
+          "Authorization": `Bearer ${ANON_KEY_}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          payout_id: payout.id
+        })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert("Retry échoué : " + (json?.error || res.status));
+      } else {
+        // Refresh la liste
+        await refresh();
+      }
+    } catch (e) {
+      alert("Erreur retry : " + (e.message || "inconnue"));
+    } finally {
+      setRetrying(prev => {
+        const n = {
+          ...prev
+        };
+        delete n[payout.id];
+        return n;
+      });
+    }
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      minHeight: "100vh",
+      background: C.bg,
+      paddingBottom: 80
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      padding: "14px 16px",
+      background: C.white,
+      borderBottom: `1px solid ${C.border}`,
+      position: "sticky",
+      top: 0,
+      zIndex: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: onBack,
+    style: {
+      background: "none",
+      border: "none",
+      fontSize: 22,
+      color: C.dark,
+      cursor: "pointer",
+      marginRight: 12,
+      padding: 0
+    }
+  }, "\u2039"), /*#__PURE__*/React.createElement("h1", {
+    style: {
+      fontSize: 18,
+      fontWeight: 800,
+      color: C.black,
+      margin: 0
+    }
+  }, "Reversements bailleurs"), /*#__PURE__*/React.createElement("button", {
+    onClick: refresh,
+    disabled: loading,
+    style: {
+      marginLeft: "auto",
+      background: "none",
+      border: "none",
+      fontSize: 14,
+      color: loading ? C.light : C.coral,
+      cursor: loading ? "wait" : "pointer",
+      padding: 8
+    }
+  }, "\u21BB ", loading ? "..." : "")), stats && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "16px",
+      background: C.white,
+      borderBottom: `1px solid ${C.border}`
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: C.mid,
+      marginBottom: 10,
+      textTransform: "uppercase",
+      letterSpacing: 0.5
+    }
+  }, "Mois en cours (", stats.month, ")"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement(StatCard, {
+    label: "Commission Byer",
+    value: fmtFCFA(stats.commission_paid),
+    color: "#16A34A"
+  }), /*#__PURE__*/React.createElement(StatCard, {
+    label: "Total revers\xE9",
+    value: fmtFCFA(stats.net_paid),
+    color: "#0891B2"
+  }), /*#__PURE__*/React.createElement(StatCard, {
+    label: "En attente",
+    value: fmtFCFA(stats.gross_pending),
+    color: "#6366F1"
+  }), /*#__PURE__*/React.createElement(StatCard, {
+    label: "\xC9checs",
+    value: (stats.failed_count || 0) + " payouts",
+    color: "#DC2626"
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      padding: "12px 16px",
+      gap: 8,
+      overflowX: "auto",
+      background: C.white,
+      borderBottom: `1px solid ${C.border}`
+    }
+  }, PAYOUT_STATUS_TABS.map(tab => /*#__PURE__*/React.createElement("button", {
+    key: tab.id,
+    onClick: () => setActiveTab(tab.id),
+    style: {
+      padding: "8px 14px",
+      borderRadius: 20,
+      border: activeTab === tab.id ? "none" : `1.5px solid ${C.border}`,
+      background: activeTab === tab.id ? tab.color : C.white,
+      color: activeTab === tab.id ? C.white : C.dark,
+      fontSize: 13,
+      fontWeight: 600,
+      cursor: "pointer",
+      fontFamily: "'DM Sans',sans-serif",
+      whiteSpace: "nowrap"
+    }
+  }, tab.label))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "12px 16px"
+    }
+  }, error && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#FEE2E2",
+      border: "1px solid #FCA5A5",
+      color: "#991B1B",
+      padding: "10px 12px",
+      borderRadius: 10,
+      fontSize: 13,
+      marginBottom: 12
+    }
+  }, "\u26A0\uFE0F ", error), loading && /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: C.mid,
+      textAlign: "center",
+      padding: 24
+    }
+  }, "Chargement\u2026"), !loading && payouts.length === 0 && /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: C.mid,
+      textAlign: "center",
+      padding: 24,
+      fontSize: 14
+    }
+  }, "Aucun payout dans cette cat\xE9gorie."), !loading && payouts.map(p => /*#__PURE__*/React.createElement(PayoutCard, {
+    key: p.id,
+    payout: p,
+    onRetry: p.status === "failed" ? () => handleRetry(p) : null,
+    isRetrying: !!retrying[p.id]
+  }))));
+}
+function StatCard({
+  label,
+  value,
+  color
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.bg,
+      borderRadius: 12,
+      padding: "12px 14px",
+      borderLeft: `3px solid ${color}`
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: C.mid,
+      marginBottom: 4
+    }
+  }, label), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 15,
+      fontWeight: 700,
+      color: C.black,
+      margin: 0
+    }
+  }, value));
+}
+function PayoutCard({
+  payout,
+  onRetry,
+  isRetrying
+}) {
+  const tab = PAYOUT_STATUS_TABS.find(t => t.id === payout.status);
+  const listingTitle = payout.bookings?.listings?.title || "—";
+  const hostName = payout.host?.payout_name || payout.host?.name || "—";
+  const methodLabel = PAYOUT_METHOD_LABELS[payout.payout_method] || payout.payout_method || "—";
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.white,
+      borderRadius: 12,
+      padding: "14px",
+      marginBottom: 10,
+      border: `1px solid ${C.border}`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      fontWeight: 700,
+      color: C.black,
+      marginBottom: 2,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, listingTitle), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: C.mid
+    }
+  }, payout.bookings?.ref || payout.booking_id?.slice(0, 8))), /*#__PURE__*/React.createElement("span", {
+    style: {
+      padding: "3px 10px",
+      borderRadius: 10,
+      fontSize: 11,
+      fontWeight: 600,
+      background: (tab?.color || C.mid) + "20",
+      color: tab?.color || C.mid,
+      whiteSpace: "nowrap"
+    }
+  }, tab?.label || payout.status)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 8,
+      fontSize: 12,
+      color: C.dark,
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.mid
+    }
+  }, "Bailleur :"), " ", /*#__PURE__*/React.createElement("strong", null, hostName)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.mid
+    }
+  }, "M\xE9thode :"), " ", /*#__PURE__*/React.createElement("strong", null, methodLabel)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.mid
+    }
+  }, "Num\xE9ro :"), " ", /*#__PURE__*/React.createElement("strong", null, payout.payout_phone || "—")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.mid
+    }
+  }, "Montant net :"), " ", /*#__PURE__*/React.createElement("strong", null, fmtFCFA(payout.amount_net))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.mid
+    }
+  }, "Commission Byer :"), " ", fmtFCFA(payout.commission_byer)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.mid
+    }
+  }, "Brut pay\xE9 :"), " ", fmtFCFA(payout.amount_gross))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.mid,
+      marginBottom: payout.failure_reason || onRetry ? 8 : 0
+    }
+  }, payout.status === "paid" && payout.paid_at ? `Payé le ${fmtDate(payout.paid_at)}` : payout.status === "pending" ? `Éligible le ${fmtDate(payout.due_at)}` : `Créé le ${fmtDate(payout.created_at)}`, payout.payout_ref ? ` · ref: ${payout.payout_ref.slice(0, 24)}` : ""), payout.failure_reason && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#FEE2E2",
+      border: "1px solid #FCA5A5",
+      color: "#991B1B",
+      padding: "8px 10px",
+      borderRadius: 8,
+      fontSize: 12,
+      marginBottom: onRetry ? 8 : 0
+    }
+  }, "\u26A0\uFE0F ", payout.failure_reason), onRetry && /*#__PURE__*/React.createElement("button", {
+    onClick: onRetry,
+    disabled: isRetrying,
+    style: {
+      width: "100%",
+      padding: "10px",
+      borderRadius: 10,
+      border: "none",
+      background: isRetrying ? C.border : C.coral,
+      color: isRetrying ? C.mid : C.white,
+      fontSize: 13,
+      fontWeight: 700,
+      cursor: isRetrying ? "wait" : "pointer",
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, isRetrying ? "Retry en cours…" : "↻ Réessayer ce payout"));
 }
 
 /* ═══ js/history.js ═══ */
@@ -34477,6 +34922,8 @@ function ByerApp({
   const ADMIN_EMAILS = ["pinolando120@gmail.com"];
   const [isAdmin, setIsAdmin] = useState(false);
   const [kycAdminOpen, setKycAdminOpen] = useState(false);
+  // v70 — Dashboard admin Reversements (visibilité payouts auto bailleurs)
+  const [payoutsAdminOpen, setPayoutsAdminOpen] = useState(false);
 
   // Profil utilisateur connecté — chargé depuis Supabase au mount + après
   // édition (refreshCurrentProfile). Sans ça, ProfileScreen/EditProfileScreen
@@ -34771,6 +35218,10 @@ function ByerApp({
       setKycAdminOpen(false);
       return true;
     }
+    if (payoutsAdminOpen) {
+      setPayoutsAdminOpen(false);
+      return true;
+    }
     if (termsOpen) {
       setTermsOpen(false);
       return true;
@@ -34853,7 +35304,7 @@ function ByerApp({
      - Scanner QR overlay (caméra plein écran)
      - TOUT écran secondaire (Settings, Publish, Dashboard, Detail, etc.)
        → la nav bar ne doit apparaître QUE sur les 5 onglets principaux. */
-  const onSecondaryScreen = !!detail || !!gallery || !!allReviewsItem || rentOpen || !!ownerProfile || !!buildingDetail || dashboardOpen || !!listAllFilter || techsOpen || prosOpen || boostOpen || notifsOpen || publishOpen || settingsOpen || kycAdminOpen || termsOpen || privacyOpen || forgotOpen || supportOpen || editProfileOpen || !!bookingItem || reviewsOpen || historyOpen;
+  const onSecondaryScreen = !!detail || !!gallery || !!allReviewsItem || rentOpen || !!ownerProfile || !!buildingDetail || dashboardOpen || !!listAllFilter || techsOpen || prosOpen || boostOpen || notifsOpen || publishOpen || settingsOpen || kycAdminOpen || payoutsAdminOpen || termsOpen || privacyOpen || forgotOpen || supportOpen || editProfileOpen || !!bookingItem || reviewsOpen || historyOpen;
   const hideGlobalNav = chatActive || !!gallery || qrScanOpen || onSecondaryScreen;
 
   /* v57 — Push UNE entry d'historique pour CHAQUE nouvel overlay/chat
@@ -34864,7 +35315,7 @@ function ByerApp({
       overlayDepth = nombre d'overlays/chat actuellement ouverts.
      prevDepthRef = la valeur précédente.
      Si depth a augmenté → un nouveau s'est ouvert → on push une entry. */
-  const overlayDepth = (detail ? 1 : 0) + (gallery ? 1 : 0) + (allReviewsItem ? 1 : 0) + (rentOpen ? 1 : 0) + (ownerProfile ? 1 : 0) + (buildingDetail ? 1 : 0) + (dashboardOpen ? 1 : 0) + (listAllFilter ? 1 : 0) + (techsOpen ? 1 : 0) + (prosOpen ? 1 : 0) + (boostOpen ? 1 : 0) + (notifsOpen ? 1 : 0) + (publishOpen ? 1 : 0) + (settingsOpen ? 1 : 0) + (kycAdminOpen ? 1 : 0) + (termsOpen ? 1 : 0) + (privacyOpen ? 1 : 0) + (forgotOpen ? 1 : 0) + (supportOpen ? 1 : 0) + (editProfileOpen ? 1 : 0) + (bookingItem ? 1 : 0) + (reviewsOpen ? 1 : 0) + (historyOpen ? 1 : 0) + (messagesOpenChat ? 1 : 0);
+  const overlayDepth = (detail ? 1 : 0) + (gallery ? 1 : 0) + (allReviewsItem ? 1 : 0) + (rentOpen ? 1 : 0) + (ownerProfile ? 1 : 0) + (buildingDetail ? 1 : 0) + (dashboardOpen ? 1 : 0) + (listAllFilter ? 1 : 0) + (techsOpen ? 1 : 0) + (prosOpen ? 1 : 0) + (boostOpen ? 1 : 0) + (notifsOpen ? 1 : 0) + (publishOpen ? 1 : 0) + (settingsOpen ? 1 : 0) + (kycAdminOpen ? 1 : 0) + (payoutsAdminOpen ? 1 : 0) + (termsOpen ? 1 : 0) + (privacyOpen ? 1 : 0) + (forgotOpen ? 1 : 0) + (supportOpen ? 1 : 0) + (editProfileOpen ? 1 : 0) + (bookingItem ? 1 : 0) + (reviewsOpen ? 1 : 0) + (historyOpen ? 1 : 0) + (messagesOpenChat ? 1 : 0);
   const prevDepthRef = React.useRef(0);
   React.useEffect(() => {
     if (overlayDepth > prevDepthRef.current) {
@@ -35057,6 +35508,10 @@ function ByerApp({
         setSettingsOpen(false);
         setKycAdminOpen(true);
       },
+      onOpenPayoutsAdmin: () => {
+        setSettingsOpen(false);
+        setPayoutsAdminOpen(true);
+      },
       onLogout: () => {
         setSettingsOpen(false);
         onLogout?.();
@@ -35069,6 +35524,10 @@ function ByerApp({
   } else if (kycAdminOpen) {
     screenContent = /*#__PURE__*/React.createElement(KycAdminScreen, {
       onBack: () => setKycAdminOpen(false)
+    });
+  } else if (payoutsAdminOpen) {
+    screenContent = /*#__PURE__*/React.createElement(PayoutsAdminScreen, {
+      onBack: () => setPayoutsAdminOpen(false)
     });
   } else if (termsOpen) {
     screenContent = /*#__PURE__*/React.createElement(TermsScreen, {

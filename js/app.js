@@ -422,6 +422,8 @@ function ByerApp({ onLogout }) {
   const ADMIN_EMAILS = ["pinolando120@gmail.com"];
   const [isAdmin, setIsAdmin] = useState(false);
   const [kycAdminOpen, setKycAdminOpen] = useState(false);
+  // v70 — Dashboard admin Reversements (visibilité payouts auto bailleurs)
+  const [payoutsAdminOpen, setPayoutsAdminOpen] = useState(false);
 
   // Profil utilisateur connecté — chargé depuis Supabase au mount + après
   // édition (refreshCurrentProfile). Sans ça, ProfileScreen/EditProfileScreen
@@ -646,6 +648,7 @@ function ByerApp({ onLogout }) {
     }
     if (settingsOpen)      { setSettingsOpen(false); return true; }
     if (kycAdminOpen)      { setKycAdminOpen(false); return true; }
+    if (payoutsAdminOpen)  { setPayoutsAdminOpen(false); return true; }
     if (termsOpen)         { setTermsOpen(false); return true; }
     if (privacyOpen)       { setPrivacyOpen(false); return true; }
     if (forgotOpen)        { setForgotOpen(false); return true; }
@@ -702,7 +705,7 @@ function ByerApp({ onLogout }) {
   const onSecondaryScreen = !!detail || !!gallery || !!allReviewsItem
     || rentOpen || !!ownerProfile || !!buildingDetail || dashboardOpen
     || !!listAllFilter || techsOpen || prosOpen || boostOpen || notifsOpen
-    || publishOpen || settingsOpen || kycAdminOpen || termsOpen || privacyOpen || forgotOpen
+    || publishOpen || settingsOpen || kycAdminOpen || payoutsAdminOpen || termsOpen || privacyOpen || forgotOpen
     || supportOpen || editProfileOpen || !!bookingItem || reviewsOpen || historyOpen;
   const hideGlobalNav = chatActive || !!gallery || qrScanOpen || onSecondaryScreen;
 
@@ -720,7 +723,7 @@ function ByerApp({ onLogout }) {
     + (ownerProfile?1:0) + (buildingDetail?1:0) + (dashboardOpen?1:0)
     + (listAllFilter?1:0) + (techsOpen?1:0) + (prosOpen?1:0)
     + (boostOpen?1:0) + (notifsOpen?1:0) + (publishOpen?1:0)
-    + (settingsOpen?1:0) + (kycAdminOpen?1:0) + (termsOpen?1:0)
+    + (settingsOpen?1:0) + (kycAdminOpen?1:0) + (payoutsAdminOpen?1:0) + (termsOpen?1:0)
     + (privacyOpen?1:0) + (forgotOpen?1:0) + (supportOpen?1:0)
     + (editProfileOpen?1:0) + (bookingItem?1:0) + (reviewsOpen?1:0)
     + (historyOpen?1:0) + (messagesOpenChat?1:0);
@@ -802,11 +805,14 @@ function ByerApp({ onLogout }) {
                       onOpenSupport={()=>setSupportOpen(true)}
                       isAdmin={isAdmin}
                       onOpenKycAdmin={()=>{ setSettingsOpen(false); setKycAdminOpen(true); }}
+                      onOpenPayoutsAdmin={()=>{ setSettingsOpen(false); setPayoutsAdminOpen(true); }}
                       onLogout={()=>{ setSettingsOpen(false); onLogout?.(); }}
                       onDeleteAccount={()=>{ setSettingsOpen(false); onLogout?.(); }}
                     />;
   } else if (kycAdminOpen) {
     screenContent = <KycAdminScreen onBack={()=>setKycAdminOpen(false)}/>;
+  } else if (payoutsAdminOpen) {
+    screenContent = <PayoutsAdminScreen onBack={()=>setPayoutsAdminOpen(false)}/>;
   } else if (termsOpen)       { screenContent = <TermsScreen   onBack={()=>setTermsOpen(false)}/>; }
   else if (privacyOpen)       { screenContent = <PrivacyScreen onBack={()=>setPrivacyOpen(false)}/>; }
   else if (forgotOpen)        { screenContent = <ForgotPasswordScreen onBack={()=>setForgotOpen(false)}/>; }
