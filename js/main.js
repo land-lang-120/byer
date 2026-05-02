@@ -166,13 +166,38 @@ function Root() {
   return <ByerApp onLogout={handleLogout}/>;
 }
 
-// Mount — Root est wrappé dans ErrorBoundary pour qu'aucune exception React
-// ne white-screen l'app. Si une erreur tape dans un sous-composant, on affiche
-// un fallback "Oups, recharger" plutôt qu'un écran blanc opaque.
+// Mount — détection du mode admin :
+// Si on est sur /admin.html (ou pathname === '/admin'), on mount AdminApp
+// au lieu de Root. AdminApp est défini dans js/admin-app.js. Le bundle
+// commun est chargé par les 2 pages, mais seul un des deux composants est
+// monté selon l'URL.
+//
+// Avantage : pas de duplication de code, auth Supabase partagée via
+// cookies, déploiement unique. Inconvénient mineur : un peu plus de JS
+// téléchargé sur la console admin (toléré car c'est rare et caché).
 const container = document.getElementById('root');
 const reactRoot = ReactDOM.createRoot(container);
-reactRoot.render(
-  <ByerErrorBoundary>
-    <Root/>
-  </ByerErrorBoundary>
-);
+
+const isAdminPage = (() => {
+  try {
+    const p = window.location.pathname || "";
+    return p.endsWith("/admin.html") || p === "/admin" || p.endsWith("/admin/");
+  } catch (_) { return false; }
+})();
+
+if (isAdminPage && typeof AdminApp !== "undefined") {
+  // Console admin : pas d'ErrorBoundary spécifique pour l'instant (AdminApp
+  // gère ses propres erreurs via FullScreenMessage).
+  reactRoot.render(
+    <ByerErrorBoundary>
+      <AdminApp/>
+    </ByerErrorBoundary>
+  );
+} else {
+  // App principale Byer (locataires + bailleurs).
+  reactRoot.render(
+    <ByerErrorBoundary>
+      <Root/>
+    </ByerErrorBoundary>
+  );
+}

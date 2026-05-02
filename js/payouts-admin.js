@@ -136,6 +136,58 @@ function PayoutsAdminScreen({ onBack }) {
         </button>
       </div>
 
+      {/* v70 — Quick links Notch Pay : ouvre les sections clés du dashboard
+          NP dans un nouvel onglet. Permet d'aller voir le solde, les
+          transferts détaillés, les retraits, sans avoir à recoder ces
+          vues côté Byer (Notch Pay les gère déjà très bien). */}
+      <div style={{
+        display:"flex", gap:8, padding:"12px 16px", background:C.white,
+        borderBottom:`1px solid ${C.border}`, flexWrap:"wrap",
+      }}>
+        <a
+          href="https://business.notchpay.co/transfers"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            flex:"1 1 140px", padding:"10px 12px", borderRadius:10,
+            background:"#F0FDF4", border:"1px solid #BBF7D0",
+            color:"#16A34A", fontSize:13, fontWeight:600,
+            textDecoration:"none", textAlign:"center",
+            fontFamily:"'DM Sans',sans-serif",
+          }}
+        >
+          📤 Transferts NP ↗
+        </a>
+        <a
+          href="https://business.notchpay.co/payments"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            flex:"1 1 140px", padding:"10px 12px", borderRadius:10,
+            background:"#EFF6FF", border:"1px solid #BFDBFE",
+            color:"#2563EB", fontSize:13, fontWeight:600,
+            textDecoration:"none", textAlign:"center",
+            fontFamily:"'DM Sans',sans-serif",
+          }}
+        >
+          📥 Paiements NP ↗
+        </a>
+        <a
+          href="https://business.notchpay.co/"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            flex:"1 1 140px", padding:"10px 12px", borderRadius:10,
+            background:"#FEF3C7", border:"1px solid #FDE68A",
+            color:"#92400E", fontSize:13, fontWeight:600,
+            textDecoration:"none", textAlign:"center",
+            fontFamily:"'DM Sans',sans-serif",
+          }}
+        >
+          💰 Solde NP ↗
+        </a>
+      </div>
+
       {/* Stats du mois en cours */}
       {stats && (
         <div style={{ padding:"16px", background:C.white, borderBottom:`1px solid ${C.border}` }}>

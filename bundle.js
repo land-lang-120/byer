@@ -31483,7 +31483,67 @@ function PayoutsAdminScreen({
       cursor: loading ? "wait" : "pointer",
       padding: 8
     }
-  }, "\u21BB ", loading ? "..." : "")), stats && /*#__PURE__*/React.createElement("div", {
+  }, "\u21BB ", loading ? "..." : "")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      padding: "12px 16px",
+      background: C.white,
+      borderBottom: `1px solid ${C.border}`,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("a", {
+    href: "https://business.notchpay.co/transfers",
+    target: "_blank",
+    rel: "noopener noreferrer",
+    style: {
+      flex: "1 1 140px",
+      padding: "10px 12px",
+      borderRadius: 10,
+      background: "#F0FDF4",
+      border: "1px solid #BBF7D0",
+      color: "#16A34A",
+      fontSize: 13,
+      fontWeight: 600,
+      textDecoration: "none",
+      textAlign: "center",
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, "\uD83D\uDCE4 Transferts NP \u2197"), /*#__PURE__*/React.createElement("a", {
+    href: "https://business.notchpay.co/payments",
+    target: "_blank",
+    rel: "noopener noreferrer",
+    style: {
+      flex: "1 1 140px",
+      padding: "10px 12px",
+      borderRadius: 10,
+      background: "#EFF6FF",
+      border: "1px solid #BFDBFE",
+      color: "#2563EB",
+      fontSize: 13,
+      fontWeight: 600,
+      textDecoration: "none",
+      textAlign: "center",
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, "\uD83D\uDCE5 Paiements NP \u2197"), /*#__PURE__*/React.createElement("a", {
+    href: "https://business.notchpay.co/",
+    target: "_blank",
+    rel: "noopener noreferrer",
+    style: {
+      flex: "1 1 140px",
+      padding: "10px 12px",
+      borderRadius: 10,
+      background: "#FEF3C7",
+      border: "1px solid #FDE68A",
+      color: "#92400E",
+      fontSize: 13,
+      fontWeight: 600,
+      textDecoration: "none",
+      textAlign: "center",
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, "\uD83D\uDCB0 Solde NP \u2197")), stats && /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "16px",
       background: C.white,
@@ -36001,6 +36061,452 @@ function BottomNavBar({
   }));
 }
 
+/* ═══ js/admin-app.js ═══ */
+"use strict";
+
+/* ═══════════════════════════════════════════════════════════════════
+   Byer — Admin App (admin.html entry point)
+   ═══════════════════════════════════════════════════════════════════
+   Console admin séparée pour Pino (et futurs admins). Servie sur
+   https://byer.landonjouajosephpino.workers.dev/admin.html
+
+   Sécurité (defense in depth) :
+     1. Frontend gating : check ADMIN_EMAILS sur le user authentifié
+     2. Backend gating : RLS Postgres via fonction is_byer_admin()
+        (mig 0017) qui vérifie auth.jwt() ->> 'email' contre la
+        whitelist SQL.
+     Si l'un des deux échoue, l'admin ne voit rien.
+
+   Sections :
+     • Reversements bailleurs (PayoutsAdminScreen, réutilise le code v70)
+     • Modération KYC (KycAdminScreen, réutilise l'existant)
+     • Bientôt : annonces à modérer, comptes utilisateurs, support tickets
+   ═══════════════════════════════════════════════════════════════════ */
+
+// Whitelist en dur — gardée synchronisée avec ADMIN_EMAILS dans app.js
+// et la fonction SQL is_byer_admin() dans mig 0017.
+const ADMIN_EMAILS_LIST = ["pinolando120@gmail.com"];
+function AdminApp() {
+  const [authState, setAuthState] = useState({
+    status: "loading",
+    user: null
+  });
+  const [section, setSection] = useState("payouts"); // 'payouts' | 'kyc'
+
+  // Mount-once : bootstrap session
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const db = window.byer && window.byer.db;
+        if (!db || !db.isReady) {
+          if (!cancelled) setAuthState({
+            status: "error",
+            user: null,
+            err: "Supabase indisponible"
+          });
+          return;
+        }
+        const {
+          data: sess
+        } = await db.auth.getSession();
+        const user = sess && sess.session && sess.session.user;
+        if (cancelled) return;
+        if (!user) {
+          setAuthState({
+            status: "anon",
+            user: null
+          });
+          return;
+        }
+        const email = (user.email || "").toLowerCase();
+        const isAdmin = ADMIN_EMAILS_LIST.includes(email);
+        setAuthState({
+          status: isAdmin ? "admin" : "forbidden",
+          user
+        });
+      } catch (e) {
+        if (!cancelled) setAuthState({
+          status: "error",
+          user: null,
+          err: e?.message || "boot error"
+        });
+      }
+    })();
+    // Signal ready pour que le loader HTML disparaisse
+    try {
+      window.dispatchEvent(new Event("byer-admin-ready"));
+    } catch (_) {}
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (authState.status === "loading") {
+    return /*#__PURE__*/React.createElement(FullScreenMessage, {
+      title: "Chargement\u2026",
+      sub: "V\xE9rification de votre session"
+    });
+  }
+  if (authState.status === "error") {
+    return /*#__PURE__*/React.createElement(FullScreenMessage, {
+      title: "Erreur",
+      sub: authState.err || "Impossible de charger la console admin",
+      icon: "\u26A0\uFE0F",
+      color: "#DC2626"
+    });
+  }
+  if (authState.status === "anon") {
+    return /*#__PURE__*/React.createElement(AdminLoginScreen, {
+      onLoggedIn: () => window.location.reload()
+    });
+  }
+  if (authState.status === "forbidden") {
+    return /*#__PURE__*/React.createElement(FullScreenMessage, {
+      title: "Acc\xE8s refus\xE9",
+      sub: `L'email ${authState.user?.email || "(inconnu)"} n'est pas un compte admin Byer.`,
+      icon: "\uD83D\uDEAB",
+      color: "#DC2626",
+      action: /*#__PURE__*/React.createElement("button", {
+        onClick: async () => {
+          try {
+            await window.byer.db.auth.signOut();
+          } catch (_) {}
+          window.location.reload();
+        },
+        style: btnStyle("#1A1A1A", "#fff")
+      }, "Se d\xE9connecter")
+    });
+  }
+
+  // ─── Admin authentifié : rend la console
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      minHeight: "100vh",
+      background: "#F7F7F7",
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, /*#__PURE__*/React.createElement("aside", {
+    style: {
+      width: 240,
+      background: "#1A1A1A",
+      color: "#fff",
+      padding: "24px 16px",
+      position: "sticky",
+      top: 0,
+      height: "100vh",
+      boxSizing: "border-box",
+      display: "flex",
+      flexDirection: "column"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 32
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 800,
+      letterSpacing: -0.5
+    }
+  }, "Byer ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#FF5A5F"
+    }
+  }, "Admin")), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: "#9B9B9B",
+      marginTop: 4
+    }
+  }, authState.user?.email)), /*#__PURE__*/React.createElement("nav", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 4
+    }
+  }, /*#__PURE__*/React.createElement(SidebarItem, {
+    label: "\uD83D\uDCB0 Reversements",
+    active: section === "payouts",
+    onClick: () => setSection("payouts")
+  }), /*#__PURE__*/React.createElement(SidebarItem, {
+    label: "\uD83E\uDEAA Mod\xE9ration KYC",
+    active: section === "kyc",
+    onClick: () => setSection("kyc")
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: "auto",
+      paddingTop: 24,
+      borderTop: "1px solid #333"
+    }
+  }, /*#__PURE__*/React.createElement("a", {
+    href: "/",
+    style: {
+      ...sidebarLinkStyle,
+      fontSize: 12
+    }
+  }, "\u2190 Retour \xE0 l'app Byer"), /*#__PURE__*/React.createElement("button", {
+    onClick: async () => {
+      try {
+        await window.byer.db.auth.signOut();
+      } catch (_) {}
+      window.location.reload();
+    },
+    style: {
+      ...sidebarLinkStyle,
+      fontSize: 12,
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      width: "100%",
+      textAlign: "left",
+      padding: "8px 12px",
+      color: "#9B9B9B"
+    }
+  }, "D\xE9connexion"))), /*#__PURE__*/React.createElement("main", {
+    style: {
+      flex: 1,
+      minWidth: 0,
+      overflow: "auto"
+    }
+  }, section === "payouts" && /*#__PURE__*/React.createElement(PayoutsAdminScreen, {
+    onBack: () => {}
+  }), section === "kyc" && (typeof KycAdminScreen !== "undefined" ? /*#__PURE__*/React.createElement(KycAdminScreen, {
+    onBack: () => {}
+  }) : /*#__PURE__*/React.createElement(FullScreenMessage, {
+    title: "KYC indisponible",
+    sub: "Module KYC non charg\xE9."
+  }))));
+}
+
+/* ─── Sidebar item ─────────────────────────────────────────────── */
+function SidebarItem({
+  label,
+  active,
+  onClick
+}) {
+  return /*#__PURE__*/React.createElement("button", {
+    onClick: onClick,
+    style: {
+      ...sidebarLinkStyle,
+      padding: "10px 12px",
+      background: active ? "rgba(255,90,95,.15)" : "transparent",
+      color: active ? "#FF5A5F" : "#fff",
+      fontWeight: active ? 700 : 500,
+      border: "none",
+      borderLeft: active ? "3px solid #FF5A5F" : "3px solid transparent",
+      cursor: "pointer",
+      width: "100%",
+      textAlign: "left",
+      fontSize: 14,
+      borderRadius: 6,
+      transition: "all .15s"
+    }
+  }, label);
+}
+const sidebarLinkStyle = {
+  display: "block",
+  textDecoration: "none",
+  fontFamily: "'DM Sans',sans-serif"
+};
+
+/* ─── Login Screen pour admin (anon initial) ───────────────────── */
+function AdminLoginScreen({
+  onLoggedIn
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const handleSubmit = async () => {
+    setError("");
+    if (!email || !password) {
+      setError("Entrez votre email et mot de passe.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const db = window.byer && window.byer.db;
+      const {
+        error: authErr
+      } = await db.auth.signIn(email.trim(), password);
+      if (authErr) {
+        setLoading(false);
+        setError(authErr.message || "Identifiants invalides");
+        return;
+      }
+      onLoggedIn && onLoggedIn();
+    } catch (e) {
+      setLoading(false);
+      setError(e?.message || "Erreur de connexion");
+    }
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "#1A1A1A",
+      padding: 20,
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#fff",
+      padding: "32px 28px",
+      borderRadius: 18,
+      maxWidth: 420,
+      width: "100%",
+      boxShadow: "0 20px 60px rgba(0,0,0,.4)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 30,
+      fontWeight: 800,
+      marginBottom: 6,
+      letterSpacing: -1
+    }
+  }, "Byer ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#FF5A5F"
+    }
+  }, "Admin")), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 13,
+      color: "#6B6B6B",
+      marginBottom: 24
+    }
+  }, "Console admin r\xE9serv\xE9e. Connectez-vous avec votre compte admin Byer."), /*#__PURE__*/React.createElement("label", {
+    style: labelStyle
+  }, "Email"), /*#__PURE__*/React.createElement("input", {
+    type: "email",
+    value: email,
+    onChange: e => setEmail(e.target.value),
+    autoComplete: "email",
+    placeholder: "admin@byer.cm",
+    style: inputStyle,
+    onKeyDown: e => e.key === "Enter" && handleSubmit()
+  }), /*#__PURE__*/React.createElement("label", {
+    style: labelStyle
+  }, "Mot de passe"), /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    value: password,
+    onChange: e => setPassword(e.target.value),
+    autoComplete: "current-password",
+    style: inputStyle,
+    onKeyDown: e => e.key === "Enter" && handleSubmit()
+  }), error && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#FEE2E2",
+      border: "1px solid #FCA5A5",
+      color: "#991B1B",
+      padding: "10px 12px",
+      borderRadius: 10,
+      fontSize: 13,
+      marginBottom: 14
+    }
+  }, "\u26A0\uFE0F ", error), /*#__PURE__*/React.createElement("button", {
+    onClick: handleSubmit,
+    disabled: loading,
+    style: {
+      ...btnStyle("#FF5A5F", "#fff"),
+      width: "100%",
+      padding: "14px",
+      fontSize: 15,
+      cursor: loading ? "wait" : "pointer"
+    }
+  }, loading ? "Connexion…" : "Se connecter"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: "#9B9B9B",
+      marginTop: 16,
+      textAlign: "center"
+    }
+  }, "Vous n'\xEAtes pas admin ? ", /*#__PURE__*/React.createElement("a", {
+    href: "/",
+    style: {
+      color: "#FF5A5F"
+    }
+  }, "Retour \xE0 Byer"))));
+}
+
+/* ─── Helpers UI ─────────────────────────────────────────────── */
+function FullScreenMessage({
+  title,
+  sub,
+  icon,
+  color,
+  action
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      minHeight: "100vh",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 24,
+      background: "#F7F7F7",
+      textAlign: "center",
+      fontFamily: "'DM Sans',sans-serif"
+    }
+  }, icon && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 54,
+      marginBottom: 12
+    }
+  }, icon), /*#__PURE__*/React.createElement("h1", {
+    style: {
+      fontSize: 20,
+      fontWeight: 800,
+      color: color || "#1A1A1A",
+      marginBottom: 8
+    }
+  }, title), sub && /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      color: "#6B6B6B",
+      maxWidth: 420,
+      lineHeight: 1.5
+    }
+  }, sub), action && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 20
+    }
+  }, action));
+}
+const labelStyle = {
+  fontSize: 12,
+  fontWeight: 600,
+  color: "#1A1A1A",
+  marginBottom: 6,
+  display: "block",
+  marginTop: 14
+};
+const inputStyle = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: 10,
+  border: "1.5px solid #EBEBEB",
+  fontSize: 14,
+  fontFamily: "'DM Sans',sans-serif",
+  boxSizing: "border-box"
+};
+function btnStyle(bg, color) {
+  return {
+    padding: "10px 16px",
+    borderRadius: 10,
+    border: "none",
+    background: bg,
+    color: color,
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: "pointer",
+    fontFamily: "'DM Sans',sans-serif"
+  };
+}
+
 /* ═══ js/main.js ═══ */
 "use strict";
 
@@ -36269,9 +36775,30 @@ function Root() {
   });
 }
 
-// Mount — Root est wrappé dans ErrorBoundary pour qu'aucune exception React
-// ne white-screen l'app. Si une erreur tape dans un sous-composant, on affiche
-// un fallback "Oups, recharger" plutôt qu'un écran blanc opaque.
+// Mount — détection du mode admin :
+// Si on est sur /admin.html (ou pathname === '/admin'), on mount AdminApp
+// au lieu de Root. AdminApp est défini dans js/admin-app.js. Le bundle
+// commun est chargé par les 2 pages, mais seul un des deux composants est
+// monté selon l'URL.
+//
+// Avantage : pas de duplication de code, auth Supabase partagée via
+// cookies, déploiement unique. Inconvénient mineur : un peu plus de JS
+// téléchargé sur la console admin (toléré car c'est rare et caché).
 const container = document.getElementById('root');
 const reactRoot = ReactDOM.createRoot(container);
-reactRoot.render(/*#__PURE__*/React.createElement(ByerErrorBoundary, null, /*#__PURE__*/React.createElement(Root, null)));
+const isAdminPage = (() => {
+  try {
+    const p = window.location.pathname || "";
+    return p.endsWith("/admin.html") || p === "/admin" || p.endsWith("/admin/");
+  } catch (_) {
+    return false;
+  }
+})();
+if (isAdminPage && typeof AdminApp !== "undefined") {
+  // Console admin : pas d'ErrorBoundary spécifique pour l'instant (AdminApp
+  // gère ses propres erreurs via FullScreenMessage).
+  reactRoot.render(/*#__PURE__*/React.createElement(ByerErrorBoundary, null, /*#__PURE__*/React.createElement(AdminApp, null)));
+} else {
+  // App principale Byer (locataires + bailleurs).
+  reactRoot.render(/*#__PURE__*/React.createElement(ByerErrorBoundary, null, /*#__PURE__*/React.createElement(Root, null)));
+}

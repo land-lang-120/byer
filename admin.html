@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Byer Admin — Reversements & Modération</title>
+  <meta name="description" content="Console admin Byer — gestion des reversements bailleurs et modération KYC."/>
+  <meta name="theme-color" content="#1A1A1A"/>
+  <meta name="robots" content="noindex, nofollow"/>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'><rect width='30' height='30' rx='9' fill='%231A1A1A'/><path d='M9 8h6.5a3.5 3.5 0 010 7H9m0 0h7a3.5 3.5 0 010 7H9V8z' stroke='%23FF5A5F' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>"/>
+
+  <!-- Global CSS (partagé avec l'app principale) -->
+  <link rel="stylesheet" href="css/global.css"/>
+
+  <style>
+    html, body { height: 100%; background: #F7F7F7; margin: 0; }
+    #root { min-height: 100%; }
+    .admin-loading {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100vh; font-family: 'DM Sans', sans-serif; color: #6B6B6B;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Loading screen avant que React ne mount -->
+  <div id="byer-loading" class="admin-loading">
+    <div style="font-size:42px;font-weight:800;color:#1A1A1A;margin-bottom:8px;letter-spacing:-1px;">
+      Byer <span style="color:#FF5A5F;">Admin</span>
+    </div>
+    <p style="font-size:13px;color:#9B9B9B;font-weight:500;">Chargement de la console…</p>
+  </div>
+
+  <!-- React root -->
+  <div id="root"></div>
+
+  <!-- React 18 -->
+  <script src="lib/react.min.js"></script>
+  <script src="lib/react-dom.min.js"></script>
+
+  <!-- Supabase JS Client (auth partagée avec l'app principale via cookies) -->
+  <script src="lib/supabase.min.js"></script>
+
+  <!-- Bundle commun (le même fichier que l'app principale ; main.js détecte
+       qu'on est sur /admin.html et mount AdminApp au lieu de ByerApp) -->
+  <script src="bundle.js?v=71"></script>
+
+  <script>
+    // Hide loading screen quand React signale qu'il est prêt
+    function hideAdminLoader() {
+      var loader = document.getElementById('byer-loading');
+      if (!loader) return;
+      loader.style.transition = 'opacity 0.4s ease';
+      loader.style.opacity = '0';
+      setTimeout(function() { loader.remove(); }, 400);
+    }
+    window.addEventListener('byer-admin-ready', hideAdminLoader, { once: true });
+    setTimeout(function() {
+      var loader = document.getElementById('byer-loading');
+      if (loader) hideAdminLoader();
+    }, 30000);
+  </script>
+</body>
+</html>

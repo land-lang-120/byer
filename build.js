@@ -39,6 +39,7 @@ const FILES = [
   'js/legal.js',
   'js/kyc.js',
   'js/app.js',
+  'js/admin-app.js',
   'js/main.js',
 ];
 
